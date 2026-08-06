@@ -7,6 +7,7 @@ NCS_VERSION := v3.4.0
 BOARD := nrf52840dongle
 LAUNCH := nrfutil sdk-manager toolchain launch --ncs-version $(NCS_VERSION) --
 NCS_HOME := $(HOME)/ncs/$(NCS_VERSION)
+ZEPHYR_BASE := $(NCS_HOME)/zephyr
 DFU_TRAITS := --traits nordicDfu
 
 # ── Sample apps (in NCS tree, for verification) ──────────────
@@ -17,11 +18,16 @@ CDC_ACM_SRC := $(NCS_HOME)/zephyr/samples/subsys/usb/cdc_acm
 .PHONY: clean clean-blinky clean-cdc devices
 
 # ── Build ────────────────────────────────────────────────────
+# This project lives outside the NCS folder hierarchy, so west
+# cannot auto-discover the workspace. Setting ZEPHYR_BASE lets
+# west locate the Zephyr tree and load extension commands (like
+# `build`). See:
+#   sdk-nrf/doc/nrf/app_dev/create_application.rst (ZEPHYR_BASE)
 build-blinky:
-	$(LAUNCH) west build -b $(BOARD) $(BLINKY_SRC) -d build-blinky --no-sysbuild
+	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -b $(BOARD) $(BLINKY_SRC) -d build-blinky --no-sysbuild
 
 build-cdc:
-	$(LAUNCH) west build -b $(BOARD) $(CDC_ACM_SRC) -d build-cdc --no-sysbuild
+	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -b $(BOARD) $(CDC_ACM_SRC) -d build-cdc --no-sysbuild
 
 # ── Flash (requires Dongle in DFU mode) ──────────────────────
 # nRF52840 Dongle uses Nordic secure DFU, which requires a SdfuZip

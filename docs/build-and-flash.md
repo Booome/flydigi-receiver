@@ -82,17 +82,25 @@ make build-blinky
 make build-cdc
 ```
 
-Makefile 内部使用 `nrfutil sdk-manager toolchain launch` 注入环境：
+Makefile 内部使用 `nrfutil sdk-manager toolchain launch` 注入环境，
+并设置 `ZEPHYR_BASE` 让 west 找到 NCS workspace：
 
 ```bash
-nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 -- \
+ZEPHYR_BASE=~/ncs/v3.4.0/zephyr nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 -- \
   west build -b nrf52840dongle <source> -d <build_dir> --no-sysbuild
 ```
+
+> **为什么需要 `ZEPHYR_BASE`？**
+> 本项目不在 NCS 文件夹层级内，west 无法自动发现 workspace。
+> `nrfutil sdk-manager toolchain launch` 不设置 `ZEPHYR_BASE`，
+> 需要手动指定。参见
+> `sdk-nrf/doc/nrf/app_dev/create_application.rst` 中关于 `ZEPHYR_BASE`
+> 的说明。
 
 ### 手动编译（不用 Makefile）
 
 ```bash
-nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 -- \
+ZEPHYR_BASE=~/ncs/v3.4.0/zephyr nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 -- \
   west build -b nrf52840dongle ~/ncs/v3.4.0/zephyr/samples/basic/blinky \
   -d build-blinky --no-sysbuild
 ```
@@ -102,10 +110,11 @@ nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 -- \
 如果需要连续执行多个 west 命令，可以启动隔离 shell：
 
 ```bash
-nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 --shell
+ZEPHYR_BASE=~/ncs/v3.4.0/zephyr nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 --shell
 ```
 
-这会启动一个配置好所有环境变量的子 shell，退出时环境自动清理。
+这会启动一个配置好所有环境变量的子 shell（含 `ZEPHYR_BASE`），
+退出时环境自动清理。
 
 ## 四、烧录
 
@@ -115,16 +124,19 @@ nRF52840 Dongle 通过 USB DFU 模式烧录（不需要 J-Link）：
 
 1. 将 Dongle 插入 USB 口
 2. 按 Dongle 侧面的 **Reset** 按键（短暂按下）
-3. Dongle 进入 DFU 模式，红色 LED 常亮
+3. Dongle 进入 DFU 模式，红色 LED 呼吸闪烁
 4. 验证：`nrfutil device list` 显示 "Open DFU Bootloader"
 
 ### 4.2 烧录流程
 
-nRF52840 Dongle 使用 Nordic secure DFU 协议，**不能直接烧录 .hex 文件**。
-需要两步：
+nRF52840 Dongle 使用 Nordic secure DFU 协议，命令行**不能直接烧录
+.hex 或 .elf 文件**，需要两步：
 
 1. 从 .hex 生成 DFU zip 包（SdfuZip 格式）
 2. 用 `nrfutil device program` 烧录 zip 包
+
+> nRF Connect Desktop 的 Programmer app 可以直接烧 ELF/HEX，
+> 因为 GUI 内部自动完成 HEX->DFU zip 转换。命令行无此自动化。
 
 ```bash
 # 通过 Makefile（自动完成两步）
@@ -186,6 +198,7 @@ nRF52840 Dongle 在 DFU 模式下的 traits 为 `nordicDfu`，
 | 参数 | 值 | 说明 |
 |------|-----|------|
 | Board 名字 | `nrf52840dongle` | 不是 `nrf52840dongle_nrf52840` |
+| `ZEPHYR_BASE` | `~/ncs/v3.4.0/zephyr` | 本项目不在 NCS workspace 内，需手动设置（Makefile 已处理） |
 | `--no-sysbuild` | - | 简单应用不需要 sysbuild（多镜像） |
 | `ZEPHYR_TOOLCHAIN_VARIANT` | `zephyr/gnu` | 由 launch 自动设置 |
 | `ZEPHYR_SDK_INSTALL_DIR` | `opt/zephyr-sdk` | 由 launch 自动设置 |
@@ -226,6 +239,12 @@ DFU zip 包，再烧录（见 4.2 节）。
 
 Dongle 未在 DFU 模式。按 Reset 键进入 DFU 模式，然后用
 `nrfutil device list` 确认显示 "Open DFU Bootloader"。
+
+### 6.8 west: unknown command "build"
+
+未设置 `ZEPHYR_BASE`，west 找不到 NCS workspace 无法加载扩展命令。
+确保通过 Makefile 编译（已自动设置），或手动编译时添加
+`ZEPHYR_BASE=~/ncs/v3.4.0/zephyr` 前缀。
 
 ## 七、迁移到新机器
 
