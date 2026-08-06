@@ -1,6 +1,7 @@
 #include <zephyr/kernel.h>
 #include "controller_state.h"
 #include "formatter_text.h"
+#include "formatter_binary.h"
 #include "output.h"
 
 #define SIM_INTERVAL_MS 500
@@ -50,6 +51,10 @@ int main(void)
         char buf[FORMATTER_TEXT_MAX_LEN];
         size_t len = formatter_text_format(&state, buf, sizeof(buf));
         output_send((const uint8_t *)buf, len);
+#elif IS_ENABLED(CONFIG_OUTPUT_FORMAT_BINARY)
+        uint8_t buf[FORMATTER_BINARY_FRAME_LEN];
+        size_t len = formatter_binary_format(&state, buf, sizeof(buf));
+        output_send(buf, len);
 #endif
 
         k_sleep(K_MSEC(SIM_INTERVAL_MS));
