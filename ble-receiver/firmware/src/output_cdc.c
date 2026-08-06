@@ -10,7 +10,7 @@
 LOG_MODULE_REGISTER(output_cdc, LOG_LEVEL_INF);
 
 static const struct device *const cdc_dev =
-    DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
+    DEVICE_DT_GET(DT_NODELABEL(cdc_acm_data));
 static struct usbd_context *usbd_ctx;
 static bool cdc_ready;
 static K_SEM_DEFINE(dtr_sem, 0, 1);

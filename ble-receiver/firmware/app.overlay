@@ -1,0 +1,12 @@
+/* Dual CDC ACM: Debug (console) + Data (formatter output) */
+
+&board_cdc_acm_uart {
+    label = "Flydigi-Debug";
+};
+
+&zephyr_udc0 {
+    cdc_acm_data: cdc_acm_data {
+        compatible = "zephyr,cdc-acm-uart";
+        label = "Flydigi-Data";
+    };
+};
