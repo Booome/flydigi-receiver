@@ -15,7 +15,8 @@ BLINKY_SRC := $(NCS_HOME)/zephyr/samples/basic/blinky
 CDC_ACM_SRC := $(NCS_HOME)/zephyr/samples/subsys/usb/cdc_acm
 
 .PHONY: build-blinky build-cdc flash-blinky flash-cdc
-.PHONY: clean clean-blinky clean-cdc devices
+.PHONY: build-fw flash-fw build-test run-test
+.PHONY: clean clean-blinky clean-cdc clean-fw clean-test devices
 
 # ── Build ────────────────────────────────────────────────────
 # This project lives outside the NCS folder hierarchy, so west
@@ -48,12 +49,39 @@ flash-cdc: build-cdc
 		build-cdc/zephyr/zephyr_dfu.zip
 	nrfutil device program --firmware build-cdc/zephyr/zephyr_dfu.zip $(DFU_TRAITS)
 
+# ── Firmware (BLE Receiver) ───────────────────────────────────
+FW_DIR := ble-receiver/firmware
+FW_BUILD := build-fw
+TEST_DIR := ble-receiver/tests/unit/test_formatter_text
+TEST_BUILD := build-test
+
+build-fw:
+	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -b $(BOARD) $(FW_DIR) -d $(FW_BUILD) --no-sysbuild
+
+flash-fw: build-fw
+	nrfutil nrf5sdk-tools pkg generate \
+		--application $(FW_BUILD)/zephyr/zephyr.hex $(DFU_PKG_OPTS) \
+		$(FW_BUILD)/zephyr/zephyr_dfu.zip
+	nrfutil device program --firmware $(FW_BUILD)/zephyr/zephyr_dfu.zip $(DFU_TRAITS)
+
+build-test:
+	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -b native_sim $(TEST_DIR) -d $(TEST_BUILD) --no-sysbuild
+
+run-test:
+	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -t run -d $(TEST_BUILD)
+
+clean-fw:
+	rm -rf $(FW_BUILD)
+
+clean-test:
+	rm -rf $(TEST_BUILD)
+
 # ── List connected devices ───────────────────────────────────
 devices:
 	nrfutil device list
 
 # ── Clean ────────────────────────────────────────────────────
-clean: clean-blinky clean-cdc
+clean: clean-blinky clean-cdc clean-fw clean-test
 
 clean-blinky:
 	rm -rf build-blinky
