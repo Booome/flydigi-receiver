@@ -8,6 +8,13 @@ set(DTC_OVERLAY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/app.overlay CACHE FILEPATH "Dev
 # Reuse Zephyr sample USB device initialization code
 include(${ZEPHYR_BASE}/samples/subsys/usb/common/common.cmake)
 
-FILE(GLOB app_sources src/*.c)
-target_sources(app PRIVATE ${app_sources})
+target_sources(app PRIVATE
+    src/main.c
+    src/formatter_text.c
+    src/formatter_binary.c
+)
+
+target_sources_ifdef(CONFIG_OUTPUT_CDC app PRIVATE src/output_cdc.c)
+target_sources_ifdef(CONFIG_OUTPUT_UART app PRIVATE src/output_uart.c)
+
 target_include_directories(app PRIVATE src)
