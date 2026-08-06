@@ -204,6 +204,36 @@ nRF52840 Dongle 在 DFU 模式下的 traits 为 `nordicDfu`，
 | `ZEPHYR_SDK_INSTALL_DIR` | `opt/zephyr-sdk` | 由 launch 自动设置 |
 | 编译器 | `arm-zephyr-eabi-gcc 14.3.0` | 不是系统的 arm-none-eabi-gcc |
 
+## 五-A、串口识别（双 CDC ACM）
+
+固件实现双 CDC ACM 虚拟串口，通过 USB 接口描述符字符串（`iInterface`）
+区分用途。`/dev/ttyACM*` 编号取决于 USB 枚举顺序，**不可靠**，必须通过
+sysfs 读取接口字符串识别。
+
+| 接口字符串 | 用途 | 内容 |
+|-----------|------|------|
+| `Flydigi-Debug` | 调试输出 | printk / LOG |
+| `Flydigi-Data` | 功能数据 | formatter 输出（文本行 / 二进制帧） |
+
+### 查看接口字符串
+
+```bash
+# 查看所有 ttyACM 设备的接口字符串
+for dev in /dev/ttyACM*; do
+    name=$(cat /sys/class/tty/$(basename $dev)/device/interface 2>/dev/null)
+    echo "$dev -> $name"
+done
+```
+
+输出示例：
+```
+/dev/ttyACM0 -> Flydigi-Debug
+/dev/ttyACM1 -> Flydigi-Data
+```
+
+> 编号可能反转（Debug=1, Data=0），取决于插入顺序和枚举时序。
+> 始终通过接口字符串识别，不要硬编码编号。
+
 ## 六、常见问题
 
 ### 6.1 No Nordic device found
