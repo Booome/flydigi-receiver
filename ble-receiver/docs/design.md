@@ -228,12 +228,12 @@ bit 15 = 保留
 **目标**：验证输出层和文本格式化，不依赖手柄
 
 **任务**：
-- [ ] 实现 `controller_state` 数据结构 (`src/controller_state.h`)
-- [ ] 实现文本格式化器 (`src/formatter_text.c`)
-- [ ] 实现 USB CDC output backend (`src/output_cdc.c`)
-- [ ] 实现统一输出接口 `output_send(buf, len)` (`src/output.h`)
-- [ ] 用定时器生成模拟 `controller_state` 数据 (`src/main.c`)
-- [ ] 编写文本格式化单元测试 (`tests/unit/test_formatter_text.c`)
+- [x] 实现 `controller_state` 数据结构 (`src/controller_state.h`)
+- [x] 实现文本格式化器 (`src/formatter_text.c`)
+- [x] 实现 USB CDC output backend (`src/output_cdc.c`)
+- [x] 实现统一输出接口 `output_send(buf, len)` (`src/output.h`)
+- [x] 用定时器生成模拟 `controller_state` 数据 (`src/main.c`)
+- [x] 编写文本格式化单元测试 (`tests/unit/test_formatter_text.c`)
 
 **测试标准**：
 - **硬件**：电脑串口工具收到文本行
