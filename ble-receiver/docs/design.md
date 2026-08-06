@@ -256,10 +256,10 @@ bit 15 = 保留
 **目标**：验证二进制帧格式
 
 **任务**：
-- [ ] 实现二进制格式化器 (`src/formatter_binary.c`)
-- [ ] 添加 `CONFIG_OUTPUT_FORMAT_TEXT/BINARY` Kconfig 切换
-- [ ] 编写二进制格式化单元测试 (`tests/unit/test_formatter_binary.c`)
-- [ ] 编写 PC 端解析验证脚本 (`tests/scripts/parse_binary.py`)
+- [x] 实现二进制格式化器 (`src/formatter_binary.c`)
+- [x] 添加 `CONFIG_OUTPUT_FORMAT_TEXT/BINARY` Kconfig 切换
+- [x] 编写二进制格式化单元测试 (`tests/unit/test_formatter_binary.c`)
+- [x] 编写 PC 端解析验证脚本 (`tests/scripts/parse_binary.py`)
 
 **测试标准**：
 - **硬件**：串口收到二进制帧数据
