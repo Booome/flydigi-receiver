@@ -38,7 +38,7 @@ static void sim_update(struct controller_state *s)
 
 int main(void)
 {
-    printk("BLE Receiver M1 - simulated data\n");
+    printk("BLE Receiver M2 - simulated data\n");
 
     output_init();
 
