@@ -280,12 +280,12 @@ bit 15 = 保留
 **目标**：验证物理 UART 输出
 
 **任务**：
-- [ ] 实现 UART output backend (`src/output_uart.c`)
-- [ ] 添加 `CONFIG_OUTPUT_BACKEND_UART` Kconfig 选项
-- [ ] 确定波特率（默认 115200）
+- [x] 实现 UART output backend (`src/output_uart.c`)
+- [x] 添加 `CONFIG_OUTPUT_BACKEND_UART` Kconfig 选项
+- [x] 确定波特率（默认 115200）
 
 **测试标准**：
-- **硬件**：USB-TTL 转换器接 Dongle GPIO TX 引脚
+- **硬件**：USB-TTL 转换器接 Dongle GPIO TX 引脚（P0.20）
 - 电脑收到与 USB CDC 相同格式的数据（文本或二进制）
 - 波特率 115200 稳定无丢包
 
