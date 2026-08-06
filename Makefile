@@ -52,7 +52,8 @@ flash-cdc: build-cdc
 # ── Firmware (BLE Receiver) ───────────────────────────────────
 FW_DIR := ble-receiver/firmware
 FW_BUILD := build-fw
-TEST_DIR := ble-receiver/tests/unit/test_formatter_text
+TEST ?= test_formatter_text
+TEST_DIR := ble-receiver/tests/unit/$(TEST)
 TEST_BUILD := build-test
 
 build-fw:
@@ -64,11 +65,13 @@ flash-fw: build-fw
 		$(FW_BUILD)/zephyr/zephyr_dfu.zip
 	nrfutil device program --firmware $(FW_BUILD)/zephyr/zephyr_dfu.zip $(DFU_TRAITS)
 
+# native_sim uses host GCC; NCS toolchain's older libmpfr shadows host's,
+# breaking GCC 16+ (needs mpfr_asinpi from MPFR 4.2+). Prepend host lib path.
 build-test:
-	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -b native_sim $(TEST_DIR) -d $(TEST_BUILD) --no-sysbuild
+	$(LAUNCH) bash -c 'LD_LIBRARY_PATH=/usr/lib:$$LD_LIBRARY_PATH ZEPHYR_BASE=$(ZEPHYR_BASE) west build -b native_sim $(TEST_DIR) -d $(TEST_BUILD) --no-sysbuild'
 
 run-test:
-	ZEPHYR_BASE=$(ZEPHYR_BASE) $(LAUNCH) west build -t run -d $(TEST_BUILD)
+	$(LAUNCH) bash -c 'LD_LIBRARY_PATH=/usr/lib:$$LD_LIBRARY_PATH ZEPHYR_BASE=$(ZEPHYR_BASE) west build -t run -d $(TEST_BUILD)'
 
 clean-fw:
 	rm -rf $(FW_BUILD)
