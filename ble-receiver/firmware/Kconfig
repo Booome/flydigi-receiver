@@ -1,0 +1,32 @@
+# Copyright (c) 2024 Flydigi Receiver Project
+# SPDX-License-Identifier: Apache-2.0
+
+choice OUTPUT_FORMAT
+    prompt "Output data format"
+    default OUTPUT_FORMAT_TEXT
+
+config OUTPUT_FORMAT_TEXT
+    bool "Text format (human-readable)"
+
+config OUTPUT_FORMAT_BINARY
+    bool "Binary format (16-byte frame)"
+endchoice
+
+choice OUTPUT_BACKEND
+    prompt "Output backend"
+    default OUTPUT_CDC
+
+config OUTPUT_CDC
+    bool "USB CDC ACM"
+
+config OUTPUT_UART
+    bool "UART TTL"
+
+config OUTPUT_HID
+    bool "USB HID (transparent passthrough)"
+endchoice
+
+# Source USB sample device descriptor options (SAMPLE_USBD_*)
+source "samples/subsys/usb/common/Kconfig.sample_usbd"
+
+source "Kconfig.zephyr"
