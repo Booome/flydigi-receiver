@@ -15,17 +15,32 @@
 
 ### 1.3 技术可行性
 
-八爪鱼5 蓝牙模式下是**标准 BLE HID over GATT 设备**，走公开协议，
-不需要破解私有协议。nRF52840 支持 BLE Central 角色，Zephyr RTOS
-提供完整的 BLE 协议栈和 HOGP（HID over GATT Profile）示例。
+> **重要更新（M4 验证后）**：经实测，八爪鱼5 手柄**不支持 BLE HID over GATT**，
+> 只支持 Bluetooth Classic (BR/EDR)。nRF52840 仅支持 BLE，无法直接连接手柄。
+> 蓝牙方案暂时搁置，已采购原版 ESP32（支持 BR/EDR）用于后续 Classic BT 开发。
+> 当前优先转向 2.4GHz 无线接收器版本。
 
-| 维度 | 结论 |
-|------|------|
-| 协议 | 标准 BLE HID over GATT (Service 0x1812) |
-| nRF52840 角色 | BLE Central，主动连接手柄 |
-| 数据获取 | 订阅 Report Input 的 Notification (CCCD=0x0001) |
-| 报告格式 | 标准 Xbox 手柄布局，需抓包确认细节 |
-| 框架 | Zephyr RTOS (NCS v3.4.0) |
+**实测发现（M4 阶段）**：
+
+| 测试项 | 结果 |
+|--------|------|
+| 手柄 S 模式（Xbox）| BR/EDR，设备名 "Xbox Wireless Controller"，UUID 0x1124 |
+| 手柄安卓原生模式 | BR/EDR，同上，未出现 BLE 广播 |
+| BLE 扫描（nRF52840 + bleak）| 未发现手柄 BLE HID 广播（无 0x1812 UUID） |
+| 附近 Flydigi BLE 设备 | `U-ACGA332` / `U-ACGDDEC`（MAC 60:B0:2B），但非手柄（断电后仍广播），GATT 无 HID Service |
+
+**原始假设（已推翻）**：
+
+~~八爪鱼5 蓝牙模式下是标准 BLE HID over GATT 设备，走公开协议，
+不需要破解私有协议。nRF52840 支持 BLE Central 角色，Zephyr RTOS
+提供完整的 BLE 协议栈和 HOGP（HID over GATT Profile）示例。~~
+
+| 维度 | 原始假设 | 实际结果 |
+|------|---------|---------|
+| 协议 | 标准 BLE HID over GATT (0x1812) | **BR/EDR only**，不支持 BLE HID |
+| nRF52840 角色 | BLE Central | **不适用**（nRF52840 不支持 BR/EDR） |
+| 数据获取 | 订阅 Notification | 需走 Classic HID Host（ESP32） |
+| 后续方案 | nRF52840 直接连接 | 蓝牙搁置，转向 2.4GHz 无线 |
 
 ### 1.4 已知限制
 
@@ -295,116 +310,31 @@ bit 15 = 保留
 
 **目标**：验证 BLE Central 扫描功能
 
-**任务**：
-- [ ] 实现 BLE 扫描模块 (`src/ble_central.c`)
-- [ ] 按设备名过滤（含 `Flydigi` 的广播名）
-- [ ] 输出扫描结果到日志（RTT 或 CDC）
+**状态**：已完成扫描功能实现，但发现手柄不支持 BLE，方案搁置。
 
-**测试标准**：
-- **硬件**：手柄进入蓝牙配对模式（拨动开关到中间，蓝色 LED）
-- Dongle 日志显示发现设备（设备名含 `Flydigi`，显示 MAC 地址）
+**任务**：
+- [x] 实现 BLE 扫描模块 (`src/ble_central.c`)
+- [x] 输出扫描结果到日志（CDC Debug 口）
+- [x] 验证手柄是否支持 BLE（结论：不支持）
+
+**实测结果**：
+- nRF52840 BLE 扫描功能正常工作，能发现附近 BLE 设备
+- 手柄在 S 模式和安卓原生模式下均走 BR/EDR，不广播 BLE
+- 电脑端 bleak 扫描同样未发现手柄 BLE 广播（无 0x1812 HID Service UUID）
+- 附近 Flydigi BLE 设备（`U-ACGA332`，MAC 60:B0:2B）非手柄，GATT 无 HID Service
+
+**结论**：八爪鱼5 不支持 BLE HID over GATT，nRF52840 无法连接手柄。
+蓝牙方案搁置，已采购 ESP32 用于后续 Classic BT 开发。
 
 ---
 
-### M5：BLE 连接 + HID 订阅
+### M5-M9：BLE 后续里程碑（搁置）
 
-**目标**：验证 BLE 连接和 HID 通知接收
+M5（BLE 连接）、M6（HID 解析）、M7（端到端整合）、M8（断线重连）、
+M9（USB HID 透传）均依赖 BLE 连接手柄，在蓝牙方案搁置后暂停。
 
-**任务**：
-- [ ] 实现连接手柄（`ble_central.c` 扩展）
-- [ ] 实现 GATT 服务发现（找 HID Service 0x1812）
-- [ ] 读取 Report Map（保存报告描述符）
-- [ ] 订阅 Report Input 的 Notification（CCCD 写 0x0001）
-- [ ] 将收到的 raw HID report 通过日志 hex dump 输出
-
-**测试标准**：
-- **硬件**：日志显示连接成功
-- 日志显示发现 HID Service (0x1812)
-- 日志显示 Report Map 内容（hex dump）
-- 操作手柄时，日志显示收到 Notification（hex dump）
-
-**重要产出**：此阶段抓包到八爪鱼5 蓝牙模式的真实 Report Map 和
-Input Report 格式，用于后续 M6 的 Parser 实现。
-
----
-
-### M6：HID 报告解析
-
-**目标**：将 raw HID report 解析为 `controller_state`
-
-**任务**：
-- [ ] 实现 HID Parser (`src/hid_parser.c`)
-- [ ] 根据 M5 抓包的真实 Report Map 解析 Input Report
-- [ ] 输出结构化状态到日志
-- [ ] 编写 HID Parser 单元测试 (`tests/unit/test_hid_parser.c`)
-  - 使用 M5 抓包的真实报告数据作为测试输入
-- [ ] 如格式与设计文档假设不同，更新 Parser 和数据结构
-
-**测试标准**：
-- **硬件**：日志显示 `buttons=0x000a lt=128 rt=0 lx=1234 ly=-5678 ...`
-- 操作手柄各按键 / 摇杆 / 扳机，日志值正确变化
-- **单元测试 (native_sim)**：
-  - 全零报告 -> 全零状态
-  - 全按钮按下 -> buttons == 0x7FFF
-  - 单按钮逐个测试（15 个按钮位）
-  - 摇杆极值（-32768 / 0 / 32767）
-  - 扳机极值（0 / 128 / 255）
-  - 字节序验证（int16 小端解析正确）
-  - 组合输入（按钮 + 摇杆 + 扳机全非零）
-  - 空指针防御（NULL report 不崩溃）
-
----
-
-### M7：端到端整合
-
-**目标**：手柄真实数据通过串口输出
-
-**任务**：
-- [ ] 整合 BLE -> HID Parser -> Formatter -> Output 全链路
-- [ ] 移除模拟数据，接入真实手柄数据
-- [ ] 验证文本格式端到端
-- [ ] 验证二进制格式端到端
-
-**测试标准**：
-- **硬件**：操作手柄，串口实时收到数据
-- 摇杆移动，数据连续变化（无卡顿）
-- 按键按下 / 释放即时反映
-- 扳机渐变，值连续变化
-- 文本格式和二进制格式都验证通过（用 Python 脚本）
-
----
-
-### M8：断线重连
-
-**目标**：验证健壮性
-
-**任务**：
-- [ ] 实现 BLE 断线检测
-- [ ] 实现自动重连逻辑
-- [ ] 断线时通过串口输出状态信息
-- [ ] 重连后恢复数据输出
-
-**测试标准**：
-- **硬件**：关闭手柄电源，日志显示断线，串口输出 `STATUS:DISCONNECTED`
-- 重新打开手柄，日志显示重连成功，串口恢复数据输出
-- 手柄超出范围再回来，同样自动重连
-
----
-
-### M9：USB HID 透传（可选）
-
-**目标**：Dongle 被电脑识别为标准游戏手柄
-
-**任务**：
-- [ ] 根据 M5 抓包的 Report Map 设计 USB HID 描述符
-- [ ] 实现 USB HID output backend (`src/output_hid.c`)
-- [ ] 添加 `CONFIG_OUTPUT_BACKEND_HID` Kconfig 选项
-- [ ] 实现 raw report 透传逻辑
-
-**测试标准**：
-- **硬件**：Dongle 插电脑，`lsusb` 显示 HID Gamepad 设备
-- `jstest /dev/input/js0` 或游戏面板能识别按键 / 摇杆
-- 按键 / 摇杆 / 扳机响应正常
+后续如使用 ESP32 Classic BT 重新开发，这些里程碑的设计可参考，
+但实现需要在 ESP32 平台上重新进行。
 
 ---
 
@@ -460,10 +390,31 @@ Xbox 手柄格式**编写。M5 抓包到八爪鱼5 的真实 Report Map 后，�
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|---------|
-| 八爪鱼5 蓝牙 Report Map 与标准格式不同 | Parser 需返工 | M5 先抓包确认格式，Parser 基于 5.4 节按钮位掩码设计，格式变化只改映射表 |
-| 扩展按键（M1-M4/C/Z）蓝牙下不可用 | 功能缺失 | 文档已确认蓝牙模式无私有扩展；标准按键足够控制小车/机器人 |
-| IMU 数据蓝牙下不可用 | 无陀螺仪/加速度 | 列为可选，M5 验证自定义服务是否提供 |
-| 配对流程未知 | 连接失败 | Zephyr 支持多种配对模式，M4/M5 逐步排查 |
-| 震动不支持 | 无力反馈 | 文档已标注，不影响输入功能 |
-| BLE 连接不稳定 | 数据丢包 | M8 实现断线重连；调整连接参数（interval/timeout） |
+| ~~八爪鱼5 蓝牙 Report Map 与标准格式不同~~ | ~~Parser 需返工~~ | **已证实手柄不支持 BLE，风险消除** |
+| ~~扩展按键（M1-M4/C/Z）蓝牙下不可用~~ | ~~功能缺失~~ | **蓝牙方案搁置** |
+| ~~IMU 数据蓝牙下不可用~~ | ~~无陀螺仪/加速度~~ | **蓝牙方案搁置** |
+| ~~配对流程未知~~ | ~~连接失败~~ | **蓝牙方案搁置** |
+| ~~震动不支持~~ | ~~无力反馈~~ | **蓝牙方案搁置** |
+| ~~BLE 连接不稳定~~ | ~~数据丢包~~ | **蓝牙方案搁置** |
+| 手柄不支持 BLE | nRF52840 无法连接手柄 | **已确认**。蓝牙方案搁置，转向 2.4GHz 无线版本；ESP32 已采购用于后续 Classic BT |
+| 2.4GHz 私有协议需逆向 | 开发难度大 | 待调研飞智 2.4GHz 闪玩模式协议 |
+
+---
+
+## 九、项目状态与后续方向
+
+### 9.1 已完成
+
+- **M0-M3**：nRF52840 基础设施（USB CDC 双串口、文本/二进制格式化、UART TTL 输出）
+- **M4**：BLE 扫描功能实现 + 手柄 BLE 支持验证（结论：不支持）
+
+### 9.2 搁置
+
+- **M5-M9**：BLE 连接及后续里程碑（依赖 BLE，手柄不支持）
+- **蓝牙方案**：已采购 ESP32（支持 BR/EDR），后续可基于 ESP32 Classic BT 重新开发
+
+### 9.3 当前方向：2.4GHz 无线接收器
+
+优先开发 2.4GHz 无线接收器版本（固件2），使用 nRF52840 的 2.4GHz radio
+接收飞智八爪鱼5 的 2.4GHz 闪玩模式信号。需先调研 2.4GHz 私有协议。
 
