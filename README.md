@@ -61,8 +61,8 @@ nRF52840 仅支持 BLE，无法直接连接手柄。已采购 ESP32（支持 BR/
 详见 [docs/build-and-flash.md](docs/build-and-flash.md)。
 
 ```bash
-make build          # 编译固件
-make flash          # 烧录固件（需 Dongle DFU 模式）
-make build-test     # 编译单元测试
-make run-test       # 运行单元测试
+make -C wireless build          # 编译固件
+make -C wireless flash          # 烧录固件（需 Dongle DFU 模式）
+make -C wireless build-test     # 编译单元测试
+make -C wireless run-test       # 运行单元测试
 ```
