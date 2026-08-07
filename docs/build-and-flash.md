@@ -102,7 +102,7 @@ ZEPHYR_BASE=~/ncs/v3.4.0/zephyr nrfutil sdk-manager toolchain launch --ncs-versi
 ```bash
 ZEPHYR_BASE=~/ncs/v3.4.0/zephyr nrfutil sdk-manager toolchain launch --ncs-version v3.4.0 -- \
   west build -b nrf52840dongle ~/ncs/v3.4.0/zephyr/samples/basic/blinky \
-  -d build-blinky --no-sysbuild
+  -d reference/build-blinky --no-sysbuild
 ```
 
 ### 交互式开发环境
@@ -146,14 +146,14 @@ make flash-cdc
 # 手动烧录（两步）
 # 步骤 1：生成 DFU zip 包
 nrfutil nrf5sdk-tools pkg generate \
-  --application build-blinky/zephyr/zephyr.hex \
+  --application reference/build-blinky/zephyr/zephyr.hex \
   --application-version 1 \
   --hw-version 52 \
   --sd-req 0x00 \
-  build-blinky/zephyr/zephyr_dfu.zip
+  reference/build-blinky/zephyr/zephyr_dfu.zip
 
 # 步骤 2：烧录 DFU zip 包
-nrfutil device program --firmware build-blinky/zephyr/zephyr_dfu.zip --traits nordicDfu
+nrfutil device program --firmware reference/build-blinky/zephyr/zephyr_dfu.zip --traits nordicDfu
 ```
 
 > **注意**：`nrf5sdk-tools` 子命令需要单独安装（见 2.2 节）。
