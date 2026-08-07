@@ -76,10 +76,10 @@ nrfutil sdk-manager install v3.4.0      # 安装 NCS v3.4.0 + 工具链
 
 ```bash
 # 编译 blinky sample（验证工具链）
-make -C reference build-blinky
+make -C wireless build-blinky
 
 # 编译 CDC ACM sample（验证 USB 串口）
-make -C reference build-cdc
+make -C wireless build-cdc
 ```
 
 Makefile 内部使用 `nrfutil sdk-manager toolchain launch` 注入环境，
@@ -140,8 +140,8 @@ nRF52840 Dongle 使用 Nordic secure DFU 协议，命令行**不能直接烧录
 
 ```bash
 # 通过 Makefile（自动完成两步）
-make -C reference flash-blinky
-make -C reference flash-cdc
+make -C wireless flash-blinky
+make -C wireless flash-cdc
 
 # 手动烧录（两步）
 # 步骤 1：生成 DFU zip 包
@@ -282,7 +282,7 @@ Dongle 未在 DFU 模式。按 Reset 键进入 DFU 模式，然后用
 2. `nrfutil install device sdk-manager nrf5sdk-tools`
 3. `nrfutil sdk-manager install v3.4.0`
 4. 克隆本项目
-5. `make -C reference build-blinky` 验证编译
-6. 将 Dongle 进入 DFU 模式，`make -C reference flash-blinky` 验证烧录
+5. `make -C wireless build-blinky` 验证编译
+6. 将 Dongle 进入 DFU 模式，`make -C wireless flash-blinky` 验证烧录
 
 项目根目录的 `Makefile` 包含所有编译配置，无需修改 shell 配置。
