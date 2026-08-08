@@ -18,7 +18,11 @@
 > **重要更新（M4 验证后）**：经实测，八爪鱼5 手柄**不支持 BLE HID over GATT**，
 > 只支持 Bluetooth Classic (BR/EDR)。nRF52840 仅支持 BLE，无法直接连接手柄。
 > 蓝牙方案暂时搁置，已采购原版 ESP32（支持 BR/EDR）用于后续 Classic BT 开发。
-> 当前优先转向 2.4GHz 无线接收器版本。
+>
+> **进一步更新（SLE 调研后）**：手柄 2.4GHz 模式使用**星闪 SLE 1.0 (NearLink)**，
+> 非 Nordic ESB。nRF52840 radio 不兼容 SLE PHY，2.4GHz 无线方案也已从 nRF52840
+> 转向 BS21 开发板。当前优先级：BS21 星闪 SLE 开发 > ESP32 BR/EDR 蓝牙。
+> 详见 `docs/sle-analysis.md` 和 `docs/bs21-development.md`。
 
 **实测发现（M4 阶段）**：
 
@@ -40,7 +44,7 @@
 | 协议 | 标准 BLE HID over GATT (0x1812) | **BR/EDR only**，不支持 BLE HID |
 | nRF52840 角色 | BLE Central | **不适用**（nRF52840 不支持 BR/EDR） |
 | 数据获取 | 订阅 Notification | 需走 Classic HID Host（ESP32） |
-| 后续方案 | nRF52840 直接连接 | 蓝牙搁置，转向 2.4GHz 无线 |
+| 后续方案 | nRF52840 直接连接 | 蓝牙搁置；2.4GHz 转向 BS21 星闪 SLE 开发 |
 
 ### 1.4 已知限制
 
