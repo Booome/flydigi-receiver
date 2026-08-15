@@ -35,6 +35,7 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/toolchain.cmake")
 set(PKG_TARGET_NAME ${BS21_TARGET})
 string(REPLACE "-" "_" BUILD_TARGET_NAME ${BS21_TARGET})
 list(APPEND RAM_COMPONENT rom_callback)
+list(APPEND DEFINES _PRE_FEATURE_VENEER_ROM)
 set(BUILD_ROM_CALLBACK False)
 
 include(${SDK_ROOT}/build/cmake/build_function.cmake)
