@@ -102,7 +102,8 @@ git clone https://github.com/goodspeed34/ws63flash.git
 cd ws63flash && autoreconf -fi && ./configure && make && sudo make install
 
 # 烧录（CH340 串口，Linux 原生 ch341 驱动）
-ws63flash --flash /dev/ttyUSB0 /path/to/xxx.fwpkg -b921600
+# 实测 921600 在 CH340 串口上不稳定，460800 稳定（官方 baudList 亦含 460800）
+ws63flash --flash /dev/ttyUSB0 /path/to/xxx.fwpkg -b460800
 ```
 
 **fwpkg 格式**（BS2X 与 WS63 一致，同为海思 FBB 框架，已公开）：
@@ -116,7 +117,8 @@ ws63flash 已实现 fwpkg 解析（`src/fwpkg.h`，magic `0xefbeaddf` 与 fbb_bs
 `src/tools/pkg/packet.py` 完全一致）和 WS63 串口烧录协议（帧头 `EF BE AD DE` +
 命令 `0xf0` 握手 / `0x5a` 设波特率 / `0xd2` 下载 / `0x87` 复位）。
 
-**待验证**：ws63flash 当前只支持 WS63，BS21 需适配芯片特定参数（如握手 MAGC 值）。
+**已实测确认**：BS21 与 WS63 烧录协议兼容——握手（`0xf0`）成功、loaderboot ymodem 传输正常。
+唯高波特率（921600）在 CH340 串口上易超时，**实测 460800 稳定**（`bs21.json` baudList 亦含 460800）。
 `hispark-rs/hisi-flash-algorithm`（probe-rs 方案）已标注 "BS2X planned"，社区在推进。
 
 ### 2.3 SDK 架构（fbb_bs2x）

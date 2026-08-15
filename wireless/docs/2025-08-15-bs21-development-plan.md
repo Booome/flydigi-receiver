@@ -45,7 +45,7 @@
 |------|------|------|
 | P0.2.1 | 启用 SDK 示例（如 BLINKY sample，menuconfig） | 10min |
 | P0.2.2 | 编译（`python3 build.py standard-bs21e-1100e`） | 5min |
-| P0.2.3 | 烧录到 BS21 板（`ws63flash --flash /dev/ttyUSB0 xxx.fwpkg -b921600`），USB2 CH340 串口接 PC | 10min |
+| P0.2.3 | 烧录到 BS21 板（`ws63flash --flash /dev/ttyUSB0 xxx.fwpkg -b460800`），USB2 CH340 串口接 PC | 10min |
 | P0.2.4 | 验证串口输出，确认工具链完整 | 5min |
 
 ### P0.3 双板 SLE 互验

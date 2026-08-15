@@ -12,7 +12,7 @@
 
 - SDK 为海思官方 **fbb_bs2x**（GitCode），开发模式为在 SDK 源码树内改代码编译
 - 编译命令 `python3 build.py standard-bs21e-1100e`（在 `fbb_bs2x/src` 目录下）
-- 烧录命令 `ws63flash --flash /dev/ttyUSB0 xxx.fwpkg -b921600`（官方 BurnTool 仅 Windows）
+- 烧录命令 `ws63flash --flash /dev/ttyUSB0 xxx.fwpkg -b460800`（官方 BurnTool 仅 Windows）
 - 主路径用实际手柄开发，不拆卸原装 dongle
 - 使用项目已有的 `controller_state.h` 数据结构（定义于 `wireless/bs21/src/`），不修改
 - P1 失败则项目终止，不进入 P2-P4
@@ -90,7 +90,7 @@ Expected: 编译成功，无错误。
 - [ ] **Step 6: 烧录验证**
 
 ```bash
-ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 Expected: 烧录成功，USB2 串口输出 "BS21 Receiver starting..."
@@ -327,7 +327,7 @@ int main(void)
 - [ ] **Step 5: 编译并烧录板A**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 Expected: 串口输出 "BS21 T-Node (Announce)" 和 "[SLE] announce started"。
@@ -388,7 +388,7 @@ int main(void)
 - [ ] **Step 2: 编译并烧录板B**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 - [ ] **Step 3: 串口观察扫描结果**
@@ -451,7 +451,7 @@ cat ~/fbb_bs2x/.../sle_ssap.h
 - [ ] **Step 6: 板A 编译烧录，验证广播**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 Expected: 板A 串口输出确认 SLE 广播已启动。
@@ -461,7 +461,7 @@ Expected: 板A 串口输出确认 SLE 广播已启动。
 修改 main.c 为 G 节点版本，编译烧录：
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 Expected: 板B 扫描到板A，输出板A 的 SLE 地址和广播数据。
@@ -514,7 +514,7 @@ sle_set_connect_callback(on_connect_state);
 - [ ] **Step 4: 编译烧录板B，验证连接**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 Expected: 板B 串口输出 `[CONN]` 回调，连接状态为已连接。
@@ -653,7 +653,7 @@ git commit -m "feat: add SLE pairing and SSAP ping/pong"
 - [ ] **Step 3: 编译烧录板B，执行扫描**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 - [ ] **Step 4: 观察串口输出，筛选手柄设备**
@@ -708,7 +708,7 @@ static void on_scan_result(const sle_scan_result_t *result)
 - [ ] **Step 2: 编译烧录，观察连接回调**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 - [ ] **Step 3: 记录连接状态**
@@ -744,7 +744,7 @@ git commit -m "feat: connect to controller by hardcoded SLE address"
 - [ ] **Step 2: 编译烧录，观察配对回调**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 - [ ] **Step 3: 记录配对结果**
@@ -859,7 +859,7 @@ sle_send(conn_id, init_seq, sizeof(init_seq));
 - [ ] **Step 4: 编译烧录，观察手柄响应**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 - [ ] **Step 5: 提交**
@@ -959,7 +959,7 @@ static void print_controller_state(const controller_state *state)
 - [ ] **Step 6: 编译烧录，验证解析结果与手柄操作一致**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 移动摇杆、按下按键，确认串口输出正确反映操作。
@@ -1049,7 +1049,7 @@ parse_result_t sle_parse_frame(const uint8_t *data, uint16_t len,
 - [ ] **Step 4: 编译烧录，验证扩展报告（IMU 数据）**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 移动手柄，确认陀螺仪/加速度计数据有变化。
@@ -1253,7 +1253,7 @@ CONFIG_USB_CDC_ACM=y
 - [ ] **Step 5: 编译烧录，验证 USB 设备出现**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 USB1 接 PC，验证 `/dev/ttyACM*` 出现。
@@ -1294,7 +1294,7 @@ cat ~/fbb_bs2x/.../usb_cdc_acm.h
 - [ ] **Step 4: 编译烧录，串口工具连接验证**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 用 `screen /dev/ttyACM0 115200` 或 `minicom` 连接，验证能收发数据。
@@ -1387,7 +1387,7 @@ int main(void)
 - [ ] **Step 5: 编译烧录，端到端验证**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 手柄操作 → CDC 输出文本行，确认按键/摇杆/扳机正确。
@@ -1717,7 +1717,7 @@ CONFIG_USB_HID_DEVICE=y
 - [ ] **Step 5: 编译烧录，验证设备识别**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 USB1 接 PC，验证 `lsusb` 或设备管理器显示 "Xbox 360 Controller"。
@@ -1813,7 +1813,7 @@ static const uint8_t xbox_report_descriptor[] = {
 - [ ] **Step 3: 编译烧录，验证 `jstest` 输出**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 jstest /dev/input/js0
 ```
 
@@ -1853,7 +1853,7 @@ static void on_data_received(uint8_t conn_id, const uint8_t *data, uint16_t len)
 - [ ] **Step 2: 编译烧录，验证游戏功能**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 - [ ] **Step 3: 提交**
@@ -1898,7 +1898,7 @@ static void on_hid_output(const uint8_t *data, uint16_t len)
 - [ ] **Step 3: 编译烧录，测试震动**
 
 ```bash
-cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b460800
 ```
 
 使用 `fftest /dev/input/eventX` 或游戏测试震动反馈。
