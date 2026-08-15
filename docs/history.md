@@ -24,13 +24,17 @@
 确认手柄 SLE 芯片为 P352903N1（星闪 SLE 1.0，飞智定制编号），采用海思 Hi2821（BS21E）芯片方案。
 
 - 采购 Ai-BS21-32S-Kit（2 块，基于 Hi2821/BS21E）
-- 开发环境选定海思官方 fbb_bs2x SDK（GitCode，Apache-2.0）
-- 编译打包纯 Python（`python3 build.py standard-bs21e-1100e`），Linux 原生
+- SDK 选型：先后尝试 fbb_bs2x 与 Ai-BS21_SDK
+  - fbb_bs2x（海思官方）：闭源 loaderboot 不支持安信可板子 SiP flash（报 `0x80001341`），无法烧录运行，放弃
+  - **Ai-BS21_SDK（选用）**：`bs21-n1100-rcu`（SLE-only）target + `bs21-rcu` 分区表，512KB flash 可容纳 SLE，overlay 模式开发
 - 烧录基于社区 ws63flash 适配（官方 BurnTool 仅 Windows）
 - **烧录链路已打通（2026-08-15 实测）**：ws63flash 无需改代码即可烧录 BS21，
   握手（`0xf0`）+ ymodem 传输协议与 WS63 兼容；唯高波特率 921600 在 CH340 串口
   上不稳定，实测 **460800 稳定**。已成功完整烧录安信可 `init_sdk_fw.fwpkg`
   （6 镜像全 100%，含 loaderboot/partition/flashboot A+B/application/nv）。
+- **P0 完成（2026-08-15）**：编译 → 烧录 → 启动 → 串口打印全链路打通。修复
+  `bs21-n1100-rcu` flash 布局 bug（partition 表 application @ 0xb000，但链接脚本
+  按 standard 布局 @ 0x15000，需补 `NO_BOOT_BACKUP`）。
 
 详见 `docs/bs21-development.md`。
 

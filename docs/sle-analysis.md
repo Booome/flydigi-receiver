@@ -240,6 +240,5 @@ USB 协议已详细文档化（20字节标准报告 + 32字节扩展报告 5A A5
 - [海思星闪技术介绍](https://www.hisilicon.com/cn/techtalk/nearlink/introduction) - SLE 技术概述
 - [国际星闪联盟开发者社区](https://developer.sparklink.org.cn/)
 - [Ai-BS21_SDK](https://github.com/Ai-Thinker-Open/Ai-BS21_SDK) - BS21 开源 SDK
-- [XFusion 开发文档](https://www.coral-zone.cc/document/zh_CN/) - Linux BS21 构建工具
 - [NearLink ToolBox](https://nearlink.docs.haohanyh.ovh/) - 星闪工具箱
 - [安信可星闪模组文档](https://docs.ai-thinker.com/nearlink/) - BS21 模组资料

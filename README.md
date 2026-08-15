@@ -31,17 +31,14 @@ flydigi-receiver/
 │   ├── controller-modes.md    # 手柄模式与协议详解
 │   └── history.md             # 项目历史与尝试记录
 ├── wireless/       # 无线接收器
-│   ├── bs21/       # BS21 SLE 接收器代码
-│   └── docs/       # 设计文档 + 实施计划
+│   └── bs21/       # BS21 SLE 接收器代码
 └── AGENTS.md
 ```
 
 ## 开发状态
 
-星闪 SLE 接收器开发中，基于海思官方 fbb_bs2x SDK。
+星闪 SLE 接收器开发中，基于安信可 **Ai-BS21_SDK**（overlay 模式，SLE-only `bs21-n1100-rcu` target，512KB flash）。
 
-- 设计文档：`wireless/docs/2025-08-15-bs21-development-plan.md`
-- 实施计划：`wireless/docs/2025-08-15-bs21-implementation-plan.md`
 - 开发路线图详见 [BS21 开发文档](docs/bs21-development.md)
 
 ## 相关开源项目
@@ -49,5 +46,5 @@ flydigi-receiver/
 - [flydigi-vader5](https://github.com/BANANASJIM/flydigi-vader5) - USB 协议文档
 - [Flydigi5Pico](https://github.com/ruomox/Flydigi5Pico) - RP2350 USB 桥接
 - [openflydigi](https://github.com/mkaliaha/openflydigi) - HID 命令协议逆向
-- [fbb_bs2x SDK](https://gitcode.com/HiSpark/fbb_bs2x) - 海思官方星闪 SDK
+- [Ai-BS21_SDK](https://gitee.com/Ai-Thinker-Open/Ai-BS21_SDK) - 安信可星闪 SDK
 - [ws63flash](https://github.com/goodspeed34/ws63flash) - Linux 烧录工具

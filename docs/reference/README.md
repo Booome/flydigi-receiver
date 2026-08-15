@@ -7,7 +7,6 @@
 ```
 docs/reference/
 ├── ai-thinker/    # 安信可官方（Ai-BS21-32S-Kit 硬件 + Ai-BS21_SDK）
-├── hisilicon/     # 海思官方（fbb_bs2x SDK）
 └── ws63flash/     # 社区烧录工具（逆向 BurnTool 的协议资料）
 ```
 
@@ -22,15 +21,6 @@ docs/reference/
 | `bs21.json` | 安信可 bs21 target 配置（编译目标 `standard-bs21e-1200e`） | 同上 |
 | `bs21-config.py` | 安信可 bs21 target 编译配置（含 `bs21-n1100` 芯片标识、`XO_32M_CALI` 等） | 同上 |
 
-## hisilicon/ — 海思官方（fbb_bs2x）
-
-| 文件 | 说明 | 来源 |
-|------|------|------|
-| `fbb_bs2x-README.md` | fbb_bs2x SDK 说明（芯片规格、目录、购买渠道） | [GitCode](https://gitcode.com/HiSpark/fbb_bs2x) / Gitee 镜像 |
-| `bs21e.json` | fbb_bs2x bs21e target 配置（编译目标 `standard-bs21e-1100e`） | 同上 |
-| `fbb_bs2x-packet.py` | fwpkg 打包入口脚本 | 同上 |
-| `fbb_bs2x-packet_create.py` | fwpkg 格式定义（header 结构、CRC） | 同上 |
-
 ## ws63flash/ — 社区烧录工具（GPLv3）
 
 | 文件 | 说明 | 来源 |
@@ -41,12 +31,6 @@ docs/reference/
 
 ## 关键结论备忘
 
-- **芯片同源**：安信可 "BS21"（Hi2821）与海思 "BS21E"（Hi2821E）为同一颗芯片，硬件版本 **N1100**。证据：fbb_bs2x 的 bs21e target 用 `rom_n1100`，安信可 bs21 target 用 `bs21-n1100`，同一 ROM。fbb_bs2x 的 chip_list 也包含 `bs21`。
-- **fbb_bs2x 支持 BS21 芯片**：通过 bs21e target（`standard-bs21e-1100e`），ROM 即 n1100。
-- **差异在板级配置，非芯片**：
-  - board：fbb_bs2x 默认 `evb`（海思 EVB 参考板），安信可板子不同
-  - 晶振：安信可 bs21 target 有 `XO_32M_CALI`（32M 晶振校准），fbb_bs2x EVB 无此宏
-  - SDK 版本：安信可 `standard-bs21e-1200e`（较新）vs 海思 `standard-bs21e-1100e`（较旧）
-  - 需适配：晶振方案、UART 调试引脚、IO 复用
+- **芯片同源**：安信可 "BS21"（Hi2821）与海思 "BS21E"（Hi2821E）为同一颗芯片，硬件版本 **N1100**，同一 ROM。
 - **fwpkg 格式**：BS2X 与 WS63 一致（magic `0xefbeaddf` + header + bin_info），海思 FBB 框架统一。
 - **烧录协议**：串口烧录帧 `EF BE AD DE` + 命令集（0xf0 握手 / 0x5a 波特率 / 0xd2 下载 / 0x87 复位）。

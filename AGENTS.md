@@ -20,8 +20,9 @@
 Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
 - SLE 1.0 + BLE 5.4 + USB 2.0
 - 双 Type-C：USB1 原生 USB 2.0（HID/CDC），USB2 CH340 串口（烧录/调试）
-- SDK: 海思官方 **fbb_bs2x**（GitCode，Apache-2.0，最活跃）
-- 编译打包纯 Python（`python3 build.py standard-bs21e-1100e`），Linux 原生
+- SDK: 安信可 **Ai-BS21_SDK**（`~/.local/Ai-BS21_SDK`），overlay 模式（SDK 只引用不修改）
+- target: `bs21-n1100-rcu`（SLE-only，512KB flash）
+- 编译：`wireless/bs21/scripts/build.sh`（overlay + 构建 + 收集 fwpkg + 清理）
 - 烧录基于社区 ws63flash 适配（官方 BurnTool 仅 Windows）
 - 开发环境搭建和路线图见 `docs/bs21-development.md`
 
