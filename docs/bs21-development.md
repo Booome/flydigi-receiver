@@ -38,59 +38,111 @@
 
 ## 二、SDK 与开发环境
 
-### 2.1 SDK 选项
+### 2.0 型号对应：BS21 = BS21E
 
-| 方案 | Linux 支持 | 说明 |
-|------|-----------|------|
-| **XFusion** (推荐) | 原生 | 社区构建工具，自动处理 SDK 下载和工具链 |
-| Docker (lualiliu/bs21_sdk) | 原生 | Dev Container 封装完整环境 |
-| Ai-BS21_SDK (官方) | 需适配 | CMake + Python + RISC-V GCC，官方推荐 Windows |
-| HiSilicon fbb_bs2x (官方) | 需适配 | 海思官方 SDK，Gitee 上有 |
+安信可 Ai-BS21-32S-Kit 的芯片编号为 **Hi2821**，安信可称之为 "BS21"。
+海思官方型号名为 **BS21E**（fbb_bs2x 规格表中的 BS21E）。
 
-### 2.2 XFusion 环境搭建（Arch Linux）
+| | Hi2821 (安信可 "BS21") | 海思 BS21E |
+|------|------|------|
+| RAM | 160KB | 160KB |
+| Flash | 1MB | 1MB |
+| SLE | 1.0, 12Mbps | 1.0, 12Mbps |
+| 空口速率 | 12Mbps | 12Mbps |
+
+规格完全一致，为同一颗芯片。fbb_bs2x 的编译目标名是 `standard-bs21e-1100e`。
+
+### 2.1 SDK 选项（2026-08 调研）
+
+| 方案 | Stars | 最后更新 | License | 结论 |
+|------|-------|---------|---------|------|
+| **HiSilicon fbb_bs2x** (推荐) | 44 | 2026-08（活跃） | Apache-2.0 | 海思官方，最活跃，已迁 GitCode |
+| XFusion | 27 | 2025-05（停更） | Apache-2.0 | 社区工具，`ports/pt` submodule 损坏 |
+| Ai-BS21_SDK (安信可) | 12 | 2024-11（停更） | 无 license | 停更，无 license 有法律风险 |
+| Docker (lualiliu/bs21_sdk) | 0 | 2024-12（停更） | 无 license | 几乎无人用 |
+
+**结论：选用海思官方 fbb_bs2x**（Apache-2.0、最活跃、完整文档、免费样片申请）。
+编译和打包（fwpkg）均为纯 Python，Linux 原生可用；烧录基于社区 `ws63flash` 适配（见 2.2.3）。
+
+### 2.2 fbb_bs2x 环境搭建（Linux）
+
+fbb_bs2x 官方文档只提供 Windows（HiSparkStudio）和 WSL 方案，但**编译打包是纯 Python，Linux 原生直接可用**；唯一 Windows 专属的是烧录工具 BurnTool，社区已破解（见 2.2.3）。
+
+#### 2.2.1 获取 SDK
+
+官方仓库已从 Gitee 迁移到 **GitCode**：
 
 ```bash
-# 安装依赖
-sudo pacman -S cmake python python-pip
-
-# 安装 XFusion (参考 https://www.coral-zone.cc/document/zh_CN/)
-pip install pycparser==2.21
-# 按照 XFusion 文档安装 xf 工具
-
-# 激活 BS21 目标
-get_xf bs21
-
-# 下载 SDK
-xf target -d
-
-# 编译
-xf build
-
-# 烧录
-xf flash
+git clone https://gitcode.com/HiSpark/fbb_bs2x.git
 ```
 
-### 2.3 SDK 架构
+> Gitee 上的 `HiSpark/fbb_bs2x` 仍有镜像同步，但 README 明确标注新地址在 GitCode。
 
-| 目录 | 内容 | 开源状态 |
-|------|------|---------|
-| `application/` | 示例代码、demo | 开源 |
-| `include/middleware/services/bts/sle/` | SLE API 头文件 (14个) | 开源 |
-| `protocol/bt/host/gle/` | SLE 协议栈 | 闭源 (libbth_gle.a) |
-| `drivers/` | 驱动库 | 闭源 |
-| `kernel/` | LiteOS 内核 | 闭源 |
+#### 2.2.2 编译（Linux 原生）
 
-SLE API 头文件完整开放，协议栈为预编译静态库。
-
-### 2.4 SLE 角色 Kconfig 配置
-
-本项目需要配置为 **G 节点**（SLE Central）：
-
-```
-CONFIG_SUPPORT_SLE_CENTRAL=y
+```bash
+cd fbb_bs2x/src
+python3 build.py standard-bs21e-1100e     # 增量编译
+python3 build.py -c standard-bs21e-1100e  # 全量编译
 ```
 
-对应协议栈库: `sle-central` 或 `sle-central-release`
+- 依赖：Python 3.8+、cmake、RISC-V 工具链（SDK 自带 `src/tools/bin/compiler`）
+- 产出：`src/output/bs21e/fwpkg/standard-bs21e-1100e_all_in_one.fwpkg`
+- 可选 `menuconfig`：`python3 build.py -c standard-bs21e-1100e menuconfig`
+
+#### 2.2.3 烧录（Linux，基于社区 ws63flash）
+
+官方 BurnTool 仅 Windows（支持命令行 `BurnTool.exe -com:N -bin:xxx.fwpkg -signalbaud:921600`）。
+社区项目 [goodspeed34/ws63flash](https://github.com/goodspeed34/ws63flash)（GPLv3）逆向
+BurnTool 实现了 Linux 原生烧录：
+
+```bash
+# 安装（Linux）
+git clone https://github.com/goodspeed34/ws63flash.git
+cd ws63flash && autoreconf -fi && ./configure && make && sudo make install
+
+# 烧录（CH340 串口，Linux 原生 ch341 驱动）
+ws63flash --flash /dev/ttyUSB0 /path/to/xxx.fwpkg -b921600
+```
+
+**fwpkg 格式**（BS2X 与 WS63 一致，同为海思 FBB 框架，已公开）：
+
+```
+FWPKG_HEAD (12B):  magic=0xefbeaddf + crc16 + imageNum + totalSize
+IMAGE_INFO (52B):  name[32] + offset + imageSize + burnAddr + burnSize + type
+```
+
+ws63flash 已实现 fwpkg 解析（`src/fwpkg.h`，magic `0xefbeaddf` 与 fbb_bs2x 的
+`src/tools/pkg/packet.py` 完全一致）和 WS63 串口烧录协议（帧头 `EF BE AD DE` +
+命令 `0xf0` 握手 / `0x5a` 设波特率 / `0xd2` 下载 / `0x87` 复位）。
+
+**待验证**：ws63flash 当前只支持 WS63，BS21 需适配芯片特定参数（如握手 MAGC 值）。
+`hispark-rs/hisi-flash-algorithm`（probe-rs 方案）已标注 "BS2X planned"，社区在推进。
+
+### 2.3 SDK 架构（fbb_bs2x）
+
+| 目录 | 内容 |
+|------|------|
+| `src/application/` | 示例代码、demo |
+| `src/protocol/` | SLE/BLE 协议栈（含 GLE） |
+| `src/drivers/` | 驱动库 |
+| `src/kernel/` | LiteOS 内核 |
+| `src/tools/pkg/` | fwpkg 打包脚本（纯 Python，开源） |
+| `src/build/` | 构建脚本 + RISC-V 工具链 |
+| `docs/zh-CN/` | 官方文档（开发环境、BurnTool 指导等） |
+
+SLE API 头文件开放，协议栈为预编译静态库（待 SDK 就绪后确认具体路径）。
+
+### 2.4 SLE 角色配置
+
+本项目需要配置为 **G 节点**（SLE Central）。fbb_bs2x 通过 menuconfig 配置：
+
+```bash
+python3 build.py -c standard-bs21e-1100e menuconfig
+```
+
+> 具体 SLE 角色配置项名称待 SDK 就绪后确认（Ai-BS21_SDK 中为
+> `CONFIG_SUPPORT_SLE_CENTRAL=y`，对应协议栈库 `sle-central`，fbb_bs2x 可能一致）。
 
 ## 三、SLE API 快速参考
 
@@ -134,7 +186,7 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 **目标**：确认 BS21 能扫描到手柄的 SLE 广播
 
-- [ ] XFusion 环境搭建 (Arch Linux)
+- [ ] fbb_bs2x 环境搭建（Linux 编译 + ws63flash 烧录）
 - [ ] 两块 BS21 Kit 互相验证 SLE 通信（排除环境问题）
 - [ ] BS21 配置为 G 节点，执行 SLE 扫描
 - [ ] 手柄开机（PC模式），观察扫描结果
@@ -178,39 +230,22 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 ### 备选：如果 SLE 连接失败
 
-1. 拆解原装 dongle，识别 SLE 芯片
-2. 尝试 SWD/JTAG dump dongle 固件
-3. 提取配对密钥和 SLE 地址
-4. 用 BS21 伪装 dongle 身份连接手柄
+不拆解原装 dongle、不做 SWD dump 固件。备选方向：
 
-## 五、与 nRF52840 项目的关系
+1. 手柄切换到蓝牙模式（BR/EDR），用 ESP32 等设备走经典蓝牙 HID 连接
+2. USB 抓包原装 dongle（usbmon），获取应用层 NewXInput 协议（不含 SLE 无线层）
+3. 重新评估手柄 SLE 广播模式与配对机制，尝试其他连接参数
 
-### 5.1 nRF52840 wireless 固件（已完成 M0-M3）
-
-nRF52840 的无线固件（USB CDC + UART + formatter）**不适用于 SLE 通信**，
-但其架构设计可以作为 BS21 项目的参考：
-
-| nRF52840 组件 | BS21 对应 | 复用情况 |
-|--------------|----------|---------|
-| controller_state.h | 直接复用 | 概念相同 |
-| formatter_text/binary | 可参考实现 | BS21 上重新实现 |
-| output_cdc/uart | BS21 USB 2.0 CDC | 重新实现 |
-| main.c sim_update() | 替换为 SLE 接收 | 核心变更 |
-
-### 5.2 nRF52840 Dongle 的新定位
-
-- nRF52840 Dongle 可用于 USB 抓包辅助验证（通过 PC usbmon）
-- nRF52840 radio 不适用于 SLE 通信，暂不使用
-- 保留现有 wireless/ 固件作为输出管道的参考实现
-
-## 六、参考资料
+## 五、参考资料
 
 - [Ai-BS21-32S-Kit 规格书](https://aithinker-static.oss-cn-shenzhen.aliyuncs.com/docs/Specification/Ai-BS21-32S-Kit_V1.1.0_%20Specification_CN.pdf)
-- [Ai-BS21_SDK (GitHub)](https://github.com/Ai-Thinker-Open/Ai-BS21_SDK)
-- [Ai-BS21_SDK (Gitee)](https://gitee.com/Ai-Thinker-Open/Ai-BS21_SDK)
-- [XFusion 文档](https://www.coral-zone.cc/document/zh_CN/get-started/starting_with_bs21.html)
-- [Docker BS21 SDK](https://github.com/lualiliu/bs21_sdk)
-- [海思官方 SDK (fbb_bs2x)](https://gitee.com/HiSpark/fbb_bs2x)
+- [海思官方 SDK fbb_bs2x (GitCode)](https://gitcode.com/HiSpark/fbb_bs2x) — 已从 Gitee 迁移
+- [海思官方 SDK fbb_bs2x (Gitee 镜像)](https://gitee.com/HiSpark/fbb_bs2x)
+- [fbb_bs2x 在线文档](https://docs.hisilicon.com/repos/fbb_bs2x/zh-CN/master/)
+- [ws63flash (Linux 烧录工具)](https://github.com/goodspeed34/ws63flash)
+- [hisi-flash-algorithm (probe-rs 烧录)](https://github.com/hispark-rs/hisi-flash-algorithm)
+- [Ai-BS21_SDK (安信可，已停更)](https://github.com/Ai-Thinker-Open/Ai-BS21_SDK)
+- [XFusion (社区，已停更)](https://github.com/x-eks-fusion/xfusion)
 - [安信可星闪模组文档](https://docs.ai-thinker.com/sle-bs21/)
 - [NearLink ToolBox](https://nearlink.docs.haohanyh.ovh/)
 - [海思星闪技术介绍](https://www.hisilicon.com/cn/techtalk/nearlink/introduction)

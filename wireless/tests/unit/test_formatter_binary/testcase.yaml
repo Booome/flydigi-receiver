@@ -1,9 +1,0 @@
-tests:
-  ble_receiver.test_formatter_binary:
-    platform_allow:
-      - native_sim
-    integration_platforms:
-      - native_sim
-    tags:
-      - formatter
-      - unit

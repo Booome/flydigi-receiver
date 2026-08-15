@@ -5,9 +5,9 @@
 基于 Ai-BS21-32S-Kit（2块）开发飞智八爪鱼5 星闪 SLE 无线接收器。
 采用"先验证后构建"策略：先确认 BS21 能与手柄通信，再构建完整功能。
 
-- **SDK**: XFusion（原生 Linux 支持）
+- **SDK**: 海思官方 fbb_bs2x（GitCode，Apache-2.0，最活跃）；编译打包纯 Python，Linux 原生；烧录基于社区 ws63flash 适配
 - **输出**: 先 CDC 串口，后 USB HID 手柄
-- **代码复用**: 复用 nRF52840 `controller_state.h` 数据结构，BS21 端重新实现 formatter
+- **代码复用**: 使用项目已有的 `controller_state.h` 数据结构定义，formatter 在 BS21 端重新实现
 - **双板分工**: 一块做接收器（主路径），另一块做基础测试
 - **主路径**: 用实际手柄开发，不拆卸原装 dongle
 
@@ -30,23 +30,23 @@
 
 > 成功标准：两块 BS21 板能通过 SLE 连接、配对、收发数据。
 
-### P0.1 XFusion 环境
+### P0.1 fbb_bs2x 环境
 
 | 任务 | 内容 | 预计 |
 |------|------|------|
-| P0.1.1 | 安装 cmake、python、pip 等系统依赖 | 5min |
-| P0.1.2 | 安装 pycparser==2.21 | 5min |
-| P0.1.3 | 安装 XFusion 工具链 (`get_xf bs21`) | 10min |
-| P0.1.4 | 下载 BS21 SDK (`xf target -d`) | 10min |
+| P0.1.1 | 安装系统依赖：cmake、python3（3.8+）、autoconf/automake/gcc/make | 5min |
+| P0.1.2 | 克隆 fbb_bs2x SDK（GitCode） | 10min |
+| P0.1.3 | 编译验证（`python3 build.py standard-bs21e-1100e`） | 15min |
+| P0.1.4 | 构建 ws63flash，验证 CH340 串口识别（Linux 原生 ch341 驱动） | 15min |
 
-### P0.2 Hello World
+### P0.2 Hello World（fbb_bs2x 示例）
 
 | 任务 | 内容 | 预计 |
 |------|------|------|
-| P0.2.1 | 创建 hello 项目，配置 Kconfig（UART 输出） | 10min |
-| P0.2.2 | 编译 (`xf build`) | 5min |
-| P0.2.3 | 烧录到 BS21 板 (`xf flash`)，USB2 CH340 串口接 PC | 10min |
-| P0.2.4 | 验证串口输出 "Hello World"，确认工具链完整 | 5min |
+| P0.2.1 | 启用 SDK 示例（如 BLINKY sample，menuconfig） | 10min |
+| P0.2.2 | 编译（`python3 build.py standard-bs21e-1100e`） | 5min |
+| P0.2.3 | 烧录到 BS21 板（`ws63flash --flash /dev/ttyUSB0 xxx.fwpkg -b921600`），USB2 CH340 串口接 PC | 10min |
+| P0.2.4 | 验证串口输出，确认工具链完整 | 5min |
 
 ### P0.3 双板 SLE 互验
 
@@ -116,7 +116,7 @@
 
 | 任务 | 内容 | 预计 |
 |------|------|------|
-| P2.3.1 | 从 nRF52840 `wireless/` 复制 `controller_state.h` 到 BS21 项目 | 5min |
+| P2.3.1 | 确认项目已有 `controller_state.h`（`wireless/bs21/src/`），按需调整 | 5min |
 | P2.3.2 | 根据 P2.2 的映射结果，调整字段偏移（如果 SLE 端与 USB 端有差异） | 10min |
 | P2.3.3 | 编写 `sle_parser.c`：原始字节 → `controller_state` 结构体 | 15min |
 
@@ -136,7 +136,7 @@
 
 | 任务 | 内容 | 预计 |
 |------|------|------|
-| P3.2.1 | 参考 nRF52840 `formatter_text.c`，在 BS21 上重新实现文本格式化 | 20min |
+| P3.2.1 | 在 BS21 上实现文本格式化（参考历史 formatter 设计） | 20min |
 | P3.2.2 | 格式化输出：每帧一行，包含时间戳、按键位图、摇杆坐标、扳机值 | 10min |
 | P3.2.3 | 连接手柄，验证 CDC 输出与手柄操作一致 | 10min |
 
@@ -144,9 +144,9 @@
 
 | 任务 | 内容 | 预计 |
 |------|------|------|
-| P3.3.1 | 参考 nRF52840 `formatter_binary.c`，在 BS21 上重新实现二进制帧格式 | 15min |
+| P3.3.1 | 在 BS21 上实现二进制帧格式（参考历史 formatter 设计） | 15min |
 | P3.3.2 | 定义帧格式：`[magic:2B][len:2B][seq:1B][controller_state:N][crc:2B]` | 10min |
-| P3.3.3 | 复用 nRF52840 的 Python 二进制解析脚本，适配 BS21 帧格式 | 10min |
+| P3.3.3 | 编写 Python 二进制解析脚本，适配 BS21 帧格式 | 10min |
 | P3.3.4 | 端到端验证：手柄 → BS21 SLE → CDC 二进制 → Python 脚本 → 人类可读输出 | 15min |
 
 ## P4: USB HID 输出
@@ -195,28 +195,37 @@
 
 ## 代码结构（目标）
 
+fbb_bs2x 为海思官方 SDK，开发模式为**在 SDK 源码树内改代码编译**（非独立应用项目）。
+接收器代码作为 SDK 内的一个 application target。具体目录布局待 P0 环境搭建后确定，
+组件职责不变：
+
 ```
-wireless/bs21/
-├── CMakeLists.txt
-├── prj.conf              # Kconfig
-├── src/
-│   ├── main.c            # 主循环
-│   ├── sle_manager.c/h   # SLE 扫描/连接/配对
-│   ├── sle_parser.c/h    # 原始字节 → controller_state
-│   ├── controller_state.h # 从 nRF52840 复用
-│   ├── formatter_text.c/h  # 文本格式化
-│   ├── formatter_binary.c/h # 二进制格式化
-│   ├── hid_mapper.c/h    # controller_state → HID 报告
-│   └── usb_cdc.c/h       # USB CDC 输出
-├── scripts/
-│   └── parse_binary.py   # PC 端二进制解析
-└── tests/
-    └── test_parser.c     # 单元测试
+fbb_bs2x/src/                    # SDK 源码树
+└── application/bs21_receiver/   # 我们的接收器 target（待定）
+    ├── main.c                   # 主循环
+    ├── sle_manager.c/h          # SLE 扫描/连接/配对
+    ├── sle_parser.c/h           # 原始字节 → controller_state
+    ├── controller_state.h       # 项目已有数据结构定义
+    ├── formatter_text.c/h       # 文本格式化
+    ├── formatter_binary.c/h     # 二进制格式化
+    ├── hid_mapper.c/h           # controller_state → HID 报告
+    └── usb_cdc.c/h              # USB CDC 输出
+
+wireless/bs21/scripts/           # 仓库内保留 PC 端工具
+└── parse_binary.py              # PC 端二进制解析
+
+wireless/bs21/tests/             # 仓库内保留单元测试
+└── test_parser.c                # sle_parser 单元测试
 ```
+
+> 注：之前基于 XFusion 独立项目（`wireless/bs21/CMakeLists.txt` + `prj.conf`）的
+> 骨架代码（SDD Task 1-4）已不适用，需按 fbb_bs2x 模式重写（见实施计划）。
 
 ## 参考资料
 
 - `docs/sle-analysis.md` - SLE 协议分析
-- `docs/bs21-development.md` - BS21 开发板、SDK 与开发路线图
+- `docs/bs21-development.md` - BS21 开发板、SDK 与开发路线图（含选型调研与 Linux 烧录方案）
 - `docs/controller-modes.md` - 手柄模式与协议详解
-- nRF52840 `wireless/firmware/` - 现有实现参考
+- `docs/history.md` - 项目历史与尝试记录
+- [fbb_bs2x SDK (GitCode)](https://gitcode.com/HiSpark/fbb_bs2x)
+- [ws63flash (Linux 烧录)](https://github.com/goodspeed34/ws63flash)

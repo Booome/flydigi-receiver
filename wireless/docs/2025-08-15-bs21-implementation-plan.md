@@ -6,17 +6,23 @@
 
 **Architecture:** 验证层（P0 环境搭建 + P1 手柄连通性验证）先确认可行性，构建层（P2 协议解析 + P3 CDC 输出 + P4 USB HID 输出）逐步构建完整功能。P1 是关键决策点，连接失败则项目终止。
 
-**Tech Stack:** XFusion 构建工具, BS21 SDK (Hi2821), C, RISC-V GCC, Python 3 (解析脚本)
+**Tech Stack:** 海思 fbb_bs2x SDK (Hi2821/BS21E), C, RISC-V GCC, Python 3 (构建/解析脚本), ws63flash (烧录)
 
 ## Global Constraints
 
-- XFusion 构建工具，命令为 `xf build` / `xf flash`
+- SDK 为海思官方 **fbb_bs2x**（GitCode），开发模式为在 SDK 源码树内改代码编译
+- 编译命令 `python3 build.py standard-bs21e-1100e`（在 `fbb_bs2x/src` 目录下）
+- 烧录命令 `ws63flash --flash /dev/ttyUSB0 xxx.fwpkg -b921600`（官方 BurnTool 仅 Windows）
 - 主路径用实际手柄开发，不拆卸原装 dongle
-- 复用 nRF52840 `wireless/firmware/src/controller_state.h` 数据结构，不修改
+- 使用项目已有的 `controller_state.h` 数据结构（定义于 `wireless/bs21/src/`），不修改
 - P1 失败则项目终止，不进入 P2-P4
 - 所有串口输出通过 USB2 (CH340) 调试串口
 - 所有代码注释使用英文
-- Task 5 和 Task 16 需要查阅 BS21 SDK 头文件获取确切 API 名称，计划中提供了期望的接口签名和实现模式
+- Task 5 和 Task 16 需要查阅 fbb_bs2x SDK 头文件获取确切 API 名称，计划中提供了期望的接口签名和实现模式
+
+> **选型变更说明（2026-08）**：本计划最初基于 XFusion 编写，现改为海思官方 fbb_bs2x。
+> 原 Task 1-4 创建独立项目骨架（`wireless/bs21/CMakeLists.txt` + `prj.conf`）的假设已不适用，
+> 接收器代码作为 fbb_bs2x SDK 内的 application target。Task 1-7 已按 fbb_bs2x 模式重写。
 
 ---
 
@@ -76,7 +82,7 @@ int main(void)
 - [ ] **Step 5: 编译验证**
 
 ```bash
-cd wireless/bs21 && xf build
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e
 ```
 
 Expected: 编译成功，无错误。
@@ -84,7 +90,7 @@ Expected: 编译成功，无错误。
 - [ ] **Step 6: 烧录验证**
 
 ```bash
-xf flash
+ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 Expected: 烧录成功，USB2 串口输出 "BS21 Receiver starting..."
@@ -98,20 +104,56 @@ git commit -m "feat: add BS21 project skeleton"
 
 ---
 
-### Task 2: 复制 controller_state.h
+### Task 2: 定义 controller_state.h
 
 **Files:**
 - Create: `wireless/bs21/src/controller_state.h`
-- Reference: `wireless/firmware/src/controller_state.h`
 
 **Interfaces:**
-- Produces: `controller_state` 结构体，与 nRF52840 定义一致
+- Produces: `controller_state` 结构体（平台无关，无 Zephyr 依赖）
 
-- [ ] **Step 1: 确认源文件存在并复制**
+- [ ] **Step 1: 创建 controller_state.h**
 
-```bash
-ls wireless/firmware/src/controller_state.h
-cp wireless/firmware/src/controller_state.h wireless/bs21/src/controller_state.h
+```c
+// wireless/bs21/src/controller_state.h
+#ifndef CONTROLLER_STATE_H
+#define CONTROLLER_STATE_H
+
+#include <stdint.h>
+
+#define BIT(n) (1UL << (n))
+
+/* Button bitmask definitions */
+#define BTN_A       BIT(0)
+#define BTN_B       BIT(1)
+#define BTN_X       BIT(2)
+#define BTN_Y       BIT(3)
+#define BTN_LB      BIT(4)
+#define BTN_RB      BIT(5)
+#define BTN_BACK    BIT(6)
+#define BTN_START   BIT(7)
+#define BTN_GUIDE   BIT(8)
+#define BTN_L3      BIT(9)
+#define BTN_R3      BIT(10)
+#define BTN_DUP     BIT(11)
+#define BTN_DDOWN   BIT(12)
+#define BTN_DLEFT   BIT(13)
+#define BTN_DRIGHT  BIT(14)
+/* bit 15 reserved */
+
+/* Structured controller state - standard interface between layers */
+struct controller_state {
+    uint16_t buttons;      /* Button bitmask (see BTN_* above) */
+    uint8_t  lt;           /* Left trigger  0-255 */
+    uint8_t  rt;           /* Right trigger 0-255 */
+    int16_t  lx;           /* Left stick X  -32768 ~ 32767 */
+    int16_t  ly;           /* Left stick Y */
+    int16_t  rx;           /* Right stick X */
+    int16_t  ry;           /* Right stick Y */
+    uint8_t  battery;      /* Battery level 0-100 */
+};
+
+#endif /* CONTROLLER_STATE_H */
 ```
 
 - [ ] **Step 2: 在 main.c 中添加 include 验证**
@@ -123,7 +165,7 @@ cp wireless/firmware/src/controller_state.h wireless/bs21/src/controller_state.h
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd wireless/bs21 && xf build
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e
 ```
 
 Expected: 编译成功，controller_state.h 无依赖问题。
@@ -132,14 +174,14 @@ Expected: 编译成功，controller_state.h 无依赖问题。
 
 ```bash
 git add wireless/bs21/src/controller_state.h wireless/bs21/src/main.c
-git commit -m "feat: add controller_state.h (copied from nRF52840)"
+git commit -m "feat: add controller_state data structure"
 ```
 
 ---
 
 ### Task 3: P0.3 - 双板 SLE 互验（板A T 节点广播）
 
-**前提**: P0.1 XFusion 环境已完成，P0.2 Hello World 已验证。
+**前提**: P0.1 fbb_bs2x 环境已完成，P0.2 Hello World 已验证。
 
 **Files:**
 - Modify: `wireless/bs21/prj.conf`
@@ -285,7 +327,7 @@ int main(void)
 - [ ] **Step 5: 编译并烧录板A**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 Expected: 串口输出 "BS21 T-Node (Announce)" 和 "[SLE] announce started"。
@@ -346,7 +388,7 @@ int main(void)
 - [ ] **Step 2: 编译并烧录板B**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 - [ ] **Step 3: 串口观察扫描结果**
@@ -377,9 +419,9 @@ git commit -m "feat: add G-node seek main with scan callback"
 - [ ] **Step 1: 查阅 SDK SLE 头文件**
 
 ```bash
-find ~/.xfusion/ -path "*/sle/*.h" | head -20
-cat ~/.xfusion/.../sle_device_manager.h
-cat ~/.xfusion/.../sle_ssap.h
+find ~/fbb_bs2x/ -path "*/sle/*.h" | head -20
+cat ~/fbb_bs2x/.../sle_device_manager.h
+cat ~/fbb_bs2x/.../sle_ssap.h
 ```
 
 - [ ] **Step 2: 替换 sle_init() 为真实实现**
@@ -409,7 +451,7 @@ cat ~/.xfusion/.../sle_ssap.h
 - [ ] **Step 6: 板A 编译烧录，验证广播**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 Expected: 板A 串口输出确认 SLE 广播已启动。
@@ -419,7 +461,7 @@ Expected: 板A 串口输出确认 SLE 广播已启动。
 修改 main.c 为 G 节点版本，编译烧录：
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 Expected: 板B 扫描到板A，输出板A 的 SLE 地址和广播数据。
@@ -472,7 +514,7 @@ sle_set_connect_callback(on_connect_state);
 - [ ] **Step 4: 编译烧录板B，验证连接**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 Expected: 板B 串口输出 `[CONN]` 回调，连接状态为已连接。
@@ -611,7 +653,7 @@ git commit -m "feat: add SLE pairing and SSAP ping/pong"
 - [ ] **Step 3: 编译烧录板B，执行扫描**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 - [ ] **Step 4: 观察串口输出，筛选手柄设备**
@@ -666,7 +708,7 @@ static void on_scan_result(const sle_scan_result_t *result)
 - [ ] **Step 2: 编译烧录，观察连接回调**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 - [ ] **Step 3: 记录连接状态**
@@ -702,7 +744,7 @@ git commit -m "feat: connect to controller by hardcoded SLE address"
 - [ ] **Step 2: 编译烧录，观察配对回调**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 - [ ] **Step 3: 记录配对结果**
@@ -817,7 +859,7 @@ sle_send(conn_id, init_seq, sizeof(init_seq));
 - [ ] **Step 4: 编译烧录，观察手柄响应**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 - [ ] **Step 5: 提交**
@@ -917,7 +959,7 @@ static void print_controller_state(const controller_state *state)
 - [ ] **Step 6: 编译烧录，验证解析结果与手柄操作一致**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 移动摇杆、按下按键，确认串口输出正确反映操作。
@@ -1007,7 +1049,7 @@ parse_result_t sle_parse_frame(const uint8_t *data, uint16_t len,
 - [ ] **Step 4: 编译烧录，验证扩展报告（IMU 数据）**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 移动手柄，确认陀螺仪/加速度计数据有变化。
@@ -1156,7 +1198,7 @@ git commit -m "test: add sle_parser unit tests"
 - [ ] **Step 1: 查阅 BS21 SDK USB CDC 示例**
 
 ```bash
-find ~/.xfusion/ -path "*/usb/cdc*" -name "*.c" | head -5
+find ~/fbb_bs2x/ -path "*/usb/cdc*" -name "*.c" | head -5
 ```
 
 - [ ] **Step 2: 创建 usb_cdc.h 接口**
@@ -1211,7 +1253,7 @@ CONFIG_USB_CDC_ACM=y
 - [ ] **Step 5: 编译烧录，验证 USB 设备出现**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 USB1 接 PC，验证 `/dev/ttyACM*` 出现。
@@ -1235,7 +1277,7 @@ git commit -m "feat: add USB CDC skeleton"
 - [ ] **Step 1: 查阅 SDK USB CDC API**
 
 ```bash
-cat ~/.xfusion/.../usb_cdc_acm.h
+cat ~/fbb_bs2x/.../usb_cdc_acm.h
 ```
 
 - [ ] **Step 2: 替换 cdc_init() 为真实实现**
@@ -1252,7 +1294,7 @@ cat ~/.xfusion/.../usb_cdc_acm.h
 - [ ] **Step 4: 编译烧录，串口工具连接验证**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 用 `screen /dev/ttyACM0 115200` 或 `minicom` 连接，验证能收发数据。
@@ -1345,7 +1387,7 @@ int main(void)
 - [ ] **Step 5: 编译烧录，端到端验证**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 手柄操作 → CDC 输出文本行，确认按键/摇杆/扳机正确。
@@ -1432,7 +1474,7 @@ uint16_t format_binary(const controller_state *state, uint8_t *buf, uint16_t buf
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd wireless/bs21 && xf build
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e
 ```
 
 - [ ] **Step 4: 提交**
@@ -1588,7 +1630,7 @@ git commit -m "feat: add PC-side Python binary frame parser"
 - [ ] **Step 1: 查阅 BS21 SDK USB HID 示例**
 
 ```bash
-find ~/.xfusion/ -path "*/usb/hid*" -name "*.c" | head -5
+find ~/fbb_bs2x/ -path "*/usb/hid*" -name "*.c" | head -5
 ```
 
 - [ ] **Step 2: 创建 hid_mapper.h 接口**
@@ -1675,7 +1717,7 @@ CONFIG_USB_HID_DEVICE=y
 - [ ] **Step 5: 编译烧录，验证设备识别**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 USB1 接 PC，验证 `lsusb` 或设备管理器显示 "Xbox 360 Controller"。
@@ -1771,7 +1813,7 @@ static const uint8_t xbox_report_descriptor[] = {
 - [ ] **Step 3: 编译烧录，验证 `jstest` 输出**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 jstest /dev/input/js0
 ```
 
@@ -1811,7 +1853,7 @@ static void on_data_received(uint8_t conn_id, const uint8_t *data, uint16_t len)
 - [ ] **Step 2: 编译烧录，验证游戏功能**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 - [ ] **Step 3: 提交**
@@ -1856,7 +1898,7 @@ static void on_hid_output(const uint8_t *data, uint16_t len)
 - [ ] **Step 3: 编译烧录，测试震动**
 
 ```bash
-cd wireless/bs21 && xf build && xf flash
+cd ~/fbb_bs2x/src && python3 build.py standard-bs21e-1100e && ws63flash --flash /dev/ttyUSB0 standard-bs21e-1100e_all_in_one.fwpkg -b921600
 ```
 
 使用 `fftest /dev/input/eventX` 或游戏测试震动反馈。
@@ -1924,7 +1966,7 @@ git commit -m "test: add end-to-end test script"
 | Task | 阶段 | 内容 | 预计 |
 |------|------|------|------|
 | 1 | P0.1 | 创建项目骨架 + Hello World | 30min |
-| 2 | P0.2 | 复制 controller_state.h | 10min |
+| 2 | P0.2 | 定义 controller_state.h | 10min |
 | 3 | P0.3 | 双板互验：T 节点广播 | 25min |
 | 4 | P0.3 | 双板互验：G 节点扫描 | 15min |
 | 5 | P0.3 | 接入真实 SLE SDK API | 30min |
