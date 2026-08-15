@@ -1,0 +1,45 @@
+/* Temporary stubs for BLE sapi symbols left referenced by the rcu (SLE-only)
+ * libbth_sdk.a but removed from libbt_host.a. These are never called in
+ * SLE-only builds; they only exist to satisfy the linker. */
+#include <stdint.h>
+
+typedef uint32_t errcode_t;
+
+#define STUB(name) errcode_t name(void) { return 1; }
+
+STUB(sapi_ble_add_white_list)
+STUB(sapi_ble_clean_product_type)
+STUB(sapi_ble_connect_white_list)
+STUB(sapi_ble_conn_peer)
+STUB(sapi_ble_disable)
+STUB(sapi_ble_disconnect_link)
+STUB(sapi_ble_enable)
+STUB(sapi_ble_gatt_mtu_config)
+STUB(sapi_ble_get_white_list)
+STUB(sapi_ble_hci_general)
+STUB(sapi_ble_hid_keyboard_input)
+STUB(sapi_ble_l2cap_channel_tx)
+STUB(sapi_ble_l2cap_conn_req)
+STUB(sapi_ble_l2cap_credit_channel_flow_control)
+STUB(sapi_ble_l2cap_credit_conn_req)
+STUB(sapi_ble_l2cap_credit_conn_rsp)
+STUB(sapi_ble_l2cap_reg_psm)
+STUB(sapi_ble_l2cap_unreg_psm)
+STUB(sapi_ble_low_latency_set_em_data)
+STUB(sapi_ble_read_rssi)
+STUB(sapi_ble_recover_product_type)
+STUB(sapi_ble_recover_smp_keys)
+STUB(sapi_ble_recover_sys_config)
+STUB(sapi_ble_rmv_white_list)
+STUB(sapi_ble_set_connect_rssi)
+STUB(sapi_ble_set_data_length)
+STUB(sapi_ble_set_hci_link_key)
+STUB(sapi_ble_set_local_addr)
+STUB(sapi_ble_set_local_apperance)
+STUB(sapi_ble_set_local_name)
+STUB(sapi_ble_set_phy)
+STUB(sapi_ble_set_sec_params)
+STUB(sapi_ble_smp_pair_remote_device)
+STUB(sapi_ble_smp_passkey_number)
+STUB(sapi_ble_smp_remove_pair_info)
+STUB(sapi_ble_update_connect_params)
