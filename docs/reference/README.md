@@ -41,6 +41,12 @@ docs/reference/
 
 ## 关键结论备忘
 
-- **芯片型号对应**：安信可 "BS21"（Hi2821）= 海思 "BS21E"（Hi2821E），规格一致（160KB RAM / 1MB Flash / 12Mbps / SLE 1.0）。但安信可 SDK 芯片标识为 `bs21-n1100`，海思为 `bs21e`，版本号不同（安信可 `standard-bs21e-1200e` vs 海思 `standard-bs21e-1100e`），**存在差异需验证**。
+- **芯片同源**：安信可 "BS21"（Hi2821）与海思 "BS21E"（Hi2821E）为同一颗芯片，硬件版本 **N1100**。证据：fbb_bs2x 的 bs21e target 用 `rom_n1100`，安信可 bs21 target 用 `bs21-n1100`，同一 ROM。fbb_bs2x 的 chip_list 也包含 `bs21`。
+- **fbb_bs2x 支持 BS21 芯片**：通过 bs21e target（`standard-bs21e-1100e`），ROM 即 n1100。
+- **差异在板级配置，非芯片**：
+  - board：fbb_bs2x 默认 `evb`（海思 EVB 参考板），安信可板子不同
+  - 晶振：安信可 bs21 target 有 `XO_32M_CALI`（32M 晶振校准），fbb_bs2x EVB 无此宏
+  - SDK 版本：安信可 `standard-bs21e-1200e`（较新）vs 海思 `standard-bs21e-1100e`（较旧）
+  - 需适配：晶振方案、UART 调试引脚、IO 复用
 - **fwpkg 格式**：BS2X 与 WS63 一致（magic `0xefbeaddf` + header + bin_info），海思 FBB 框架统一。
 - **烧录协议**：串口烧录帧 `EF BE AD DE` + 命令集（0xf0 握手 / 0x5a 波特率 / 0xd2 下载 / 0x87 复位）。
