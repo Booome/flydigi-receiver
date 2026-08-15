@@ -142,10 +142,11 @@
 | `bs21_all_nv.bin` | 4096 B | 0x9017e000 | NV 区（校准值/MAC 等）|
 
 **结论**：
-1. "SDK 使能固件"就是一个**完整的 fwpkg**（boot 链 + 应用 + NV），作用是让模组从出厂状态进入"可跑 SDK 应用"状态。
-2. fbb_bs2x 编译的 `all_in_one.fwpkg` 结构相同（也含 loaderboot/flashboot/partition/app/nv），**可完整替代它，不是硬性前置**。
-3. **晶振校准值（ctrim）存储在 efuse（OTP 一次性熔丝）**，非 flash NV 区。依据 `clock_calibration.c`：`calibration_save_xo_core_ctrim()` 用 `uapi_efuse_write_buffer(XO_CORE_CTRIM, ...)` 写 efuse，`calibration_read_xo_core_ctrim()` 用 `uapi_efuse_read_buffer(...)` 读 efuse。烧录 fwpkg 只写外部 flash，**不碰 efuse，校准值不会丢失**。
-4. flash NV 区（`bs21_all_nv.bin`）是通用出厂模板（所有板子同一份），即使被覆盖，从 `init_sdk_fw.fwpkg` 提取烧回即可恢复，无独特数据。
-5. 真正要做的适配：fbb_bs2x 默认 EVB target 未启用 `XO_32M_CALI`，需启用该宏让固件读 efuse 校准值（否则固件用默认值，晶振不校准）。
+1. "SDK 使能固件"就是一个**完整的 fwpkg**（boot 链 + 应用 + NV），作用是让模组从出厂状态进入"可跑 SDK 应用"状态，同时作为安信可的**出厂验证固件**（证明板子硬件正常）。
+2. fbb_bs2x 编译的 `all_in_one.fwpkg` 结构相同（也含 loaderboot/flashboot/partition/app/nv），**可完整替代它，不是硬性前置**——直接烧 `all_in_one.fwpkg` 即可，无需先烧 init_sdk_fw。
+3. init_sdk_fw 的实用价值仅是**作为"已知良好"基线验证烧录工具链**：先烧它确认"工具 + 硬件"正常，再烧自制固件时若失败即可锁定问题在固件适配。实测已完成此验证（2026-08-15，ws63flash + 460800 烧录成功，板子启动输出 test1）。
+4. **晶振校准值（ctrim）存储在 efuse（OTP 一次性熔丝）**，非 flash NV 区。依据 `clock_calibration.c`：`calibration_save_xo_core_ctrim()` 用 `uapi_efuse_write_buffer(XO_CORE_CTRIM, ...)` 写 efuse，`calibration_read_xo_core_ctrim()` 用 `uapi_efuse_read_buffer(...)` 读 efuse。烧录 fwpkg 只写外部 flash，**不碰 efuse，校准值不会丢失**。
+5. flash NV 区（`bs21_all_nv.bin`）是通用出厂模板（所有板子同一份），即使被覆盖，从 `init_sdk_fw.fwpkg` 提取烧回即可恢复，无独特数据。
+6. 真正要做的适配：fbb_bs2x 默认 EVB target 未启用 `XO_32M_CALI`，需启用该宏让固件读 efuse 校准值（否则固件用默认值，晶振不校准）。
 
 > 下一步（环境就绪后）：在 fbb_bs2x 的 bs21e target 上补 `XO_32M_CALI`，对比并改 UART/pinctrl 板级配置。每处改动均以上述依据文件为准。
