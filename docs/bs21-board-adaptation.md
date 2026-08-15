@@ -124,5 +124,27 @@
 | 3 | board | fbb_bs2x 默认 evb，需改为安信可板级配置 | 高 |
 | 4 | SDK 版本 | 1100e vs 1200e，功能差异非芯片差异 | 高 |
 | 5 | UART 引脚 | 安信可用 UART0(GPIO19/20)，海思侧待查 | 中 |
+| 6 | SDK 使能固件 | 完整 fwpkg，非硬性前置，NV 校准值是风险点 | 高（见下） |
+
+## 附录：安信可"SDK 使能固件"调研
+
+**文件**：`docs/reference/ai-thinker/init_sdk_fw.fwpkg`（已入库，magic `0xefbeaddf`）
+
+**解析结果**（6 个镜像）：
+
+| 镜像 | 大小 | 烧录地址 | 作用 |
+|------|------|---------|------|
+| `loaderboot_sign.bin` | 25120 B | 0x0 | 一级加载器 |
+| `partition.bin` | 1024 B | 0x90100000 | flash 分区表 |
+| `flashboot_sign_a.bin` | 37952 B | 0x90101000 | 二级 bootloader A |
+| `flashboot_sign_b.bin` | 37952 B | 0x9010b000 | 二级 bootloader B（备份）|
+| `application_sign.bin` | 413792 B | 0x90115000 | 应用 |
+| `bs21_all_nv.bin` | 4096 B | 0x9017e000 | NV 区（校准值/MAC 等）|
+
+**结论**：
+1. "SDK 使能固件"就是一个**完整的 fwpkg**（boot 链 + 应用 + NV），作用是让模组从出厂状态进入"可跑 SDK 应用"状态。
+2. fbb_bs2x 编译的 `all_in_one.fwpkg` 结构相同（也含 loaderboot/flashboot/partition/app/nv），**可完整替代它，不是硬性前置**。
+3. **实质风险在 NV 区**（`bs21_all_nv.bin`）：安信可模组出厂在 NV/efuse 里写了晶振校准值（ctrim）、MAC 地址等。fbb_bs2x 默认 NV 配置（`nv_cfg: bs21e_nv_default`）缺安信可板子的校准值。
+4. 晶振校准有兜底：`clock_calibration.c` 中 `calibration_xo_core_ctrim_init()` 依次读 flash → efuse，都为 0 时用 `XO_CTRIM_VALUE_DEFAULT`。但晶振偏差对 2.4GHz SLE 射频敏感，**建议适配时优先保留安信可 NV 区，或补写校准值**。
 
 > 下一步（环境就绪后）：在 fbb_bs2x 的 bs21e target 上补 `XO_32M_CALI`，对比并改 UART/pinctrl 板级配置。每处改动均以上述依据文件为准。
