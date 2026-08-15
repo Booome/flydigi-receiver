@@ -1,5 +1,4 @@
 #include "soc_osal.h"
-#include "app_init.h"
 
 static void *hello_task(const char *arg)
 {
@@ -20,5 +19,3 @@ void axk_main(void)
     }
     osal_kthread_unlock();
 }
-
-app_run(axk_main);
