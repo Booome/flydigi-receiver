@@ -14,6 +14,9 @@ endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 set(ENV{PYTHONDONTWRITEBYTECODE} "1")
+# build-time scripts are launched by make and do not inherit the env above,
+# so wrap the interpreter to keep the SDK tree free of __pycache__ writes.
+set(Python3_EXECUTABLE "${CMAKE_COMMAND}" "-E" "env" "PYTHONDONTWRITEBYTECODE=1" "${Python3_EXECUTABLE}")
 
 set(CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/sdk-config.cmake")
 execute_process(
@@ -25,6 +28,15 @@ if(NOT gen_result EQUAL 0)
 endif()
 include(${CONFIG_FILE})
 
+set(ROOT_DIR "${SDK_ROOT}")
+set(CMAKE_DIR "${SDK_ROOT}/build/cmake")
+set(BIN_DIR "${SDK_ROOT}/interim_binary")
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/toolchain.cmake")
+set(PKG_TARGET_NAME ${BS21_TARGET})
+string(REPLACE "-" "_" BUILD_TARGET_NAME ${BS21_TARGET})
+list(APPEND RAM_COMPONENT rom_callback)
+set(BUILD_ROM_CALLBACK False)
+
 include(${SDK_ROOT}/build/cmake/build_function.cmake)
 include(${SDK_ROOT}/build/cmake/global_variable.cmake)
 include(${SDK_ROOT}/build/cmake/build_script.cmake)
@@ -34,6 +46,8 @@ include(${SDK_ROOT}/build/cmake/build_component.cmake)
 include(${SDK_ROOT}/build/cmake/build_sdk.cmake)
 
 project(${CHIP}_CFBB C ASM CXX)
+set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "")
+file(REMOVE ${CMAKE_BINARY_DIR}/auto_gen_libfunc.lds)
 
 set(TARGET_COMPONENT "${RAM_COMPONENT}" "${ROM_COMPONENT}")
 set(TARGET_NAME ${BIN_NAME})
@@ -41,6 +55,11 @@ file(WRITE ${PROJECT_BINARY_DIR}/temp/__null___.c "int __null___(void) {return 0
 add_executable(${BIN_NAME} ${PROJECT_BINARY_DIR}/temp/__null___.c)
 set_target_properties(${BIN_NAME} PROPERTIES RUNTIME_OUTPUT_NAME ${BIN_NAME}.elf)
 target_compile_options(${BIN_NAME} PRIVATE "${CCFLAGS}")
+
+include(${SDK_ROOT}/build/cmake/build_rom_callback.cmake)
+if(${BUILD_ROM_CALLBACK})
+    build_rom_callback()
+endif()
 
 string(REPLACE "-" "_" BS21_TARGET_CFG ${BS21_TARGET})
 execute_process(
@@ -67,8 +86,55 @@ add_subdirectory(${SDK_ROOT}/open_source ${CMAKE_BINARY_DIR}/sdk/open_source)
 add_subdirectory(app)
 add_subdirectory(sdk-compat)
 
+add_path_with_alias_if_exist(${SDK_ROOT}/protocol sdk/protocol)
+add_path_with_alias_if_exist(${SDK_ROOT}/test sdk/test)
+add_path_with_alias_if_exist(${SDK_ROOT}/include sdk/include)
+add_path_with_alias_if_exist(${SDK_ROOT}/vendor sdk/vendor)
+
+include(${SDK_ROOT}/build/cmake/open_source.cmake)
+include(${SDK_ROOT}/build/cmake/build_linker.cmake)
+
+if (NOT DEFINED ROM_COMPONENT)
+add_custom_target(GENERAT_BIN ALL
+    COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -R .fls_loader_ram -R .logstr -R .ARM -R .ARM ${BIN_NAME}.elf ${BIN_NAME}.bin
+    COMMENT "post_build:gen bin file"
+    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+    DEPENDS ${TARGET_NAME}
+)
+else()
+add_custom_target(GENERAT_BIN ALL
+    COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -R .logstr -R .ARM.exidx -R .ARM.extab -R .*_romtext ${TARGET_NAME}.elf ${TARGET_NAME}.bin
+    COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -j .*_romtext ${TARGET_NAME}.elf ${TARGET_NAME}_rom.bin
+    COMMENT "post_build:gen rom and ram bin file"
+    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+    DEPENDS ${TARGET_NAME}
+)
+endif()
+
+include(${SDK_ROOT}/build/cmake/build_ssb.cmake)
+include(${SDK_ROOT}/build/cmake/build_elf_info.cmake)
+if (EXISTS ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TARGET_NAME}.cfg)
+    set(BS21_SIGN_DIR "${SDK_ROOT}/output/${CHIP}/${CORE}/${PKG_TARGET_NAME}")
+    add_custom_target(GENERAT_SIGNBIN ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${BS21_SIGN_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_BINARY_DIR}/${BIN_NAME}.bin ${BS21_SIGN_DIR}/${BIN_NAME}.bin
+        COMMAND ${SIGN_TOOL} 0 ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TARGET_NAME}.cfg
+        COMMENT "sign file:gen boot sign file"
+        WORKING_DIRECTORY ${BS21_SIGN_DIR}
+        DEPENDS GENERAT_BIN
+    )
+endif()
+include(${SDK_ROOT}/build/cmake/build_nv_bin.cmake)
+include(${SDK_ROOT}/build/cmake/build_partition_bin.cmake)
+include(${SDK_ROOT}/build/cmake/build_boot_bin_cp.cmake)
+
+create_hso_db()
+generate_project_file()
+
 add_custom_target(package ALL
     COMMAND ${Python3_EXECUTABLE} ${SDK_ROOT}/tools/pkg/packet.py
             ${CHIP} ${BS21_TARGET} NO_BOOT_BACKUP ${SECTOR_CFG}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${SDK_ROOT}/output/${CHIP}/fwpkg/${BS21_TARGET} ${PROJECT_BINARY_DIR}
     WORKING_DIRECTORY ${SDK_ROOT}
-    DEPENDS ${BIN_NAME})
+    DEPENDS ${BIN_NAME} GENERAT_SIGNBIN GENERAT_NVBIN GENERAT_PARTITION
+            COPY_FLASHBOOT_BIN COPY_LOADERBOOT_BIN)

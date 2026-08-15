@@ -11,7 +11,7 @@ static void *hello_task(const char *arg)
     return NULL;
 }
 
-static void app_entry(void)
+void axk_main(void)
 {
     osal_kthread_lock();
     osal_task *t = osal_kthread_create((osal_kthread_handler)hello_task, 0, "hello", 0x1000);
@@ -21,4 +21,4 @@ static void app_entry(void)
     osal_kthread_unlock();
 }
 
-app_run(app_entry);
+app_run(axk_main);
