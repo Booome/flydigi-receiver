@@ -1,10 +1,13 @@
 #include <stdio.h>
-#include "controller_state.h"
+#include "sle_manager.h"
 
 int main(void)
 {
-    struct controller_state state = {0};
-    printf("BS21 Receiver starting...\n");
-    printf("controller_state size: %zu bytes\n", sizeof(state));
+    printf("BS21 T-Node (Announce)\n");
+    sle_init();
+    sle_start_announce();
+    while (1) {
+        // SLE stack event loop
+    }
     return 0;
 }
