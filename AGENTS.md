@@ -4,7 +4,7 @@
 
 手柄使用**星闪 SLE 1.0 (NearLink)** 进行 2.4GHz 无线通信，非 Nordic ESB。
 nRF52840 Dongle 的 radio 不兼容 SLE PHY，无法用于无线接收。
-已采购 **Ai-BS21-32S-Kit**（BS21 开发板，2块），等待到货后开始 SLE 开发。
+**Ai-BS21-32S-Kit**（BS21 开发板，2块）已到货，可开始 SLE 开发。
 
 详细分析见：
 - `docs/sle-analysis.md` - SLE 协议分析与逆向可行性评估
@@ -27,7 +27,7 @@ nRF52840 固件（`wireless/`）实现了 USB CDC + UART + formatter 输出管�
 - nRF52840 Dongle 命令行烧录需要先生成 DFU zip 包（`nrfutil nrf5sdk-tools pkg generate`），不能直接烧录 .hex/.elf（Programmer app GUI 可以直接烧 ELF）
 - Dongle 进入 DFU 模式：按侧面 Reset 键
 
-### BS21 开发板（已采购，待到货）
+### BS21 开发板（已到货）
 
 Ai-BS21-32S-Kit，基于 Hi2821 (BS21) 芯片：
 - SLE 1.0 + BLE 5.4 + USB 2.0
