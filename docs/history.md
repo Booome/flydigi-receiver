@@ -27,6 +27,10 @@
 - 开发环境选定海思官方 fbb_bs2x SDK（GitCode，Apache-2.0）
 - 编译打包纯 Python（`python3 build.py standard-bs21e-1100e`），Linux 原生
 - 烧录基于社区 ws63flash 适配（官方 BurnTool 仅 Windows）
+- **烧录链路已打通（2026-08-15 实测）**：ws63flash 无需改代码即可烧录 BS21，
+  握手（`0xf0`）+ ymodem 传输协议与 WS63 兼容；唯高波特率 921600 在 CH340 串口
+  上不稳定，实测 **460800 稳定**。已成功完整烧录安信可 `init_sdk_fw.fwpkg`
+  （6 镜像全 100%，含 loaderboot/partition/flashboot A+B/application/nv）。
 
 详见 `docs/bs21-development.md`。
 
