@@ -124,7 +124,7 @@
 | 3 | board | fbb_bs2x 默认 evb，需改为安信可板级配置 | 高 |
 | 4 | SDK 版本 | 1100e vs 1200e，功能差异非芯片差异 | 高 |
 | 5 | UART 引脚 | 安信可用 UART0(GPIO19/20)，海思侧待查 | 中 |
-| 6 | SDK 使能固件 | 完整 fwpkg，非硬性前置，NV 校准值是风险点 | 高（见下） |
+| 6 | SDK 使能固件 | 完整 fwpkg，非硬性前置；校准值在 efuse 不受烧录影响 | 高（见下） |
 
 ## 附录：安信可"SDK 使能固件"调研
 
@@ -144,7 +144,8 @@
 **结论**：
 1. "SDK 使能固件"就是一个**完整的 fwpkg**（boot 链 + 应用 + NV），作用是让模组从出厂状态进入"可跑 SDK 应用"状态。
 2. fbb_bs2x 编译的 `all_in_one.fwpkg` 结构相同（也含 loaderboot/flashboot/partition/app/nv），**可完整替代它，不是硬性前置**。
-3. **实质风险在 NV 区**（`bs21_all_nv.bin`）：安信可模组出厂在 NV/efuse 里写了晶振校准值（ctrim）、MAC 地址等。fbb_bs2x 默认 NV 配置（`nv_cfg: bs21e_nv_default`）缺安信可板子的校准值。
-4. 晶振校准有兜底：`clock_calibration.c` 中 `calibration_xo_core_ctrim_init()` 依次读 flash → efuse，都为 0 时用 `XO_CTRIM_VALUE_DEFAULT`。但晶振偏差对 2.4GHz SLE 射频敏感，**建议适配时优先保留安信可 NV 区，或补写校准值**。
+3. **晶振校准值（ctrim）存储在 efuse（OTP 一次性熔丝）**，非 flash NV 区。依据 `clock_calibration.c`：`calibration_save_xo_core_ctrim()` 用 `uapi_efuse_write_buffer(XO_CORE_CTRIM, ...)` 写 efuse，`calibration_read_xo_core_ctrim()` 用 `uapi_efuse_read_buffer(...)` 读 efuse。烧录 fwpkg 只写外部 flash，**不碰 efuse，校准值不会丢失**。
+4. flash NV 区（`bs21_all_nv.bin`）是通用出厂模板（所有板子同一份），即使被覆盖，从 `init_sdk_fw.fwpkg` 提取烧回即可恢复，无独特数据。
+5. 真正要做的适配：fbb_bs2x 默认 EVB target 未启用 `XO_32M_CALI`，需启用该宏让固件读 efuse 校准值（否则固件用默认值，晶振不校准）。
 
 > 下一步（环境就绪后）：在 fbb_bs2x 的 bs21e target 上补 `XO_32M_CALI`，对比并改 UART/pinctrl 板级配置。每处改动均以上述依据文件为准。
