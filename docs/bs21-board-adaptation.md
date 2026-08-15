@@ -38,9 +38,9 @@
 
 ---
 
-## 适配点 2：晶振校准 XO_32M_CALI（结论：需在 fbb_bs2x target 里补上）
+## 适配点 2：晶振校准 XO_32M_CALI（结论：standard target 已启用，无需额外适配）
 
-**结论**：安信可板子启用了 32M 晶振 efuse 校准（`XO_32M_CALI`），fbb_bs2x 的默认 bs21e target **没有**启用。这是固件能否正常跑时钟的关键差异。
+**结论**：`XO_32M_CALI` 在 fbb_bs2x 的 `standard-bs21e-1100e` target 里**已经启用**，与安信可一致，无需额外适配。（此前判断"未启用"是基于 `target_config.py` 的 template 定义，遗漏了 `config.py` 里具体 target 的 diff 配置。）
 
 **依据**：
 - `ai-thinker/bs21-config.py` 第 16 行（`standard-bs21-n1100` target 的 `defines`）：
@@ -51,11 +51,14 @@
   ],
   ```
   安信可 target 明确定义了 `XO_32M_CALI`。
-- `fbb_bs2x-bs21e-target_config.py` 第 23-31 行（`defines` 完整列表）：
+- `fbb_bs2x` 的 `build/config/target_config/bs21e/config.py` 第 15 行（`standard-bs21e-1100e` target 的 `defines`）：
   ```python
-  'defines': ['-:CHIP_BS21E=1', 'LIBCPU_UTILS', ..., 'BS21E_PRODUCT_EVB', ...],
+  'defines': [
+      'SUPPORT_CFBB_UPG', 'BGLE_TASK_EXIST', 'SUPPORT_MULTI_LIBS', 'SW_UART_DEBUG', 'AT_COMMAND', 'XO_32M_CALI',
+      'SUPPORT_SET_KEYS', 'SUPPORT_SFC_IRQ_LOCK', 'CONFIG_OTA_UPDATE_SUPPORT',
+  ],
   ```
-  列表里**没有** `XO_32M_CALI`。
+  **同样包含 `XO_32M_CALI`**。注意：该宏不在 `target_config.py` 的 template（`target_bs21e_application_template`）里，而是在 `config.py` 的 target 通过 `base_target_name` 继承 template 后的 diff 里追加，合并后最终生效。
 - `fbb_bs2x-clock_calibration.h` 第 36 行起：
   ```c
   #ifdef XO_32M_CALI
@@ -65,9 +68,9 @@
   ```
   以及注释 `Get the XO(32M) ctrim value from efuse`，说明 `XO_32M_CALI` 控制 32M 晶振（XO）的 ctrim 校准，校准值从 efuse 读取。
 
-**含义**：安信可模组出厂时在 efuse 里写入了晶振校准值（ctrim），且 SDK 启用了 `XO_32M_CALI` 读取它。fbb_bs2x 默认 EVB target 未启用，若直接烧录，32M 晶振可能不校准，导致主时钟偏差。
+**含义**：安信可模组出厂时在 efuse 里写入了晶振校准值（ctrim），fbb_bs2x 的 `standard-bs21e-1100e` target 同样启用了 `XO_32M_CALI` 读取它，晶振校准行为一致，无需修改。
 
-**出处**：本地入库的 `bs21-config.py`、`fbb_bs2x-bs21e-target_config.py`、`fbb_bs2x-clock_calibration.h/.c`。
+**出处**：本地入库的 `bs21-config.py`、`fbb_bs2x-bs21e-target_config.py`、`fbb_bs2x-clock_calibration.h/.c`，以及 `~/fbb_bs2x/src/build/config/target_config/bs21e/config.py`。
 
 **确定性**：高。
 
@@ -120,7 +123,7 @@
 | # | 适配点 | 结论 | 确定性 |
 |---|--------|------|--------|
 | 1 | 芯片 | BS21 = BS21E，同源 N1100，无需改 | 高 |
-| 2 | 晶振 | 需补 `XO_32M_CALI`（efuse 晶振校准） | 高 |
+| 2 | 晶振 | `XO_32M_CALI` 已在 standard target 启用，无需适配 | 高 |
 | 3 | board | fbb_bs2x 默认 evb，需改为安信可板级配置 | 高 |
 | 4 | SDK 版本 | 1100e vs 1200e，功能差异非芯片差异 | 高 |
 | 5 | UART 引脚 | 安信可用 UART0(GPIO19/20)，海思侧待查 | 中 |
@@ -150,6 +153,6 @@
    - **flash NV**：运行时校准缓存。`calibration_xo_core_ctrim_save_flash()` 用 key `BTH_BLE_NV_RESERVED_ID` 存 flag+value，可被烧录覆盖但固件可重校准。
    - **初始化读取优先级**（`calibration_xo_core_ctrim_init`）：flash NV → efuse → 默认值 0。
 5. flash NV 区（`bs21_all_nv.bin`）是通用出厂模板（所有板子同一份），即使被覆盖，从 `init_sdk_fw.fwpkg` 提取烧回即可恢复，无独特数据。
-6. 真正要做的适配：fbb_bs2x 默认 EVB target 未启用 `XO_32M_CALI`，需启用该宏让固件读 efuse 校准值（否则固件用默认值，晶振不校准）。
+6. 晶振校准：`XO_32M_CALI` 已在 `standard-bs21e-1100e` target 的 `config.py` 里启用，无需额外适配。
 
-> 下一步（环境就绪后）：在 fbb_bs2x 的 bs21e target 上补 `XO_32M_CALI`，对比并改 UART/pinctrl 板级配置。每处改动均以上述依据文件为准。
+> 下一步（环境就绪后）：以 `standard-bs21e-1100e` 为基线开发，需适配的仅剩 board/pinctrl（适配点 3、5）。每处改动均以上述依据文件为准。
