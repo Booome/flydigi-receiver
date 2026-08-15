@@ -113,6 +113,8 @@ endif()
 
 include(${SDK_ROOT}/build/cmake/build_ssb.cmake)
 include(${SDK_ROOT}/build/cmake/build_elf_info.cmake)
+set(PACKAGE_DEPENDS ${BIN_NAME} GENERAT_NVBIN GENERAT_PARTITION
+        COPY_FLASHBOOT_BIN COPY_LOADERBOOT_BIN)
 if (EXISTS ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TARGET_NAME}.cfg)
     set(BS21_SIGN_DIR "${SDK_ROOT}/output/${CHIP}/${CORE}/${PKG_TARGET_NAME}")
     add_custom_target(GENERAT_SIGNBIN ALL
@@ -123,6 +125,7 @@ if (EXISTS ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TA
         WORKING_DIRECTORY ${BS21_SIGN_DIR}
         DEPENDS GENERAT_BIN
     )
+    list(APPEND PACKAGE_DEPENDS GENERAT_SIGNBIN)
 endif()
 include(${SDK_ROOT}/build/cmake/build_nv_bin.cmake)
 include(${SDK_ROOT}/build/cmake/build_partition_bin.cmake)
@@ -135,6 +138,7 @@ add_custom_target(package ALL
     COMMAND ${Python3_EXECUTABLE} ${SDK_ROOT}/tools/pkg/packet.py
             ${CHIP} ${BS21_TARGET} NO_BOOT_BACKUP ${SECTOR_CFG}
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${SDK_ROOT}/output/${CHIP}/fwpkg/${BS21_TARGET} ${PROJECT_BINARY_DIR}
+    # packet.py hardcodes a write into a tracked SDK file; restore it to keep the SDK tree clean
+    COMMAND git -C ${SDK_ROOT} checkout -- tools/pkg/fwpkg/${CHIP}/${CHIP}_all.fwpkg
     WORKING_DIRECTORY ${SDK_ROOT}
-    DEPENDS ${BIN_NAME} GENERAT_SIGNBIN GENERAT_NVBIN GENERAT_PARTITION
-            COPY_FLASHBOOT_BIN COPY_LOADERBOOT_BIN)
+    DEPENDS ${PACKAGE_DEPENDS})

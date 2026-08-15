@@ -53,20 +53,42 @@
 | XFusion | Apache-2.0 | 社区工具，已停更，未采用 |
 | Docker (lualiliu/bs21_sdk) | 无 license | 几乎无人用，未采用 |
 
-**开发模式为 overlay**：SDK 只引用不修改，我们的代码在 `wireless/bs21/overlay/`，
-构建时叠加、构建后清理（`trap cleanup EXIT`），保证 SDK 树始终纯净。
+**开发模式为只读引用**：SDK 只引用不修改，我们的代码在 `wireless/bs21/`（`app/`、
+`sdk-compat/`、`CMakeLists.txt`、`toolchain.cmake`、`scripts/`），构建时由顶层
+`CMakeLists.txt` 直接引用 SDK 的构建脚本与源目录，构建产物收集到 `wireless/bs21/output/`，
+SDK 树不叠加源码。
 
 ### 2.2 Ai-BS21_SDK 环境搭建（Linux）
 
 SDK 位置：`~/.local/Ai-BS21_SDK`（从 GitHub 克隆）。
 
 ```bash
-wireless/bs21/scripts/build.sh    # 一键构建（overlay + 编译 + 收集 fwpkg + 清理）
+# 一次性前置（仅全新 SDK clone 后需要）：恢复工具链 exec 位 + 补 LiteOS .a symlink
+wireless/bs21/scripts/setup-sdk.sh
+
+# 构建（configure + build 两步）
+cmake -S wireless/bs21 -B output
+cmake --build output -j
 ```
 
 - 依赖：Python 3.8+（实测 3.14 需 `pip install setuptools` 提供 distutils）、RISC-V 工具链（SDK 自带）
-- `build.sh` 流程：`setup-sdk.sh`（恢复工具链 exec 位 + 补 LiteOS lib symlink）→ overlay 源码 → 构建 → 收集 fwpkg → 清理
-- 产出：`wireless/bs21/output/bs21_all_in_one.fwpkg`
+- `setup-sdk.sh`：一次性环境修复（git clone 会丢失工具链 `+x` 位；`bs21-n1100-rcu` 只含 libc/libm 预编译库，其余从 `standard-bs21-n1100` symlink），不改源码
+- `gen-config.py`：构建时生成 SDK target 配置（复用 SDK 的 `TargetEnvironment`），并注入 `NO_BOOT_BACKUP` 修复 flash 布局 bug（见 §2.4）
+- 产出 fwpkg：`wireless/bs21/output/`（`bs21_all_in_one.fwpkg` 等）
+
+### 2.2.1 SDK 只读的已知限制
+
+SDK 自带的 sign/packet 工具把部分中间产物硬编码写回 SDK 树，无法只靠"不修改源码"完全规避：
+
+| 写入位置 | git 状态 | 说明 |
+|---------|---------|------|
+| `SDK/output/` | 已 gitignore | 签名/打包产物（`application_sign.bin`、各 fwpkg） |
+| `SDK/interim_binary/` | tracked，字节一致 | 分区/flashboot/loaderboot/nv 等预编译二进制，构建时重新生成但内容不变 |
+| `SDK/tools/pkg/fwpkg/bs21/bs21_all.fwpkg` | tracked，构建后变 `M` | packet.py 硬编码写入；构建脚本打包后自动 `git checkout` 恢复 |
+
+前两项内容稳定、不会让 `git status` 变脏；第三项由 `wireless/bs21/CMakeLists.txt` 的
+`package` 目标在打包完成后自动 `git checkout --` 恢复。这是只读方案的已知局限——彻底
+隔离需给 sign/packet 工具增加输出重定向，超出当前范围。
 
 ### 2.3 SDK 架构（Ai-BS21_SDK）
 
@@ -92,7 +114,8 @@ CONFIG_SUPPORT_SLE_CENTRAL=y
 > `bs21-n1100-rcu` 为 SLE-only（`CONFIG_BT_SLE_ONLY`）。**SDK bug**：该 target 的
 > `sector_cfg='bs21-rcu'`（application @ 0xb000，无 flashboot_backup）但 defines 漏了
 > `NO_BOOT_BACKUP`，导致链接脚本按 standard 布局（application @ 0x15000），flashboot
-> 跳错 0xA000 致 application 不启动。`build.sh` 已临时注入 `NO_BOOT_BACKUP` 修复。
+> 跳错 0xA000 致 application 不启动。`gen-config.py` 已通过 `extra_defines` 注入
+> `NO_BOOT_BACKUP` 修复。
 
 ### 2.5 烧录（Linux，基于社区 ws63flash）
 
