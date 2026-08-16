@@ -35,6 +35,8 @@ extern void *bt_os_49_get(void);
 #define ADV_DATA_TYPE_DISCOVERY_LEVEL      0x01
 #define ADV_DATA_TYPE_ACCESS_MODE          0x02
 #define ADV_DATA_TYPE_COMPLETE_LOCAL_NAME  0x0B
+#define ADV_DATA_TYPE_TX_POWER_LEVEL       0x0C
+#define ADV_TX_POWER                       10
 
 struct adv_common_value {
     uint8_t type;
@@ -81,7 +83,9 @@ static int set_announce_data(void)
 {
     sle_announce_data_t data = { 0 };
     uint8_t announce_data[ADV_DATA_LEN_MAX] = { 0 };
+    uint8_t seek_rsp_data[ADV_DATA_LEN_MAX] = { 0 };
     uint16_t idx = 0;
+    uint16_t rsp_idx = 0;
     const char *name = ADV_NAME;
     uint8_t name_len = sizeof(ADV_NAME) - 1;
 
@@ -107,15 +111,28 @@ static int set_announce_data(void)
     }
     idx += sizeof(access_mode);
 
-    announce_data[idx++] = name_len + 1;
-    announce_data[idx++] = ADV_DATA_TYPE_COMPLETE_LOCAL_NAME;
-    if (memcpy_s(&announce_data[idx], ADV_DATA_LEN_MAX - idx, name, name_len) != EOK) {
+    struct adv_common_value tx_power = {
+        .type = ADV_DATA_TYPE_TX_POWER_LEVEL,
+        .length = sizeof(struct adv_common_value) - 1,
+        .value = ADV_TX_POWER,
+    };
+    if (memcpy_s(&seek_rsp_data[rsp_idx], ADV_DATA_LEN_MAX - rsp_idx,
+                 &tx_power, sizeof(tx_power)) != EOK) {
         return -1;
     }
-    idx += name_len;
+    rsp_idx += sizeof(tx_power);
+
+    seek_rsp_data[rsp_idx++] = name_len + 1;
+    seek_rsp_data[rsp_idx++] = ADV_DATA_TYPE_COMPLETE_LOCAL_NAME;
+    if (memcpy_s(&seek_rsp_data[rsp_idx], ADV_DATA_LEN_MAX - rsp_idx, name, name_len) != EOK) {
+        return -1;
+    }
+    rsp_idx += name_len;
 
     data.announce_data = announce_data;
     data.announce_data_len = idx;
+    data.seek_rsp_data = seek_rsp_data;
+    data.seek_rsp_data_len = rsp_idx;
 
     return sle_set_announce_data(ADV_HANDLE, &data);
 }
