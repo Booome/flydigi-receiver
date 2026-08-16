@@ -142,6 +142,7 @@ static void sle_enable_cb(uint8_t status)
 
 void axk_main(void)
 {
+    osal_printk("app: t_broadcaster\r\n");
     bs21_rst();
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;

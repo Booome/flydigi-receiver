@@ -26,6 +26,7 @@ static void *hello_task(const char *arg)
 
 void axk_main(void)
 {
+    osal_printk("app: flydigi-wireless\r\n");
     bs21_rst();
 
     osal_task *task_handle = NULL;
