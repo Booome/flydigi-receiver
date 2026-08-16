@@ -10,6 +10,9 @@
 
 extern void *g_intheap_begin;
 extern unsigned int LOS_MemTotalUsedGet(void *pool);
+extern void *m_aucSysMem0;
+extern void *LOS_MemAlloc(void *pool, unsigned int size);
+extern unsigned int LOS_MemFree(void *pool, void *mem);
 
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
@@ -127,6 +130,14 @@ static void sle_enable_cb(uint8_t status)
     errcode_t announce_rc;
     osal_printk("sle enable: %d\r\n", status);
     osal_printk("heap used before announce: %u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
+    osal_printk("m_aucSysMem0=%p g_intheap_begin=%p\r\n", m_aucSysMem0, &g_intheap_begin);
+    {
+        void *p = LOS_MemAlloc(m_aucSysMem0, 91);
+        osal_printk("test LOS_MemAlloc(91)=%p\r\n", p);
+        if (p != NULL) {
+            LOS_MemFree(m_aucSysMem0, p);
+        }
+    }
     sle_announce_seek_register_callbacks(&g_seek_cbk);
     rc = set_announce_param();
     if (rc != 0) {
