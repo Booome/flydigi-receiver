@@ -21,6 +21,7 @@ static void bs21_rst(void)
 static void scan_start(void)
 {
     sle_seek_param_t param = { 0 };
+    errcode_t rc;
     param.own_addr_type = 0;
     param.filter_duplicates = 0;
     param.seek_filter_policy = 0;
@@ -28,8 +29,15 @@ static void scan_start(void)
     param.seek_type[0] = 1;
     param.seek_interval[0] = 100;
     param.seek_window[0] = 100;
-    sle_set_seek_param(&param);
-    sle_start_seek();
+    rc = sle_set_seek_param(&param);
+    if (rc != ERRCODE_SUCC) {
+        osal_printk("sle_set_seek_param fail: 0x%x\r\n", rc);
+        return;
+    }
+    rc = sle_start_seek();
+    if (rc != ERRCODE_SUCC) {
+        osal_printk("sle_start_seek fail: 0x%x\r\n", rc);
+    }
 }
 
 static void sle_power_on_cb(uint8_t status)

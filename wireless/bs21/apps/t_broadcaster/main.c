@@ -75,7 +75,7 @@ static int set_announce_data(void)
     struct adv_common_value disc_level = {
         .type = ADV_DATA_TYPE_DISCOVERY_LEVEL,
         .length = sizeof(struct adv_common_value) - 1,
-        .value = 0,
+        .value = SLE_ANNOUNCE_LEVEL_NORMAL,
     };
     if (memcpy_s(&announce_data[idx], ADV_DATA_LEN_MAX - idx,
                  &disc_level, sizeof(disc_level)) != EOK) {
@@ -120,11 +120,24 @@ static void sle_power_on_cb(uint8_t status)
 
 static void sle_enable_cb(uint8_t status)
 {
+    int rc;
+    errcode_t announce_rc;
     osal_printk("sle enable: %d\r\n", status);
     sle_announce_seek_register_callbacks(&g_seek_cbk);
-    set_announce_param();
-    set_announce_data();
-    sle_start_announce(ADV_HANDLE);
+    rc = set_announce_param();
+    if (rc != 0) {
+        osal_printk("set_announce_param fail: %d\r\n", rc);
+        return;
+    }
+    rc = set_announce_data();
+    if (rc != 0) {
+        osal_printk("set_announce_data fail: %d\r\n", rc);
+        return;
+    }
+    announce_rc = sle_start_announce(ADV_HANDLE);
+    if (announce_rc != ERRCODE_SUCC) {
+        osal_printk("sle_start_announce fail: 0x%x\r\n", announce_rc);
+    }
 }
 
 void axk_main(void)
