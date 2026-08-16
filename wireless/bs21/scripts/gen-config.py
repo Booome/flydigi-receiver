@@ -22,7 +22,7 @@ if APP == 'g_scanner':
 elif APP == 't_broadcaster':
     env.config['config_sle_ble_support'] = 'sle-peripheral'
 
-env.config['linkflags'].append('-Wl,--wrap=dts_free')
+env.config['linkflags'].append('-Wl,--wrap=LOS_MemFree')
 
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)
