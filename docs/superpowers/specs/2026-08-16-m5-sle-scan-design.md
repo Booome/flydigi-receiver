@@ -10,7 +10,7 @@ P0 已打通编译 → 烧录 → 启动 → 串口打印全链路，当前 `app
 **范围**（只做扫描验证，不做连接/配对/数据解析）：
 
 1. 编译系统支持多工程（一个 target 编译出多个应用固件）。
-2. 新建两个测试工程并入库：`g_scanner`（G 节点扫描器）+ `t_broadcaster`（T 节点广播器）。
+2. 多工程化并入库：`default`（默认工程，hello 测试 → 未来主程序）+ 两个测试工程 `g_scanner` / `t_broadcaster`。
 3. 两块 Kit 互通验证（G 扫到 T 广播）。
 4. 扫描手柄，验证 M5 成功标准。
 
@@ -38,12 +38,15 @@ P0 已打通编译 → 烧录 → 启动 → 串口打印全链路，当前 `app
 
 ```
 wireless/bs21/
-├── CMakeLists.txt            # 顶层入口，接收 -DBS21_APP= 选择 apps/ 下的工程
+├── CMakeLists.txt            # 顶层入口，接收 -DBS21_APP= 选择 apps/ 下的工程（默认 default）
 ├── apps/
-│   ├── g_scanner/            # 工程1：G 节点扫描器（central）
+│   ├── default/              # 默认工程（无 BS21_APP 时编译）：hello 测试 → 未来主程序
+│   │   ├── CMakeLists.txt
+│   │   └── main.c            # axk_main → hello_task（迁移自原 app/）
+│   ├── g_scanner/            # 测试工程：G 节点扫描器（central）
 │   │   ├── CMakeLists.txt
 │   │   └── main.c            # axk_main → SLE 扫描
-│   └── t_broadcaster/        # 工程2：T 节点广播器（peripheral）
+│   └── t_broadcaster/        # 测试工程：T 节点广播器（peripheral）
 │       ├── CMakeLists.txt
 │       └── main.c            # axk_main → SLE 广播
 ├── sdk-compat/               # 不变（ble_stub.c，补齐 SLE-only 库残留的 sapi_ble_* 符号，按需）
@@ -54,29 +57,33 @@ wireless/bs21/
     └── controller_state.h    # 不变
 ```
 
-删除：`app/`（hello_task 演示使命完成，被 `apps/` 替代）。
+删除：`app/`（hello_task 测试迁移到 `apps/default/`）。
 
 ## 四、构建流程（多工程 + 角色切换）
 
 ```bash
-# 工程1：G 节点扫描器（central 库）
+# 默认工程（default，hello 测试 / 未来主程序）
+cmake -S wireless/bs21 -B output
+cmake --build output -j
+
+# 测试工程1：G 节点扫描器（central 库）
 cmake -S wireless/bs21 -B output/g_scanner -DBS21_APP=g_scanner
 cmake --build output/g_scanner -j
 
-# 工程2：T 节点广播器（peripheral 库，默认）
+# 测试工程2：T 节点广播器（peripheral 库）
 cmake -S wireless/bs21 -B output/t_broadcaster -DBS21_APP=t_broadcaster
 cmake --build output/t_broadcaster -j
 ```
 
-`gen-config.py` 按 `BS21_APP` 处理：
+`gen-config.py` 按 `BS21_APP` 处理（默认 `default`）：
 
-- 注册组件：`env.append('ram_component', BS21_APP)`（`g_scanner` 或 `t_broadcaster`）。
+- 注册组件：`env.append('ram_component', BS21_APP)`（`default` / `g_scanner` / `t_broadcaster`）。
 - 角色切换（仅 `g_scanner`）：defines 中 `SUPPORT_SLE_PERIPHERAL` → `SUPPORT_SLE_CENTRAL`，
   并定义 `CONFIG_SLE_BLE_SUPPORT=sle-central` 使库链接 central 版。
-- `t_broadcaster` 保持默认 peripheral 配置（现有 `bs21-n1100-rcu` 库）。
+- `default` / `t_broadcaster` 保持默认 peripheral 配置（现有 `bs21-n1100-rcu` 库）。
 
-顶层 `CMakeLists.txt` 按 `BS21_APP` 执行 `add_subdirectory(apps/${BS21_APP})`，
-并给 `gen-config.py` 传 `BS21_APP`。输出目录分离，两工程可独立编译烧录。
+顶层 `CMakeLists.txt` 按 `BS21_APP`（默认 `default`）执行 `add_subdirectory(apps/${BS21_APP})`，
+并给 `gen-config.py` 传 `BS21_APP`。输出目录分离，各工程可独立编译烧录。
 
 ## 五、数据流
 
@@ -103,11 +110,11 @@ axk_main → sle_broadcast_init()
 
 ## 六、分步实施
 
-1. **gen-config.py 改造**：新增 `BS21_APP` 参数，注册对应组件；`g_scanner` 时切
+1. **gen-config.py 改造**：新增 `BS21_APP` 参数（默认 `default`），注册对应组件；`g_scanner` 时切
    defines + 库目录到 central。
-2. **顶层 CMakeLists 改造**：接收 `-DBS21_APP=...`，`add_subdirectory(apps/${BS21_APP})`。
-3. **重构**：`app/` → `apps/g_scanner/` + `apps/t_broadcaster/`（各写 `main.c` 移植例程逻辑）。
-4. **编译两工程**：验证 central / peripheral 库都能正确链接（central 库符号差异如有
+2. **顶层 CMakeLists 改造**：接收 `-DBS21_APP=...`（默认 `default`），`add_subdirectory(apps/${BS21_APP})`。
+3. **重构**：`app/` → `apps/default/`（hello 测试迁移）+ `apps/g_scanner/` + `apps/t_broadcaster/`（后两者移植例程逻辑）。
+4. **编译各工程**：验证 central / peripheral 库都能正确链接（central 库符号差异如有
    sapi_ble_* 残留，按需调整 `sdk-compat`）。
 5. **烧录两块 Kit**：互通验证（g_scanner 串口打印 t_broadcaster 的广播）。
 6. **扫描手柄**：手柄开机（2.4G 模式），g_scanner 打印手柄广播，达成 M5 成功标准。
