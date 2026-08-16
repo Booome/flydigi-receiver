@@ -3,6 +3,7 @@
 void *__real_bt_os_new(unsigned int size);
 int __real_uapi_gle_set_adv(void *ctx);
 void *__real_osal_vmalloc(unsigned long size);
+int __real_memcpy_s(void *dest, unsigned int dest_max, const void *src, unsigned int count);
 
 static void *g_bt_os_49;
 
@@ -36,4 +37,13 @@ void *__wrap_osal_vmalloc(unsigned long size)
         osal_printk("osal_vmalloc(%lu)=%p\r\n", size, p);
     }
     return p;
+}
+
+int __wrap_memcpy_s(void *dest, unsigned int dest_max, const void *src, unsigned int count)
+{
+    int rc = __real_memcpy_s(dest, dest_max, src, count);
+    if (rc != 0) {
+        osal_printk("memcpy_s FAIL dest=%p src=%p count=%u rc=%d\r\n", dest, src, count, rc);
+    }
+    return rc;
 }

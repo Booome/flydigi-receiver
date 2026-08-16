@@ -18,6 +18,7 @@ env.append('ram_component', 'sdk_compat')
 env.config['linkflags'].append('-Wl,--wrap=bt_os_new')
 env.config['linkflags'].append('-Wl,--wrap=uapi_gle_set_adv')
 env.config['linkflags'].append('-Wl,--wrap=osal_vmalloc')
+env.config['linkflags'].append('-Wl,--wrap=memcpy_s')
 if APP == 'g_scanner':
     env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
     env.append('defines', 'SUPPORT_SLE_CENTRAL')
