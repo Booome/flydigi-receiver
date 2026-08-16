@@ -2,6 +2,9 @@
 **/build/
 **/build-*/
 
+# Local env (serial/flash mapping, not committed)
+.env
+
 # Python
 __pycache__/
 *.pyc
