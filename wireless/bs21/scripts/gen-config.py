@@ -19,6 +19,8 @@ if APP == 'g_scanner':
     env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
     env.append('defines', 'SUPPORT_SLE_CENTRAL')
     env.config['config_sle_ble_support'] = 'sle-central'
+elif APP == 't_broadcaster':
+    env.config['config_sle_ble_support'] = 'sle-peripheral'
 
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)
