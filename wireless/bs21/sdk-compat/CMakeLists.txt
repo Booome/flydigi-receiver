@@ -2,6 +2,7 @@ set(COMPONENT_NAME "sdk_compat")
 
 set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/ble_stub.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/dts_free_wrap.c
 )
 
 set(PUBLIC_HEADER)
