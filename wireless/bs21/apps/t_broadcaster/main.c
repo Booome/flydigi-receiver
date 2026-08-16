@@ -147,15 +147,6 @@ static void sle_enable_cb(uint8_t status)
             btos_free(p);
         }
     }
-    {
-        void *node = *(void **)(0x4b668 + 4);
-        while (node != NULL) {
-            unsigned char *b = (unsigned char *)node;
-            osal_printk("disc node h=%u mode=%u adv_len=%u rsp_len=%u\r\n",
-                        b[0], b[6], b[44] | (b[45] << 8), b[46] | (b[47] << 8));
-            node = *(void **)((unsigned char *)node - 8);
-        }
-    }
     sle_announce_seek_register_callbacks(&g_seek_cbk);
     rc = set_announce_param();
     if (rc != 0) {
@@ -166,6 +157,15 @@ static void sle_enable_cb(uint8_t status)
     if (rc != 0) {
         osal_printk("set_announce_data fail: %d\r\n", rc);
         return;
+    }
+    {
+        void *node = *(void **)(0x4b668 + 4);
+        while (node != NULL) {
+            unsigned char *b = (unsigned char *)node;
+            osal_printk("disc node h=%u mode=%u adv_len=%u rsp_len=%u\r\n",
+                        b[0], b[6], b[44] | (b[45] << 8), b[46] | (b[47] << 8));
+            node = *(void **)((unsigned char *)node - 8);
+        }
     }
     announce_rc = sle_start_announce(ADV_HANDLE);
     if (announce_rc != ERRCODE_SUCC) {
