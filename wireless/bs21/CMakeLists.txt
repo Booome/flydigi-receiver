@@ -47,6 +47,9 @@ include(${SDK_ROOT}/build/cmake/build_component.cmake)
 include(${SDK_ROOT}/build/cmake/build_sdk.cmake)
 
 project(${CHIP}_CFBB C ASM CXX)
+set(MODULE_NAME "pf")
+set(AUTO_DEF_FILE_ID TRUE)
+set(AUTO_DEF_MODULE_ID TRUE)
 set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "")
 file(REMOVE ${CMAKE_BINARY_DIR}/auto_gen_libfunc.lds)
 
@@ -77,15 +80,19 @@ set(KCONFIG_PATH "${SDK_ROOT}/build/config/target_config/${CHIP}/menuconfig/${CO
 if(EXISTS ${KCONFIG_PATH})
     KCONFIG_GET_PARAMS(${KCONFIG_PATH})
     set(USE_KCONFIG True)
+    # bs2x_sample_config.cmake normally appends these, but its Kconfig-derived
+    # variables are not visible here; ensure the log region is reserved.
+    if(DEFINED CONFIG_SUPPORT_LOG_THREAD)
+        list(APPEND DEFINES CONFIG_SUPPORT_LOG_THREAD)
+    endif()
 endif()
 
+add_subdirectory(${SDK_ROOT}/application/demo ${CMAKE_BINARY_DIR}/sdk/demo)
 add_subdirectory(${SDK_ROOT}/application/bs21/standard ${CMAKE_BINARY_DIR}/sdk/standard)
 add_subdirectory(${SDK_ROOT}/kernel ${CMAKE_BINARY_DIR}/sdk/kernel)
 add_subdirectory(${SDK_ROOT}/drivers ${CMAKE_BINARY_DIR}/sdk/drivers)
 add_subdirectory(${SDK_ROOT}/middleware ${CMAKE_BINARY_DIR}/sdk/middleware)
 add_subdirectory(${SDK_ROOT}/open_source ${CMAKE_BINARY_DIR}/sdk/open_source)
-add_subdirectory(app)
-add_subdirectory(sdk-compat)
 
 add_path_with_alias_if_exist(${SDK_ROOT}/protocol sdk/protocol)
 add_path_with_alias_if_exist(${SDK_ROOT}/test sdk/test)
@@ -127,6 +134,20 @@ if (EXISTS ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TA
         DEPENDS GENERAT_BIN
     )
     list(APPEND PACKAGE_DEPENDS GENERAT_SIGNBIN)
+    if(${GEN_SEC_BIN} STREQUAL "True")
+        if (EXISTS ${COMPILER_ROOT}/lib/sec/${IMAGE_VERSION}/libsec_image.so)
+            execute_process(COMMAND ${CMAKE_COMMAND} -E copy
+                ${COMPILER_ROOT}/lib/sec/${IMAGE_VERSION}/libsec_image.so
+                ${COMPILER_ROOT}/lib/sec/libsec_image.so)
+        endif()
+        add_custom_target(GENERAT_SEC_IMAGE ALL
+            COMMAND ${CMAKE_OBJCOPY} --enable_sec ${BS21_SIGN_DIR}/${BIN_NAME}_sign.bin
+            COMMENT "enable sec image"
+            WORKING_DIRECTORY ${COMPILER_ROOT}/bin
+            DEPENDS GENERAT_SIGNBIN
+        )
+        list(APPEND PACKAGE_DEPENDS GENERAT_SEC_IMAGE)
+    endif()
 endif()
 include(${SDK_ROOT}/build/cmake/build_nv_bin.cmake)
 include(${SDK_ROOT}/build/cmake/build_partition_bin.cmake)
