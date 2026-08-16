@@ -23,8 +23,34 @@ Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
 - SDK: 安信可 **Ai-BS21_SDK**（`~/.local/Ai-BS21_SDK`），只读引用模式（SDK 不修改源码）
 - target: `bs21-n1100-rcu`（SLE-only，512KB flash）
 - 编译：`cmake -S wireless/bs21 -B wireless/bs21/build && cmake --build wireless/bs21/build -j`（一次性前置 `wireless/bs21/scripts/setup-sdk.sh`）
-- 烧录基于社区 ws63flash 适配（官方 BurnTool 仅 Windows）
 - 开发环境搭建和路线图见 `docs/bs21-development.md`
+
+#### 烧录与调试
+
+串口映射记录在项目根 `.env`（不入库），默认：
+- board_a（`/dev/ttyUSB4`）→ 复位 `uart-gpio pulse /dev/ttyUSB5 A 8 0 3000`
+- board_b（`/dev/ttyUSB2`）→ 复位 `uart-gpio pulse /dev/ttyUSB5 A 11 0 3000`
+- 复位 GPIO 由控制串口 `/dev/ttyUSB5`（STM32）提供
+
+烧录（先发命令，等 "Waiting for device reset..." 后复位触发）：
+```bash
+ws63flash --flash <模块串口> wireless/bs21/build/<app>/bs21_all_in_one.fwpkg -b460800
+# 另一终端，复位模块：
+uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000
+```
+
+抓取从 reset 起的完整 log（模块无法靠拉低 reset 停止，会反复 reset 打印多轮）：
+```bash
+stty -F <模块串口> 115200 raw -echo
+cat <模块串口> > /tmp/reset.log &
+uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000   # 复位，触发一轮启动 log
+# 等几秒后 kill 掉 cat
+```
+
+reset 轮特征（靠内容区分每轮）：
+- 每轮从 `boot.` → `Flashboot Init!` 开始
+- 标志行：`Unkown Boot Type 0xDEAD000D`、`Jump to app! addr = 0x9010B300`、`Debug uart init succ:80000`
+- 应用起点：`app: <工程名>`（`default` 为 `flydigi-wireless`）
 
 ## 手柄硬件信息
 
