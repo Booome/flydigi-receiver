@@ -1,7 +1,6 @@
 # Build outputs (in subdirectories)
 **/build/
 **/build-*/
-output/
 
 # Python
 __pycache__/

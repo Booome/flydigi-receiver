@@ -63,16 +63,16 @@ wireless/bs21/
 
 ```bash
 # 默认工程（default，hello 测试 / 未来主程序）
-cmake -S wireless/bs21 -B output
-cmake --build output -j
+cmake -S wireless/bs21 -B wireless/bs21/build
+cmake --build wireless/bs21/build -j
 
 # 测试工程1：G 节点扫描器（central 库）
-cmake -S wireless/bs21 -B output/g_scanner -DBS21_APP=g_scanner
-cmake --build output/g_scanner -j
+cmake -S wireless/bs21 -B wireless/bs21/build/g_scanner -DBS21_APP=g_scanner
+cmake --build wireless/bs21/build/g_scanner -j
 
 # 测试工程2：T 节点广播器（peripheral 库）
-cmake -S wireless/bs21 -B output/t_broadcaster -DBS21_APP=t_broadcaster
-cmake --build output/t_broadcaster -j
+cmake -S wireless/bs21 -B wireless/bs21/build/t_broadcaster -DBS21_APP=t_broadcaster
+cmake --build wireless/bs21/build/t_broadcaster -j
 ```
 
 `gen-config.py` 按 `BS21_APP` 处理（默认 `default`）：

@@ -53,13 +53,15 @@
 | XFusion | Apache-2.0 | 社区工具，已停更，未采用 |
 | Docker (lualiliu/bs21_sdk) | 无 license | 几乎无人用，未采用 |
 
-**开发模式为只读引用**：SDK 只引用不修改，我们的代码在 `wireless/bs21/`（`app/`、
+**开发模式为只读引用**：SDK 只引用不修改，我们的代码在 `wireless/bs21/`（`apps/`、
 `sdk-compat/`、`CMakeLists.txt`、`toolchain.cmake`、`scripts/`），构建时由顶层
-`CMakeLists.txt` 直接引用 SDK 的构建脚本与源目录，构建产物收集到 `wireless/bs21/output/`，
+`CMakeLists.txt` 直接引用 SDK 的构建脚本与源目录，构建产物收集到 `wireless/bs21/build/`，
 SDK 树不叠加源码。
 
-- `app/`：应用入口，`main.c` 提供 `axk_main()`（SDK 闭源 `libmain_init_porting.a`
-  直接调用该符号作为用户入口），当前实现复位 GPIO21 + 创建 `hello_task` 循环打印
+- `apps/`：多工程应用入口，由顶层 `-DBS21_APP=` 选择（默认 `default`）。各工程的
+  `main.c` 提供 `axk_main()`（SDK 闭源 `libmain_init_porting.a` 直接调用该符号作为
+  用户入口）；`default` 当前复位 GPIO21 + 创建 `hello_task` 循环打印，`g_scanner` /
+  `t_broadcaster` 分别为 SLE 扫描器 / 广播器
 - `sdk-compat/`：`bs21-n1100-rcu`（SLE-only）的 `libbth_sdk.a` 残留 36 个 `sapi_ble_*`
   BLE 符号引用（无实现），由 `ble_stub.c` 空实现补齐以满足链接
 
@@ -72,14 +74,14 @@ SDK 位置：`~/.local/Ai-BS21_SDK`（从 GitHub 克隆）。
 wireless/bs21/scripts/setup-sdk.sh
 
 # 构建（configure + build 两步）
-cmake -S wireless/bs21 -B output
-cmake --build output -j
+cmake -S wireless/bs21 -B wireless/bs21/build
+cmake --build wireless/bs21/build -j
 ```
 
 - 依赖：Python 3.8+（实测 3.14 需 `pip install setuptools` 提供 distutils）、RISC-V 工具链（SDK 自带）
 - `setup-sdk.sh`：一次性环境修复（git clone 会丢失工具链 `+x` 位；`bs21-n1100-rcu` 只含 libc/libm 预编译库，其余从 `standard-bs21-n1100` symlink），不改源码
 - `gen-config.py`：构建时生成 SDK target 配置（复用 SDK 的 `TargetEnvironment`），并注入 `NO_BOOT_BACKUP` 修复 flash 布局 bug（见 §2.4）
-- 产出 fwpkg：`wireless/bs21/output/`（`bs21_all_in_one.fwpkg` 等）
+- 产出 fwpkg：`wireless/bs21/build/`（`bs21_all_in_one.fwpkg` 等）
 
 ### 2.2.1 SDK 只读的已知限制
 
