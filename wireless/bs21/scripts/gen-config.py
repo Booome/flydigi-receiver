@@ -16,6 +16,7 @@ env.remove('ram_component', 'demo')
 env.append('ram_component', APP)
 env.append('ram_component', 'sdk_compat')
 env.config['linkflags'].append('-Wl,--wrap=bt_os_new')
+env.config['linkflags'].append('-Wl,--wrap=uapi_gle_set_adv')
 if APP == 'g_scanner':
     env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
     env.append('defines', 'SUPPORT_SLE_CENTRAL')
