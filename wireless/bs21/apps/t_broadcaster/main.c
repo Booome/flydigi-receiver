@@ -15,6 +15,9 @@ extern void *LOS_MemAlloc(void *pool, unsigned int size);
 extern unsigned int LOS_MemFree(void *pool, void *mem);
 extern void *btos_new(unsigned int size);
 extern void btos_free(void *mem);
+extern void *bt_os_new(unsigned int size);
+extern void bt_os_free(void *mem);
+extern int memcpy_s(void *dest, unsigned int dest_max, const void *src, unsigned int count);
 
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
@@ -182,6 +185,20 @@ static void sle_enable_cb(uint8_t status)
         osal_printk("after fail: btos_new(91)=%p\r\n", p91);
         if (p91 != NULL) {
             btos_free(p91);
+        }
+        {
+            void *ctx = bt_os_new(49);
+            void *buf = btos_new(90);
+            int rc;
+            osal_printk("ctx=%p buf=%p\r\n", ctx, buf);
+            rc = memcpy_s(buf, 49, ctx, 49);
+            osal_printk("memcpy_s(buf,49,ctx,49)=%d\r\n", rc);
+            if (ctx != NULL) {
+                bt_os_free(ctx);
+            }
+            if (buf != NULL) {
+                btos_free(buf);
+            }
         }
     }
 }
