@@ -163,5 +163,7 @@ add_custom_target(package ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${SDK_ROOT}/output/${CHIP}/fwpkg/${BS21_TARGET} ${PROJECT_BINARY_DIR}
     # packet.py hardcodes a write into a tracked SDK file; restore it to keep the SDK tree clean
     COMMAND git -C ${SDK_ROOT} checkout -- tools/pkg/fwpkg/${CHIP}/${CHIP}_all.fwpkg
+    # gen-config.py (via SDK enviroment.rm_pyc) removes tracked pycache; restore it
+    COMMAND git -C ${SDK_ROOT} checkout -- build/config/target_config/${CHIP}/fota/__pycache__/fota_format_st.cpython-39.pyc
     WORKING_DIRECTORY ${SDK_ROOT}
     DEPENDS ${PACKAGE_DEPENDS})
