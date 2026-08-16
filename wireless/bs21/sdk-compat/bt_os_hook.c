@@ -16,6 +16,7 @@ void *__wrap_bt_os_new(unsigned int size)
     void *p = __real_bt_os_new(size);
     if (size == 49) {
         g_bt_os_49 = p;
+        osal_printk("bt_os_new(49)=%p\r\n", p);
     }
     return p;
 }
