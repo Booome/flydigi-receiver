@@ -1,5 +1,7 @@
-#define __DEMO_C_
-#include "demo.h"
+#include "soc_osal.h"
+#include "pinctrl.h"
+#include "gpio.h"
+#include "chip_io.h"
 
 static void bs21_rst(void)
 {

@@ -87,12 +87,12 @@ if(EXISTS ${KCONFIG_PATH})
     endif()
 endif()
 
-add_subdirectory(${SDK_ROOT}/application/demo ${CMAKE_BINARY_DIR}/sdk/demo)
 add_subdirectory(${SDK_ROOT}/application/bs21/standard ${CMAKE_BINARY_DIR}/sdk/standard)
 add_subdirectory(${SDK_ROOT}/kernel ${CMAKE_BINARY_DIR}/sdk/kernel)
 add_subdirectory(${SDK_ROOT}/drivers ${CMAKE_BINARY_DIR}/sdk/drivers)
 add_subdirectory(${SDK_ROOT}/middleware ${CMAKE_BINARY_DIR}/sdk/middleware)
 add_subdirectory(${SDK_ROOT}/open_source ${CMAKE_BINARY_DIR}/sdk/open_source)
+add_subdirectory(app)
 add_subdirectory(sdk-compat)
 
 add_path_with_alias_if_exist(${SDK_ROOT}/protocol sdk/protocol)
