@@ -5,6 +5,7 @@ import os
 import sys
 
 SDK, TARGET, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+APP = sys.argv[4] if len(sys.argv) > 4 else 'default'
 sys.path.append(os.path.join(SDK, 'build', 'script'))
 sys.path.append(os.path.join(SDK, 'build', 'config'))
 from enviroment import TargetEnvironment
@@ -12,8 +13,12 @@ from enviroment import TargetEnvironment
 env = TargetEnvironment(TARGET, extra_defines=['NO_BOOT_BACKUP'])
 env.remove('ram_component', 'samples')
 env.remove('ram_component', 'demo')
-env.append('ram_component', 'app')
+env.append('ram_component', APP)
 env.append('ram_component', 'sdk_compat')
+if APP == 'g_scanner':
+    env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
+    env.append('defines', 'SUPPORT_SLE_CENTRAL')
+    env.config['config_sle_ble_support'] = 'sle-central'
 
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)

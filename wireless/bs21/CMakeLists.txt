@@ -11,6 +11,9 @@ endif()
 if(NOT DEFINED BS21_TARGET)
     set(BS21_TARGET "bs21-n1100-rcu")
 endif()
+if(NOT DEFINED BS21_APP)
+    set(BS21_APP "default")
+endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 set(ENV{PYTHONDONTWRITEBYTECODE} "1")
@@ -21,7 +24,7 @@ set(Python3_EXECUTABLE "${CMAKE_COMMAND}" "-E" "env" "PYTHONDONTWRITEBYTECODE=1"
 set(CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/sdk-config.cmake")
 execute_process(
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen-config.py
-            ${SDK_ROOT} ${BS21_TARGET} ${CONFIG_FILE}
+            ${SDK_ROOT} ${BS21_TARGET} ${CONFIG_FILE} ${BS21_APP}
     RESULT_VARIABLE gen_result)
 if(NOT gen_result EQUAL 0)
     message(FATAL_ERROR "gen-config.py failed: ${gen_result}")
@@ -92,7 +95,7 @@ add_subdirectory(${SDK_ROOT}/kernel ${CMAKE_BINARY_DIR}/sdk/kernel)
 add_subdirectory(${SDK_ROOT}/drivers ${CMAKE_BINARY_DIR}/sdk/drivers)
 add_subdirectory(${SDK_ROOT}/middleware ${CMAKE_BINARY_DIR}/sdk/middleware)
 add_subdirectory(${SDK_ROOT}/open_source ${CMAKE_BINARY_DIR}/sdk/open_source)
-add_subdirectory(app)
+add_subdirectory(apps/${BS21_APP})
 add_subdirectory(sdk-compat)
 
 add_path_with_alias_if_exist(${SDK_ROOT}/protocol sdk/protocol)

@@ -1,4 +1,4 @@
-set(COMPONENT_NAME "app")
+set(COMPONENT_NAME "default")
 
 set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c
