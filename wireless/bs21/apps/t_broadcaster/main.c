@@ -169,7 +169,20 @@ static void sle_enable_cb(uint8_t status)
     }
     announce_rc = sle_start_announce(ADV_HANDLE);
     if (announce_rc != ERRCODE_SUCC) {
+        void *p90;
+        void *p91;
         osal_printk("sle_start_announce fail: 0x%x\r\n", announce_rc);
+        osal_printk("after fail: heap used=%u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
+        p90 = btos_new(90);
+        osal_printk("after fail: btos_new(90)=%p\r\n", p90);
+        if (p90 != NULL) {
+            btos_free(p90);
+        }
+        p91 = btos_new(91);
+        osal_printk("after fail: btos_new(91)=%p\r\n", p91);
+        if (p91 != NULL) {
+            btos_free(p91);
+        }
     }
 }
 
