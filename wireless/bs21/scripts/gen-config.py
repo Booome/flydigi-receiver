@@ -15,12 +15,13 @@ env.remove('ram_component', 'samples')
 env.remove('ram_component', 'demo')
 env.append('ram_component', APP)
 env.append('ram_component', 'sdk_compat')
+env.config['linkflags'].append('-Wl,--wrap=bt_os_new')
 if APP == 'g_scanner':
     env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
     env.append('defines', 'SUPPORT_SLE_CENTRAL')
     env.config['config_sle_ble_support'] = 'sle-central'
 elif APP == 't_broadcaster':
-    env.append('defines', 'SUPPORT_SLE_BLE_PERIPHERAL')
+    env.config['config_sle_ble_support'] = 'sle-peripheral'
 
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)

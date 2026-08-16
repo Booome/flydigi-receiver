@@ -1,12 +1,9 @@
 set(COMPONENT_NAME "sdk_compat")
 
-if("CONFIG_BT_SLE_ONLY" IN_LIST DEFINES)
-    set(SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/ble_stub.c
-    )
-else()
-    set(SOURCES)
-endif()
+set(SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/ble_stub.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/bt_os_hook.c
+)
 
 set(PUBLIC_HEADER)
 
