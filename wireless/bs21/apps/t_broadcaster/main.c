@@ -8,6 +8,9 @@
 #include "sle_device_manager.h"
 #include "sle_device_discovery.h"
 
+extern void *g_intheap_begin;
+extern unsigned int LOS_MemTotalUsedGet(void *pool);
+
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
 #define ADV_DATA_LEN_MAX     251
@@ -123,6 +126,7 @@ static void sle_enable_cb(uint8_t status)
     int rc;
     errcode_t announce_rc;
     osal_printk("sle enable: %d\r\n", status);
+    osal_printk("heap used before announce: %u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
     sle_announce_seek_register_callbacks(&g_seek_cbk);
     rc = set_announce_param();
     if (rc != 0) {
@@ -143,6 +147,7 @@ static void sle_enable_cb(uint8_t status)
 void axk_main(void)
 {
     osal_printk("app: t_broadcaster\r\n");
+    osal_printk("heap used: %u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
     bs21_rst();
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
