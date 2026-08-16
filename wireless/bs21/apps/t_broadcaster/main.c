@@ -8,19 +8,6 @@
 #include "sle_device_manager.h"
 #include "sle_device_discovery.h"
 
-extern void *g_intheap_begin;
-extern unsigned int LOS_MemTotalUsedGet(void *pool);
-extern void *m_aucSysMem0;
-extern void *LOS_MemAlloc(void *pool, unsigned int size);
-extern unsigned int LOS_MemFree(void *pool, void *mem);
-extern void *btos_new(unsigned int size);
-extern void btos_free(void *mem);
-extern void *bt_os_new(unsigned int size);
-extern void bt_os_free(void *mem);
-extern int memcpy_s(void *dest, unsigned int dest_max, const void *src, unsigned int count);
-extern unsigned int g_bth_global_heap_statistic_enable;
-extern void *bt_os_49_get(void);
-
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
 #define ADV_DATA_LEN_MAX     251
@@ -153,22 +140,6 @@ static void sle_enable_cb(uint8_t status)
     int rc;
     errcode_t announce_rc;
     osal_printk("sle enable: %d\r\n", status);
-    osal_printk("heap used before announce: %u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
-    osal_printk("m_aucSysMem0=%p g_intheap_begin=%p\r\n", m_aucSysMem0, &g_intheap_begin);
-    {
-        void *p = LOS_MemAlloc(m_aucSysMem0, 91);
-        osal_printk("test LOS_MemAlloc(91)=%p\r\n", p);
-        if (p != NULL) {
-            LOS_MemFree(m_aucSysMem0, p);
-        }
-    }
-    {
-        void *p = btos_new(91);
-        osal_printk("test btos_new(91)=%p\r\n", p);
-        if (p != NULL) {
-            btos_free(p);
-        }
-    }
     sle_announce_seek_register_callbacks(&g_seek_cbk);
     rc = set_announce_param();
     if (rc != 0) {
@@ -180,49 +151,15 @@ static void sle_enable_cb(uint8_t status)
         osal_printk("set_announce_data fail: %d\r\n", rc);
         return;
     }
-    {
-        void *node = *(void **)(0x4b668 + 4);
-        while (node != NULL) {
-            unsigned char *b = (unsigned char *)node;
-            osal_printk("disc node h=%u mode=%u adv_len=%u rsp_len=%u\r\n",
-                        b[0], b[6], b[44] | (b[45] << 8), b[46] | (b[47] << 8));
-            node = *(void **)((unsigned char *)node - 8);
-        }
-    }
     announce_rc = sle_start_announce(ADV_HANDLE);
     if (announce_rc != ERRCODE_SUCC) {
-        void *p90;
-        void *p91;
         osal_printk("sle_start_announce fail: 0x%x\r\n", announce_rc);
-        osal_printk("after fail: heap used=%u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
-        osal_printk("g_bth_global_heap_statistic_enable=%u\r\n", g_bth_global_heap_statistic_enable);
-        p90 = btos_new(90);
-        osal_printk("after fail: btos_new(90)=%p\r\n", p90);
-        if (p90 != NULL) {
-            btos_free(p90);
-        }
-        p91 = btos_new(91);
-        osal_printk("after fail: btos_new(91)=%p\r\n", p91);
-        if (p91 != NULL) {
-            btos_free(p91);
-        }
-        {
-            unsigned char *b = (unsigned char *)bt_os_49_get();
-            if (b != NULL) {
-                osal_printk("announce ctx: b[4]=%u b[37]=%u b[38]=%u b[39]=%u b[40]=%u\r\n",
-                            b[4], b[37], b[38], b[39], b[40]);
-                osal_printk("announce ctx len=%u\r\n", b[37] | (b[38] << 8));
-            } else {
-                osal_printk("announce ctx: NULL\r\n");
-            }
-        }
     }
 }
 
 void axk_main(void)
 {
     osal_printk("app: t_broadcaster\r\n");
-    osal_printk("heap used: %u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
     bs21_rst();
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;

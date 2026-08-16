@@ -6,9 +6,6 @@
 #include "sle_device_manager.h"
 #include "sle_device_discovery.h"
 
-extern void *g_intheap_begin;
-extern unsigned int LOS_MemTotalUsedGet(void *pool);
-
 static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
 
@@ -79,7 +76,6 @@ static void seek_result_cb(sle_seek_result_info_t *result)
 void axk_main(void)
 {
     osal_printk("app: g_scanner\r\n");
-    osal_printk("heap used: %u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
     bs21_rst();
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
