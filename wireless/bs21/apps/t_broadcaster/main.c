@@ -13,6 +13,8 @@ extern unsigned int LOS_MemTotalUsedGet(void *pool);
 extern void *m_aucSysMem0;
 extern void *LOS_MemAlloc(void *pool, unsigned int size);
 extern unsigned int LOS_MemFree(void *pool, void *mem);
+extern void *btos_new(unsigned int size);
+extern void btos_free(void *mem);
 
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
@@ -136,6 +138,13 @@ static void sle_enable_cb(uint8_t status)
         osal_printk("test LOS_MemAlloc(91)=%p\r\n", p);
         if (p != NULL) {
             LOS_MemFree(m_aucSysMem0, p);
+        }
+    }
+    {
+        void *p = btos_new(91);
+        osal_printk("test btos_new(91)=%p\r\n", p);
+        if (p != NULL) {
+            btos_free(p);
         }
     }
     sle_announce_seek_register_callbacks(&g_seek_cbk);
