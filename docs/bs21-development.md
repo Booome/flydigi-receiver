@@ -58,6 +58,11 @@
 `CMakeLists.txt` 直接引用 SDK 的构建脚本与源目录，构建产物收集到 `wireless/bs21/output/`，
 SDK 树不叠加源码。
 
+- `app/`：应用入口，`main.c` 提供 `axk_main()`（SDK 闭源 `libmain_init_porting.a`
+  直接调用该符号作为用户入口），当前实现复位 GPIO21 + 创建 `hello_task` 循环打印
+- `sdk-compat/`：`bs21-n1100-rcu`（SLE-only）的 `libbth_sdk.a` 残留 36 个 `sapi_ble_*`
+  BLE 符号引用（无实现），由 `ble_stub.c` 空实现补齐以满足链接
+
 ### 2.2 Ai-BS21_SDK 环境搭建（Linux）
 
 SDK 位置：`~/.local/Ai-BS21_SDK`（从 GitHub 克隆）。
@@ -85,8 +90,9 @@ SDK 自带的 sign/packet 工具把部分中间产物硬编码写回 SDK 树，�
 | `SDK/output/` | 已 gitignore | 签名/打包产物（`application_sign.bin`、各 fwpkg） |
 | `SDK/interim_binary/` | tracked，字节一致 | 分区/flashboot/loaderboot/nv 等预编译二进制，构建时重新生成但内容不变 |
 | `SDK/tools/pkg/fwpkg/bs21/bs21_all.fwpkg` | tracked，构建后变 `M` | packet.py 硬编码写入；构建脚本打包后自动 `git checkout` 恢复 |
+| `SDK/build/config/target_config/bs21/fota/__pycache__/*.pyc` | tracked，构建后变 `D` | `gen-config.py` 复用 SDK `TargetEnvironment`，其 import 时 `rm_pyc` 删目标目录 pycache；`package` 目标构建后自动 `git checkout` 恢复 |
 
-前两项内容稳定、不会让 `git status` 变脏；第三项由 `wireless/bs21/CMakeLists.txt` 的
+前三项内容稳定、不会让 `git status` 变脏；后两项由 `wireless/bs21/CMakeLists.txt` 的
 `package` 目标在打包完成后自动 `git checkout --` 恢复。这是只读方案的已知局限——彻底
 隔离需给 sign/packet 工具增加输出重定向，超出当前范围。
 
@@ -116,6 +122,13 @@ CONFIG_SUPPORT_SLE_CENTRAL=y
 > `NO_BOOT_BACKUP`，导致链接脚本按 standard 布局（application @ 0x15000），flashboot
 > 跳错 0xA000 致 application 不启动。`gen-config.py` 已通过 `extra_defines` 注入
 > `NO_BOOT_BACKUP` 修复。
+
+### 2.4.1 镜像签名完整性（GENERAT_SEC_IMAGE）
+
+sign 工具 `sign_tool_pltuni` 生成的 `application_sign.bin` 缺少 64 字节安全尾部，需再经
+`riscv32-linux-musl-objcopy --enable_sec`（依赖 `libsec_image.so`）追加 sec 信息，否则
+flashboot 校验失败、板子 `boot.` 循环重启。顶层 `CMakeLists.txt` 已通过 `GENERAT_SEC_IMAGE`
+目标在 sign 后自动执行该步（含 `libsec_image.so` 复制），CMake 产物与 SDK `build.py` 逐字节一致。
 
 ### 2.5 烧录（Linux，基于社区 ws63flash）
 
@@ -187,8 +200,9 @@ sle_pair_remote_device(&addr);     // 发起配对
 **目标**：确认 BS21 能扫描到手柄的 SLE 广播
 
 - [x] Ai-BS21_SDK 环境搭建（Linux 编译 + ws63flash 烧录）
-- [x] demo 启动验证（编译 → 烧录 → 启动 → 串口打印全链路打通）
+- [x] app 启动验证（编译 → 烧录 → 启动 → 串口打印全链路打通；`app` 组件替换 SDK demo 作为入口）
 - [x] 修复 `bs21-n1100-rcu` flash 布局 bug（`NO_BOOT_BACKUP`）
+- [x] 修复 CMake 构建 `boot.` 循环（补 `GENERAT_SEC_IMAGE`：`objcopy --enable_sec`）
 - [ ] 两块 BS21 Kit 互相验证 SLE 通信（排除环境问题）
 - [ ] BS21 配置为 G 节点，执行 SLE 扫描
 - [ ] 手柄开机（PC模式），观察扫描结果

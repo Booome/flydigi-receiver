@@ -35,6 +35,12 @@
 - **P0 完成（2026-08-15）**：编译 → 烧录 → 启动 → 串口打印全链路打通。修复
   `bs21-n1100-rcu` flash 布局 bug（partition 表 application @ 0xb000，但链接脚本
   按 standard 布局 @ 0x15000，需补 `NO_BOOT_BACKUP`）。
+- **构建流程对齐（2026-08-16）**：CMake 构建产物曾 `boot.` 循环，根因是 sign 后缺
+  `objcopy --enable_sec` 追加的 64 字节 sec 信息（flashboot 校验失败）。补上
+  `GENERAT_SEC_IMAGE` 后 CMake 产物与 SDK `build.py` 逐字节一致。
+- **SDK 只读收尾（2026-08-16）**：ble_stub 从 SDK `standard_porting` overlay 迁回
+  `sdk-compat`；`app` 组件替换 SDK `demo` 作为入口（`axk_main` + `hello_task`）；
+  SDK 树保持干净（仅 `setup-sdk.sh` 的 chmod + LiteOS `.a` 软链）。
 
 详见 `docs/bs21-development.md`。
 
