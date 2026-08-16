@@ -18,6 +18,7 @@ extern void btos_free(void *mem);
 extern void *bt_os_new(unsigned int size);
 extern void bt_os_free(void *mem);
 extern int memcpy_s(void *dest, unsigned int dest_max, const void *src, unsigned int count);
+extern unsigned int g_bth_global_heap_statistic_enable;
 
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
@@ -176,6 +177,7 @@ static void sle_enable_cb(uint8_t status)
         void *p91;
         osal_printk("sle_start_announce fail: 0x%x\r\n", announce_rc);
         osal_printk("after fail: heap used=%u\r\n", LOS_MemTotalUsedGet(&g_intheap_begin));
+        osal_printk("g_bth_global_heap_statistic_enable=%u\r\n", g_bth_global_heap_statistic_enable);
         p90 = btos_new(90);
         osal_printk("after fail: btos_new(90)=%p\r\n", p90);
         if (p90 != NULL) {
