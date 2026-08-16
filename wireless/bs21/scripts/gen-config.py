@@ -11,6 +11,7 @@ from enviroment import TargetEnvironment
 
 env = TargetEnvironment(TARGET, extra_defines=['NO_BOOT_BACKUP'])
 env.remove('ram_component', 'samples')
+env.append('ram_component', 'sdk_compat')
 
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)
