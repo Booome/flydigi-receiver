@@ -20,6 +20,7 @@ typedef struct {
 } scan_device_t;
 
 static scan_device_t g_scan_table[SCAN_TABLE_SIZE] = { 0 };
+static bool g_table_full = false;
 static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
 
@@ -52,7 +53,7 @@ static scan_device_t *table_add(const sle_addr_t *addr)
             return &g_scan_table[i];
         }
     }
-    osal_printk("[scan] table full\r\n");
+    g_table_full = true;
     return NULL;
 }
 
@@ -91,6 +92,9 @@ static void print_scan_table(void)
                         g_scan_table[i].addr.addr[4], g_scan_table[i].addr.addr[5],
                         g_scan_table[i].rssi, g_scan_table[i].count);
         }
+    }
+    if (g_table_full) {
+        osal_printk("[scan] table full\r\n");
     }
 }
 
