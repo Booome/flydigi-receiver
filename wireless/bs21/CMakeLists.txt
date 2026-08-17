@@ -129,13 +129,18 @@ set(PACKAGE_DEPENDS ${BIN_NAME} GENERAT_NVBIN GENERAT_PARTITION
         COPY_FLASHBOOT_BIN COPY_LOADERBOOT_BIN)
 if (EXISTS ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TARGET_NAME}.cfg)
     set(BS21_SIGN_DIR "${SDK_ROOT}/output/${CHIP}/${CORE}/${PKG_TARGET_NAME}")
+    if(TARGET GENERAT_ROM_PATCH)
+        set(SIGNBIN_DEPS GENERAT_BIN GENERAT_ROM_PATCH)
+    else()
+        set(SIGNBIN_DEPS GENERAT_BIN)
+    endif()
     add_custom_target(GENERAT_SIGNBIN ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory ${BS21_SIGN_DIR}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_BINARY_DIR}/${BIN_NAME}.bin ${BS21_SIGN_DIR}/${BIN_NAME}.bin
         COMMAND ${SIGN_TOOL} 0 ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TARGET_NAME}.cfg
         COMMENT "sign file:gen boot sign file"
         WORKING_DIRECTORY ${BS21_SIGN_DIR}
-        DEPENDS GENERAT_BIN
+        DEPENDS ${SIGNBIN_DEPS}
     )
     list(APPEND PACKAGE_DEPENDS GENERAT_SIGNBIN)
     if(${GEN_SEC_BIN} STREQUAL "True")

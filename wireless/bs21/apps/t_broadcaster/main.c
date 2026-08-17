@@ -7,6 +7,7 @@
 #include "sle_common.h"
 #include "sle_device_manager.h"
 #include "sle_device_discovery.h"
+#include "patch.h"
 
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
@@ -159,6 +160,7 @@ static void sle_enable_cb(uint8_t status)
 
 void axk_main(void)
 {
+    func_patch_init();
     osal_printk("app: t_broadcaster\r\n");
     bs21_rst();
 
