@@ -1,0 +1,23 @@
+# Local flash/reset/power-cycle mapping for tools/burn.py (NOT committed).
+# Copy this file to burn_config.yaml in the same directory and fill in your
+# values. burn.py reads burn_config.yaml.
+#
+# All serial ports MUST use /dev/serial/by-path/ stable paths
+# (e.g. pci-0000:00:14.0-usb-0:1-2.3:1.0-port0). ttyUSB* numbers drift after
+# replugging, never use them here.
+#
+# Find your paths with:
+#   ls -l /dev/serial/by-path/
+
+# Serial port of the control board (provides reset GPIO via uart-gpio pulse)
+ctrl_port: /dev/serial/by-path/<ctrl-serial-port>
+
+# One entry per board
+boards:
+  board_a:
+    # Module serial port (CH340) and its reset GPIO pin on the control board
+    port: /dev/serial/by-path/<board-a-serial-port>
+    reset_pin: 8
+  board_b:
+    port: /dev/serial/by-path/<board-b-serial-port>
+    reset_pin: 11

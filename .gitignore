@@ -5,6 +5,9 @@
 # Local env (serial/flash mapping, not committed)
 .env
 
+# Local flash config for tools/burn.py (not committed)
+burn_config.yaml
+
 # Python
 __pycache__/
 *.pyc
