@@ -223,13 +223,21 @@ sle_pair_remote_device(&addr);     // 发起配对
 - [x] 修复 CMake 构建 `boot.` 循环（补 `GENERAT_SEC_IMAGE`：`objcopy --enable_sec`）
 - [x] 两块 BS21 Kit 互相验证 SLE 通信（排除环境问题）
 - [x] BS21 配置为 G 节点，执行 SLE 扫描
-- [ ] 手柄开机（PC模式），观察扫描结果
-- [ ] 记录手柄 SLE 地址、广播数据、RSSI
-- [ ] 输出方式：USB2 串口输出扫描日志
+- [x] 手柄开机（PC模式），观察扫描结果
+- [x] 记录手柄 SLE 地址、广播数据、RSSI
+- [x] 输出方式：USB2 串口输出扫描日志
 
-> **当前任务**：`default` app 改造为 SLE 扫描器（G 节点），按地址聚合统计、每 2 秒
-> 打印设备表；通过开关手柄观察哪个地址的计数停止增长，从而锁定手柄地址。
-> 设计见 `docs/superpowers/specs/2026-08-18-default-sle-scan-design.md`。
+> **已完成**：`default` app 已改造为 SLE 扫描器（G 节点），按地址聚合统计、每 2 秒
+> 打印设备表（`[scan] devices:N` + 每设备一行）。board-to-board 对测 + 手柄识别均通过，
+> 通过开关手柄观察计数停增锁定手柄地址。
+> 设计见 `docs/superpowers/specs/2026-08-18-default-sle-scan-design.md`，
+> 实现计划见 `docs/superpowers/plans/2026-08-18-default-sle-scan.md`。
+
+**识别结果（2026-08-18）**：
+- 手柄 SLE 地址：`a1:a2:c8:75:43:b8`（开机持续广播，关机停止广播）
+- 广播 RSSI：约 -43 ~ -49 dBm（手柄距 board_b ~30cm；板对板对测 -21 ~ -26）
+- 扫描输出走 USB2 串口：`[scan] devices:N` + `  i) aa:bb:cc:dd:ee:ff rssi:-XX cnt:NN`
+- 本阶段 seek 仅聚合地址/RSSI/计数，广播载荷解析留待 M7
 
 **成功标准**：扫描到手柄 SLE 广播，获取地址和广播数据
 
