@@ -108,8 +108,10 @@ application.elf 中：
 
 - **SDK 原生**：`pm_port_cpu_resume`（`0x42fda` 附近，调用点 `0x4318a`），
   即**每次 CPU 从低功耗唤醒**都重新配置 patch。
-- **本项目**：另在 `apps/t_broadcaster/main.c` 的 `axk_main()` 入口显式调用
-  `func_patch_init()`。
+- **实测结论**：app 入口**无需**显式调用。曾在本项目
+  `apps/t_broadcaster/main.c` 的 `axk_main()` 里加过 `func_patch_init()`，
+  去掉后（仅靠 SDK 原生调用）烧录验证 patch 依然生效（无 fail to free、
+  SLE 广播正常），已移除。
 
 ## 五、如何验证 patch 表已进入固件
 
