@@ -221,11 +221,15 @@ sle_pair_remote_device(&addr);     // 发起配对
 - [x] app 启动验证（编译 → 烧录 → 启动 → 串口打印全链路打通；`app` 组件替换 SDK demo 作为入口）
 - [x] 修复 `bs21-n1100-rcu` flash 布局 bug（`NO_BOOT_BACKUP`）
 - [x] 修复 CMake 构建 `boot.` 循环（补 `GENERAT_SEC_IMAGE`：`objcopy --enable_sec`）
-- [ ] 两块 BS21 Kit 互相验证 SLE 通信（排除环境问题）
-- [ ] BS21 配置为 G 节点，执行 SLE 扫描
+- [x] 两块 BS21 Kit 互相验证 SLE 通信（排除环境问题）
+- [x] BS21 配置为 G 节点，执行 SLE 扫描
 - [ ] 手柄开机（PC模式），观察扫描结果
 - [ ] 记录手柄 SLE 地址、广播数据、RSSI
 - [ ] 输出方式：USB2 串口输出扫描日志
+
+> **当前任务**：`default` app 改造为 SLE 扫描器（G 节点），按地址聚合统计、每 2 秒
+> 打印设备表；通过开关手柄观察哪个地址的计数停止增长，从而锁定手柄地址。
+> 设计见 `docs/superpowers/specs/2026-08-18-default-sle-scan-design.md`。
 
 **成功标准**：扫描到手柄 SLE 广播，获取地址和广播数据
 
@@ -233,11 +237,15 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 **目标**：尝试与手柄建立 SLE 连接
 
-- [ ] 基于 M5 获取的地址，发起连接
+- [ ] 基于 M5 获取的地址，发起连接（`sle_connect_remote_device`）
 - [ ] 观察连接状态变化
-- [ ] 如果连接建立，尝试配对
+- [ ] 如果连接建立，尝试配对（`sle_pair_remote_device`）
 - [ ] 记录连接/配对过程中各阶段的状态
 - [ ] 如果配对被拒，分析拒绝原因（地址过滤？SMP 密钥？）
+
+> **远期目标**：类似 Xbox 无线接收器的体验——接收器与手柄都进入"连接模式"，
+> 靠近后自动发现、自动配对。连接逻辑在 `default` app 内持续演进（扫描 →
+> 连接 → 配对）。
 
 **成功标准**：连接建立（即使配对失败）
 
