@@ -246,15 +246,32 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 **目标**：尝试与手柄建立 SLE 连接
 
-- [ ] 基于 M5 获取的地址，发起连接（`sle_connect_remote_device`）
-- [ ] 观察连接状态变化
-- [ ] 如果连接建立，尝试配对（`sle_pair_remote_device`）
-- [ ] 记录连接/配对过程中各阶段的状态
-- [ ] 如果配对被拒，分析拒绝原因（地址过滤？SMP 密钥？）
+- [x] 基于 M5 获取的地址，发起连接（`sle_connect_remote_device`）
+- [x] 观察连接状态变化
+- [x] 如果连接建立，尝试配对（`sle_pair_remote_device`）
+- [x] 记录连接/配对过程中各阶段的状态
+- [ ] 如果配对被拒，分析拒绝原因（地址过滤？SMP 密钥？）——本次配对成功，未触发
 
-> **远期目标**：类似 Xbox 无线接收器的体验——接收器与手柄都进入"连接模式"，
-> 靠近后自动发现、自动配对。连接逻辑在 `default` app 内持续演进（扫描 →
-> 连接 → 配对）。
+> **已完成**：`default` app 改造为全自动连接状态机（SCAN → CONNECTING → PAIRING →
+> ACTIVE，回调驱动，`seek_result_cb` 锁定目标地址后 `sle_stop_seek`，`seek_disable_cb`
+> 发起 `sle_connect_remote_device`，连接后按需 `sle_pair_remote_device`）。
+> board-to-board 对测（`t_broadcaster` 非零地址 `aa:bb:cc:dd:ee:01`）+ 手柄连接均成功。
+> 设计见 `docs/superpowers/specs/2026-08-18-m6-connection-design.md`，
+> 实现计划见 `docs/superpowers/plans/2026-08-18-m6-connection.md`。
+
+**连接结果（2026-08-18）**：
+- 手柄连接成功：锁定 `a1:a2:c8:75:43:b8`（RSSI -53）→ `CONNECTED`（conn id:0, state:1）→
+  `pairing...` → `paired:0x0`（配对成功）→ 稳定保持 48s+（seek 停止，计数冻结）
+- board-to-board：`t_broadcaster`（`aa:bb:cc:dd:ee:01`）持续广播（g_scanner 收到 1688 帧/30s），
+  连接+配对成功，连接后 seek 自动停止、无重连
+- 连接参数使用 SDK 默认（未调用 `sle_default_connection_param_set`）
+
+**已知问题（非阻断）**：
+- `default` 复位后第一遍 seek 偶发 ULP 复位（`Reboot cause:0x2010`，ULP 引脚强制复位），
+  system reboot 后第二遍稳定；板对板与手柄测试中第二遍均正常完成连接。根因待查（疑似
+  SDK/controller 层或复位早期射频初始化问题，未在应用代码路径）
+- 配对成功日志为 `paired:0x0`（`ERRCODE_SUCC`），但状态机 `pair_complete_cb` 成功路径
+  无多余动作（保持 ACTIVE，数据收发留待 M7）
 
 **成功标准**：连接建立（即使配对失败）
 
