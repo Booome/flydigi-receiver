@@ -16,7 +16,7 @@ set(PUBLIC_DEFINES)
 
 set(COMPONENT_PUBLIC_CCFLAGS)
 
-set(COMPONENT_CCFLAGS)
+set(COMPONENT_CCFLAGS "-Wno-unused-parameter")
 
 set(WHOLE_LINK
 true

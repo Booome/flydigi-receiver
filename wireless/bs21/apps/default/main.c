@@ -132,7 +132,6 @@ static void print_scan_table(void)
 
 static void *scan_task(const char *arg)
 {
-    (void)arg;
     while (1) {
         osal_msleep(SCAN_PRINT_MS);
         print_scan_table();
@@ -163,8 +162,6 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
 
 static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status)
 {
-    (void)conn_id;
-    (void)addr;
     osal_printk("[conn] paired: 0x%x\r\n", status);
     if (status == ERRCODE_SUCC) {
         g_conn_state = CONN_STATE_ACTIVE;
@@ -187,21 +184,6 @@ static void seek_disable_cb(errcode_t status)
     }
 }
 
-static void scan_start(void);
-
-static void sle_power_on_cb(uint8_t status)
-{
-    osal_printk("sle power on: %d\r\n", status);
-    enable_sle();
-}
-
-static void sle_enable_cb(uint8_t status)
-{
-    osal_printk("sle enable: %d\r\n", status);
-    sle_announce_seek_register_callbacks(&g_seek_cbk);
-    scan_start();
-}
-
 static void scan_start(void)
 {
     sle_seek_param_t param = { 0 };
@@ -222,6 +204,19 @@ static void scan_start(void)
     if (rc != ERRCODE_SUCC) {
         osal_printk("sle_start_seek fail: 0x%x\r\n", rc);
     }
+}
+
+static void sle_power_on_cb(uint8_t status)
+{
+    osal_printk("sle power on: %d\r\n", status);
+    enable_sle();
+}
+
+static void sle_enable_cb(uint8_t status)
+{
+    osal_printk("sle enable: %d\r\n", status);
+    sle_announce_seek_register_callbacks(&g_seek_cbk);
+    scan_start();
 }
 
 static void seek_enable_cb(errcode_t status)
