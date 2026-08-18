@@ -46,7 +46,7 @@ static void bs21_rst(void)
 static int set_announce_param(void)
 {
     sle_announce_param_t param = { 0 };
-    unsigned char local_addr[SLE_ADDR_LEN] = { 0 };
+    unsigned char local_addr[SLE_ADDR_LEN] = { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01 };
 
     param.announce_mode = SLE_ANNOUNCE_MODE_CONNECTABLE_SCANABLE;
     param.announce_handle = ADV_HANDLE;
