@@ -151,6 +151,7 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
             osal_printk("[conn] pairing...\r\n");
             if (sle_pair_remote_device(addr) != ERRCODE_SUCC) {
                 osal_printk("[conn] pair request fail\r\n");
+                g_conn_state = CONN_STATE_ACTIVE;
             }
         } else {
             g_conn_state = CONN_STATE_ACTIVE;
@@ -163,9 +164,7 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
 static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status)
 {
     osal_printk("[conn] paired: 0x%x\r\n", status);
-    if (status == ERRCODE_SUCC) {
-        g_conn_state = CONN_STATE_ACTIVE;
-    }
+    g_conn_state = CONN_STATE_ACTIVE;
 }
 
 static void seek_disable_cb(errcode_t status)
