@@ -58,7 +58,7 @@ def get_board(cfg, name):
     b = cfg.get("boards", {}).get(name)
     if not b:
         sys.exit(f"[ERROR] unknown board: {name} (board_a / board_b only)")
-    reset_cmd = f"uart-gpio pulse {cfg['ctrl_port']} A {b['reset_pin']} 0 3000"
+    reset_cmd = f"uart-gpio pulse {cfg['ctrl_port']} A {b['reset_pin']} 0 2000"
     return b["port"], reset_cmd
 
 

@@ -42,14 +42,14 @@ python3 wireless/bs21/tools/burn.py board_a   # 或 board_b
 ```bash
 ws63flash --flash <模块串口> wireless/bs21/build/<app>/bs21_all_in_one.fwpkg -b460800
 # 另一终端，复位模块（<控制串口> 与 <引脚> 见 burn_config.yaml 的 ctrl_port / reset_pin）：
-uart-gpio pulse <控制串口> A <引脚> 0 3000
+uart-gpio pulse <控制串口> A <引脚> 0 2000
 ```
 
 抓取从 reset 起的完整 log（模块无法靠拉低 reset 停止，会反复 reset 打印多轮）：
 ```bash
 stty -F <模块串口> 115200 raw -echo
 cat <模块串口> > /tmp/reset.log &
-uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000   # 复位，触发一轮启动 log
+uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 2000   # 复位，触发一轮启动 log
 # 等几秒后 kill 掉 cat
 ```
 
