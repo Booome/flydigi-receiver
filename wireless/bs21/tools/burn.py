@@ -5,8 +5,9 @@ Usage:
     python3 wireless/bs21/tools/burn.py board_a [fwpkg]
     python3 wireless/bs21/tools/burn.py board_a -a <app>   # e.g. t_broadcaster
 
-Board/serial mapping is read from wireless/bs21/tools/burn_config.yaml
-(copy burn_config.yaml.example to create it).
+Board/serial mapping is read from the project .env file (wireless/bs21/../../.env):
+    BS21_BOARD_A_PORT / BS21_BOARD_A_RST_PORT / BS21_BOARD_A_RST_PIN
+    BS21_BOARD_B_PORT / BS21_BOARD_B_RST_PORT / BS21_BOARD_B_RST_PIN
 FwPkg defaults to build/<app>/bs21_all_in_one.fwpkg (app=default -> build/).
 
 Flow (one ws63flash run decides the chip state):
@@ -25,8 +26,6 @@ import subprocess
 import sys
 import time
 
-import yaml
-
 FLASH_BAUD = 460800
 WAIT_WAITING_TIMEOUT = 6.0
 AUTO_DL_WAIT = 2.0
@@ -41,25 +40,51 @@ DOWNLOAD_MARKERS = (b"Xfer ", b"Establishing ymodem")
 
 
 def repo_root():
+    """Build output root (wireless/bs21), where build/<app>/ fwpkg live."""
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def find_config():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "burn_config.yaml")
-    return path if os.path.isfile(path) else None
+def project_root():
+    """Repository root (contains .env and wireless/)."""
+    return os.path.dirname(os.path.dirname(repo_root()))
 
 
-def load_config(path):
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def load_env():
+    """Load .env from project root."""
+    env_path = os.path.join(project_root(), ".env")
+    if not os.path.isfile(env_path):
+        sys.exit("[ERROR] .env not found at project root; see .env.example")
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    return dict(os.environ)
 
 
-def get_board(cfg, name):
-    b = cfg.get("boards", {}).get(name)
-    if not b:
+ENV = load_env()
+
+
+def get_board(env, name):
+    """Return (module_port, reset_cmd) for board_a / board_b from .env vars."""
+    if name == "board_a":
+        port = env.get("BS21_BOARD_A_PORT")
+        rst_port = env.get("BS21_BOARD_A_RST_PORT")
+        pin = env.get("BS21_BOARD_A_RST_PIN")
+    elif name == "board_b":
+        port = env.get("BS21_BOARD_B_PORT")
+        rst_port = env.get("BS21_BOARD_B_RST_PORT")
+        pin = env.get("BS21_BOARD_B_RST_PIN")
+    else:
         sys.exit(f"[ERROR] unknown board: {name} (board_a / board_b only)")
-    reset_cmd = f"uart-gpio pulse {cfg['ctrl_port']} A {b['reset_pin']} 0 2000"
-    return b["port"], reset_cmd
+    if not (port and rst_port and pin):
+        sys.exit(f"[ERROR] incomplete .env config for {name} "
+                 f"(need BS21_BOARD_{name.upper()}_PORT/RST_PORT/RST_PIN)")
+    reset_cmd = f"uart-gpio pulse {rst_port} A {pin} 0 2000"
+    return port, reset_cmd
 
 
 def get_port_users(port):
@@ -268,15 +293,10 @@ def main():
         print(f"[ERROR] fwpkg not found: {fwpkg}")
         sys.exit(1)
 
-    cfg_path = find_config()
-    if not cfg_path:
-        print("[ERROR] burn_config.yaml not found; copy burn_config.yaml.example")
-        sys.exit(1)
-    cfg = load_config(cfg_path)
-    port, reset_cmd = get_board(cfg, board)
+    port, reset_cmd = get_board(ENV, board)
     print(f"[board] {board} ({port})")
     print(f"[firmware] {fwpkg}")
-    print(f"[config] {cfg_path}")
+    print(f"[config] {os.path.join(project_root(), '.env')}")
 
     ensure_port_free(port)
 

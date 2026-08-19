@@ -27,9 +27,10 @@ Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
 
 #### 烧录与调试
 
-串口/复位配置记录在 `wireless/bs21/tools/burn_config.yaml`（不入库，模板见同目录
-`burn_config.yaml.example`），统一用 `/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，
-勿硬编码）。复位 GPIO 由控制串口（STM32）提供。
+串口/复位配置记录在项目根 `.env`（不入库，模板见 `.env.example`），统一用
+`/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，勿硬编码）。复位 GPIO 由控制串口
+（STM32）提供。相关脚本（`burn.py`、`bs21_connect.py`、`bs21_disconnect_test.py`）
+自动从 `.env` 读取。
 
 **自动烧录（推荐）**：
 ```bash
@@ -41,7 +42,7 @@ python3 wireless/bs21/tools/burn.py board_a   # 或 board_b
 手动烧录（先发命令，等 "Waiting for device reset..." 后复位触发）：
 ```bash
 ws63flash --flash <模块串口> wireless/bs21/build/<app>/bs21_all_in_one.fwpkg -b460800
-# 另一终端，复位模块（<控制串口> 与 <引脚> 见 burn_config.yaml 的 ctrl_port / reset_pin）：
+# 另一终端，复位模块（<控制串口> 与 <引脚> 见 .env 的 *RST_PORT / *RST_PIN）：
 uart-gpio pulse <控制串口> A <引脚> 0 2000
 ```
 

@@ -170,8 +170,7 @@ ws63flash 已实现 fwpkg 解析（`src/fwpkg.h`）和 WS63 串口烧录协议�
 python3 wireless/bs21/tools/burn.py board_a   # 或 board_b；可选第 2 参指定 fwpkg
 ```
 
-- 串口/复位配置全部在 `wireless/bs21/tools/burn_config.yaml`（by-path 稳定路径，
-  不入库；模板见同目录 `burn_config.yaml.example`）。
+- 串口/复位配置全部在项目根 `.env`（by-path 稳定路径，不入库；模板见 `.env.example`）。
 - 单轮状态判定：直接跑 `ws63flash`（pty 实时输出）→ 等 `Waiting for device reset` →
   等 2s 有自动下载 = **boot. 循环态**；无则脉冲复位等 1s 有下载 = **正常态**；仍无 =
   **卡死态**（复位无效，只能手动拔插模块 USB 电源恢复）。

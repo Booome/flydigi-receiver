@@ -9,23 +9,51 @@
 """
 import os, serial, time, subprocess, sys
 
-CTRL = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:3.4.1.1:1.0-port0"
-APATH = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:3.4.1.2:1.0-port0"
-BPATH = "/dev/serial/by-path/pci-0000:00:14.0-usb-0:3.4.1.3:1.0-port0"
-PIN_A = "8"
-PIN_B = "11"
+def load_env():
+    """Load .env from project root (up 4 levels from tools/)."""
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))), ".env")
+    if not os.path.isfile(env_path):
+        return {}
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    return dict(os.environ)
+
+ENV = load_env()
+
+CTRL_A = ENV.get("BS21_BOARD_A_RST_PORT")
+CTRL_B = ENV.get("BS21_BOARD_B_RST_PORT")
+APATH = ENV.get("BS21_BOARD_A_PORT")
+BPATH = ENV.get("BS21_BOARD_B_PORT")
+PIN_A = ENV.get("BS21_BOARD_A_RST_PIN", "8")
+PIN_B = ENV.get("BS21_BOARD_B_RST_PIN", "11")
+
+for var, name in ((CTRL_A, "BS21_BOARD_A_RST_PORT"), (CTRL_B, "BS21_BOARD_B_RST_PORT"),
+                  (APATH, "BS21_BOARD_A_PORT"), (BPATH, "BS21_BOARD_B_PORT")):
+    if not var:
+        sys.exit(f"[ERROR] missing env: {name}")
 
 
 def pulse(pin, ms=2000):
-    subprocess.run(["uart-gpio", "pulse", CTRL, "A", pin, "0", str(ms)],
+    if pin == PIN_A:
+        ctrl = CTRL_A
+    else:
+        ctrl = CTRL_B
+    subprocess.run(["uart-gpio", "pulse", ctrl, "A", pin, "0", str(ms)],
                    check=True, capture_output=True)
 
 
 def config_open_drain():
-    for pin in (PIN_A, PIN_B):
-        r = subprocess.run(["uart-gpio", "config", CTRL, "A", pin, "open-drain"],
+    for pin, ctrl in ((PIN_A, CTRL_A), (PIN_B, CTRL_B)):
+        r = subprocess.run(["uart-gpio", "config", ctrl, "A", pin, "open-drain"],
                            capture_output=True, text=True)
-        subprocess.run(["uart-gpio", "write", CTRL, "A", pin, "1"],
+        subprocess.run(["uart-gpio", "write", ctrl, "A", pin, "1"],
                        capture_output=True)
         print(f"  [{pin}] {r.stdout.strip()}", flush=True)
 
