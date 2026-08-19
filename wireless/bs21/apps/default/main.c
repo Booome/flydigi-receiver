@@ -65,7 +65,7 @@ static scan_device_t *table_add(const sle_addr_t *addr)
     for (uint8_t i = 0; i < SCAN_TABLE_SIZE; i++) {
         if (!g_scan_table[i].used) {
             g_scan_table[i].used = 1;
-            (void)memcpy_s(g_scan_table[i].addr.addr, SLE_ADDR_LEN, addr->addr, SLE_ADDR_LEN);
+            memcpy_s(g_scan_table[i].addr.addr, SLE_ADDR_LEN, addr->addr, SLE_ADDR_LEN);
             return &g_scan_table[i];
         }
     }
@@ -78,7 +78,7 @@ static void conn_rescan(void)
     g_target_locked = false;
     g_conn_state = CONN_STATE_SCAN;
     osal_printk("[conn] rescan\r\n");
-    (void)sle_start_seek();
+    sle_start_seek();
 }
 
 static void seek_result_cb(sle_seek_result_info_t *result)
@@ -98,11 +98,11 @@ static void seek_result_cb(sle_seek_result_info_t *result)
     dev->rssi = result->rssi;
     if (!g_target_locked &&
         memcmp(result->addr.addr, g_target_mac, SLE_ADDR_LEN) == 0) {
-        (void)memcpy_s(&g_target_addr, sizeof(g_target_addr),
-                       &result->addr, sizeof(g_target_addr));
+        memcpy_s(&g_target_addr, sizeof(g_target_addr),
+                 &result->addr, sizeof(g_target_addr));
         g_target_locked = true;
         osal_printk("[conn] target locked, stopping seek\r\n");
-        (void)sle_stop_seek();
+        sle_stop_seek();
     }
 }
 
@@ -165,6 +165,29 @@ static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
 {
     osal_printk("[conn] paired: 0x%x\r\n", status);
     g_conn_state = CONN_STATE_ACTIVE;
+    if (status == ERRCODE_SUCC) {
+        osal_printk("[conn] pairing done, keep connection\r\n");
+        sle_connection_param_update_t up = { 0 };
+        up.conn_id = conn_id;
+        up.interval_min = 100;
+        up.interval_max = 100;
+        up.max_latency = 0;
+        up.supervision_timeout = 200;
+        osal_printk("[conn] sending param update (superv=2s)\r\n");
+        if (sle_update_connect_param(&up) != ERRCODE_SUCC) {
+            osal_printk("[conn] param update send fail\r\n");
+        }
+    }
+}
+
+static void conn_param_update_cb(uint16_t conn_id, errcode_t status,
+                                 const sle_connection_param_update_evt_t *param)
+{
+    osal_printk("[conn] param update result: id:%u status:0x%x interval:%u latency:%u superv:%u\r\n",
+                conn_id, status,
+                (param ? param->interval : 0),
+                (param ? param->latency : 0),
+                (param ? param->supervision : 0));
 }
 
 static void seek_disable_cb(errcode_t status)
@@ -213,7 +236,20 @@ static void sle_power_on_cb(uint8_t status)
 
 static void sle_enable_cb(uint8_t status)
 {
+    sle_addr_t la;
     osal_printk("sle enable: %d\r\n", status);
+    if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
+        osal_printk("[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
+                    la.addr[0], la.addr[1], la.addr[2],
+                    la.addr[3], la.addr[4], la.addr[5], la.type);
+    }
+    memset(&la, 0, sizeof(la));
+    la.type = SLE_ADDRESS_TYPE_PUBLIC;
+    la.addr[0] = 0xaa; la.addr[1] = 0xbb; la.addr[2] = 0xcc;
+    la.addr[3] = 0xdd; la.addr[4] = 0xee; la.addr[5] = 0x02;
+    if (sle_set_local_addr(&la) == ERRCODE_SUCC) {
+        osal_printk("[conn] local addr set to aa:bb:cc:dd:ee:02\r\n");
+    }
     sle_announce_seek_register_callbacks(&g_seek_cbk);
     scan_start();
 }
@@ -238,6 +274,7 @@ void axk_main(void)
 
     g_conn_cbk.connect_state_changed_cb = conn_state_changed_cb;
     g_conn_cbk.pair_complete_cb = pair_complete_cb;
+    g_conn_cbk.connect_param_update_cb = conn_param_update_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
 
     osal_task *task_handle = NULL;

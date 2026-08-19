@@ -15,16 +15,29 @@ env.remove('ram_component', 'samples')
 env.remove('ram_component', 'demo')
 env.append('ram_component', APP)
 env.append('ram_component', 'sdk_compat')
-if APP == 'g_scanner':
+
+# Per-app settings live in <apps>/<APP>/config (key=value lines, '#' comments).
+# New apps only need their own config file, no script changes here.
+APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'apps')
+app_cfg = {}
+cfg_path = os.path.join(APP_DIR, APP, 'config')
+if os.path.isfile(cfg_path):
+    for line in open(cfg_path):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' in line:
+            key, val = [x.strip() for x in line.split('=', 1)]
+            app_cfg[key] = val
+role = app_cfg.get('sle_role')
+if role == 'central':
     env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
     env.append('defines', 'SUPPORT_SLE_CENTRAL')
     env.config['config_sle_ble_support'] = 'sle-central'
-elif APP == 't_broadcaster':
+elif role == 'peripheral':
     env.config['config_sle_ble_support'] = 'sle-peripheral'
-elif APP == 'default':
-    env.remove('defines', 'SUPPORT_SLE_PERIPHERAL')
-    env.append('defines', 'SUPPORT_SLE_CENTRAL')
-    env.config['config_sle_ble_support'] = 'sle-central'
+elif role is not None:
+    print('warning: unknown sle_role %r in %s' % (role, cfg_path))
 
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)
