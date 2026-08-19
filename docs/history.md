@@ -41,6 +41,17 @@
 - **SDK 只读收尾（2026-08-16）**：ble_stub 从 SDK `standard_porting` overlay 迁回
   `sdk-compat`；`app` 组件替换 SDK `demo` 作为入口（`axk_main` + `hello_task`）；
   SDK 树保持干净（仅 `setup-sdk.sh` 的 chmod + LiteOS `.a` 软链）。
+- **断连检测验证（2026-08-19）**：确认 SLE 对端断电可感知（supervision，
+  `disc:0x7` 链路超时）。此前"真断电 90s 不感知 / 手柄 3 分钟不感知"均为假象——
+  Ai-BS21-32S-Kit 模块 reset 引脚外接控制板 GPIO 默认 HIGH，拔 USB 后灌电维持
+  模块运行。拔电后主动将 reset 写 0 切断灌电，对端按 superv 超时感知
+  （superv=200 时约 2s）。手柄实测：接收器断电（切断灌电）→ 手柄约 2s 感知，
+  与官方 Dongle 场景一致。另修复配对失败根因（`auth_complete_cb` 未注册致 SMP
+  密钥未保存）。详见 `docs/bs21-development.md` M6.5。
+- **重连修复（2026-08-19）**：`sle_accept` 断开后停广播（re-announce 曾回退）导致
+  对端（G）重新上电后扫不到 T、无法重连。修复：断开且非本端主动时延迟 5s 重新
+  announce。验证：A 断电 → B 约 2s 感知 → A 上电自动重连成功；"先复位 B、2s 后
+  复位 A"顺序也连接成功（此前失败）。详见 `docs/bs21-development.md` M6.5。
 
 详见 `docs/bs21-development.md`。
 

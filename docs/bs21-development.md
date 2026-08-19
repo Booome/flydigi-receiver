@@ -60,8 +60,10 @@ SDK 树不叠加源码。
 
 - `apps/`：多工程应用入口，由顶层 `-DBS21_APP=` 选择（默认 `default`）。各工程的
   `main.c` 提供 `axk_main()`（SDK 闭源 `libmain_init_porting.a` 直接调用该符号作为
-  用户入口）；`default` 当前复位 GPIO21 + 创建 `hello_task` 循环打印，`g_scanner` /
-  `t_broadcaster` 分别为 SLE 扫描器 / 广播器
+  用户入口）；SLE 角色在工程目录的 `config` 文件声明（如 `sle_role = central`），
+  `gen-config.py` 自动读取，新增工程无需改脚本，缺省为 SDK 默认（peripheral）；
+  `default` / `g_scanner` / `sle_*` 为 central（扫描/连接方），`t_broadcaster` 为
+  peripheral（广播方）
 - `sdk-compat/`：`bs21-n1100-rcu`（SLE-only）的 `libbth_sdk.a` 残留 36 个 `sapi_ble_*`
   BLE 符号引用（无实现），由 `ble_stub.c` 空实现补齐以满足链接
 
@@ -274,6 +276,72 @@ sle_pair_remote_device(&addr);     // 发起配对
   无多余动作（保持 ACTIVE，数据收发留待 M7）
 
 **成功标准**：连接建立（即使配对失败）
+
+### M6.5: 断连检测与真断电感知实验
+
+**目标**：验证 SLE 连接在对方断电时能否被感知（对手柄场景：手柄需在我们接收器
+断电后快速感知并进入重连，官方 Dongle 断电手柄约 2-3s 感知）。
+
+**关键发现（2026-08-19）：外接 reset GPIO 灌电导致"假断电"**：
+- Ai-BS21-32S-Kit 模块的 reset 引脚外接控制板（STM32）GPIO，默认**推挽输出 HIGH**。
+- 拔掉模块 USB（USB2 串口）后，**reset 引脚从控制板灌入电压，模块并未真正断电**，
+  仍维持协议栈运行 → 对端感知不到。此前多次"拔电 90s 不感知"均为此假象。
+- **根治：reset 引脚改为 open-drain 输出**（`uart-gpio config <控制串口> A <引脚>
+  open-drain`，释放态靠板上拉维持 HIGH）。推挽时灌电由 GPIO 强驱动，open-drain
+  释放态灌电被上拉电阻限制，拔电即真断电。STM32 重启后 GPIO 模式会丢，**测试脚本
+  开头必须重新 config**。
+
+**测量结果**：
+- 稳定连接链路：连接 → 配对 `0x0` → param update `status:0x0 interval:100
+  latency:0 superv:200`（superv 生效，实测感知时间随 superv 变化）。
+- **双向断链检测均通过（open-drain 释放态，无需写 reset 0）**：
+  - **T（被连方）断电 → G（连接方）感知**：拔电后约 **1.9s**（`disc:0x7`）。
+  - **G（连接方）断电 → T（被连方）感知**：拔电后约 **1.9s**（`disc:0x7`）。
+- 对照组（切断灌电 + superv=4000/40s）：T 断电感知约 5.25s（superv 生效）。
+- 推挽默认 HIGH 时仅拔电不切断灌电：对端 90s+ 不感知（模块被灌电未断电）。
+
+**手柄验证（关键）**：
+- 手柄（`a1:a2:c8:75:43:b8`）作为 T 连上接收器（G，`sle_pair`，param update
+  superv=200）→ 接收器断电 → **手柄约 2s 感知断开**（superv 超时）。
+- 结论：**协议栈 supervision 正常，手柄断连感知与官方 Dongle 场景一致**。
+  之前"手柄 3 分钟不感知"的结论作废，根因即接收器被 reset 灌电未断电。
+
+**测试脚本（已入库）**：
+- `wireless/bs21/tools/bs21_connect.py`：稳定建立 G↔T 连接（config open-drain →
+  先复位 G 释放对端、再复位 T 重新广播 → 等 param update 确认）。
+- `wireless/bs21/tools/bs21_disconnect_test.py`：双向断链检测（`--dir t2g|g2t|both`），
+  自动记录拔电时间与对端感知时间（gap 应为 superv 级别 ~2s）。
+
+**结论**：
+- SLE 对端断电可感知（`disc:0x7`，协议栈链路层超时；不在 `sle_disc_reason_t`
+  枚举——该枚举仅 0x10 远端断开 / 0x11 本端断开）。
+- 产品化接收器为独立设备、不接开发板 reset 引脚，真断电时手柄可感知；
+  如需更快可调小 superv（param update）。
+
+**本次调试中一并修复的问题**：
+- **配对失败根因**：`auth_complete_cb` 未注册 → SMP 密钥从未保存
+  （`sle_set_nv_smp_keys`）→ 连接方重启后无密钥 → 重新配对 → 被连方有旧密钥拒绝
+  （`0x8000600d`/`0x8000600f`）。给 `sle_pair`/`sle_accept` 都注册
+  `auth_complete_cb`（认证成功后 `sle_set_nv_smp_keys`）后配对稳定。
+- **延迟 seek（3s）**：`sle_pair` 用 `delayed_scan_task` 延迟 3s 再 seek，避免复位后
+  立即连接刚广播的对端导致 param update 协商中断 `disc:0x7`。
+- **被连方断开后停广播导致无法重连（2026-08-19 fix）**：`sle_accept` 此前断开后
+  不再广播（re-announce 曾回退）。表现为"对端（G）重新上电后扫不到 T、无法重连"。
+  修复：`conn_state_changed_cb` 中，断开且非本端主动（`disc_reason !=
+  SLE_DISCONNECT_BY_LOCAL`）时，创建 `re_announce_task` 延迟 5s 重新
+  `sle_start_announce`。
+- **验证（重新烧录双方、密钥清空后）**：
+  - A（G）断电（hold reset）→ B（T）约 2s 感知 → A 重新上电 → **自动重连成功**
+    （配对 `0x0` + param update `superv:200`）。
+  - 复位顺序"先复位 B（T）、2s 后复位 A（G）"→ **连接成功**（此前失败，因旧 A
+    抢连刚广播的 B 致 B 停广播）。
+  - 注意：重新烧录一方会擦除其 SMP 密钥，导致密钥不对称配对失败
+    （`0x8000600d` 无限重连循环），需双方都擦除/重烧后重新配对。
+
+**测试注意事项**：
+- 测试前先 `uart-gpio config <控制串口> A <引脚> open-drain`（STM32 重启会丢）。
+- 复位/连接顺序：先复位 G（释放对端被占用的广播），再复位 T 重新广播。
+- 拔电测试前必须先确认连接建立（param update），否则"未感知"是连接未建立的假象。
 
 ### M7: 数据收发与协议解析
 
