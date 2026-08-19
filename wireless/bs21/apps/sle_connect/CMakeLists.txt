@@ -1,4 +1,4 @@
-set(COMPONENT_NAME "default")
+set(COMPONENT_NAME "sle_connect")
 
 set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c

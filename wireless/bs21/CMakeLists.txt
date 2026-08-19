@@ -31,6 +31,12 @@ if(NOT gen_result EQUAL 0)
 endif()
 include(${CONFIG_FILE})
 
+# global compile flags for all apps
+string(REPLACE ";" " " _CCFLAGS "${CCFLAGS}")
+if(NOT "${_CCFLAGS}" MATCHES "Wno-unused-parameter")
+    set(CCFLAGS "${CCFLAGS};-Wno-unused-parameter" CACHE INTERNAL "" FORCE)
+endif()
+
 set(ROOT_DIR "${SDK_ROOT}")
 set(CMAKE_DIR "${SDK_ROOT}/build/cmake")
 set(BIN_DIR "${SDK_ROOT}/interim_binary")
