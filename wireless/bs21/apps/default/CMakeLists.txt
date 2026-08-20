@@ -4,6 +4,7 @@ set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/led.c
     ${CMAKE_CURRENT_SOURCE_DIR}/conn_nv.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/button.c
 )
 
 set(PUBLIC_HEADER
