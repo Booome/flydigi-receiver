@@ -21,7 +21,7 @@ static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
 static sle_connection_callbacks_t g_conn_cbk = { 0 };
 static sle_addr_t g_target_addr = { 0 };
 static uint16_t g_conn_id = 0;
-static uint32_t g_scan_start_ms = 0;
+static uint64_t g_scan_start_ms = 0;
 
 static void probe_start_scan(void)
 {
@@ -45,7 +45,11 @@ static void probe_connect_best(void)
                 best->addr.addr[3], best->addr.addr[4], best->addr.addr[5],
                 best->rssi);
     sle_remove_paired_remote_device(&g_target_addr);
-    sle_connect_remote_device(&g_target_addr);
+    if (sle_connect_remote_device(&g_target_addr) != ERRCODE_SUCC) {
+        osal_printk("%s connect fail, rescan\r\n", PROBE_LOG);
+        scan_table_reset();
+        probe_start_scan();
+    }
 }
 
 static void probe_power_on_cb(uint8_t status)
@@ -90,6 +94,16 @@ static void probe_seek_result_cb(sle_seek_result_info_t *result)
     dev->count++;
     dev->rssi = result->rssi;
 
+    osal_printk("%s seek: %02x:%02x:%02x:%02x:%02x:%02x rssi=%d data=",
+                PROBE_LOG,
+                result->addr.addr[0], result->addr.addr[1], result->addr.addr[2],
+                result->addr.addr[3], result->addr.addr[4], result->addr.addr[5],
+                result->rssi);
+    for (uint16_t i = 0; i < result->data_length && i < 31; i++) {
+        osal_printk("%02x ", result->data[i]);
+    }
+    osal_printk("\r\n");
+
     if (uapi_systick_get_ms() - g_scan_start_ms >= PROBE_SCAN_MS) {
         sle_stop_seek();
     }
@@ -98,6 +112,11 @@ static void probe_seek_result_cb(sle_seek_result_info_t *result)
 static void probe_seek_disable_cb(errcode_t status)
 {
     osal_printk("%s seek disable: 0x%x\r\n", PROBE_LOG, status);
+    if (status != ERRCODE_SUCC) {
+        scan_table_reset();
+        probe_start_scan();
+        return;
+    }
     scan_table_print();
     probe_connect_best();
 }
@@ -106,13 +125,13 @@ static void probe_conn_state_cb(uint16_t conn_id, const sle_addr_t *addr,
                                 sle_acb_state_t state, sle_pair_state_t pair_state,
                                 sle_disc_reason_t reason)
 {
-    (void)addr;
     g_conn_id = conn_id;
     osal_printk("%s conn state: %d pair:%d reason:0x%x\r\n", PROBE_LOG, state, pair_state, reason);
     if (state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("%s connected, conn_id=%u\r\n", PROBE_LOG, conn_id);
         if (pair_state == SLE_PAIR_NONE) {
-            sle_pair_remote_device(&g_target_addr);
+            const sle_addr_t *pair_addr = (addr != NULL) ? addr : &g_target_addr;
+            sle_pair_remote_device(pair_addr);
         }
     } else if (state == SLE_ACB_STATE_DISCONNECTED) {
         scan_table_reset();
@@ -125,12 +144,16 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
     (void)conn_id;
     (void)addr;
     osal_printk("%s pair complete: 0x%x\r\n", PROBE_LOG, status);
-    if (status == 0) {
-        ssap_exchange_info_t info = { 0 };
-        info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
-        info.version = 1;
-        ssapc_exchange_info_req(0, g_conn_id, &info);
+    if (status != ERRCODE_SUCC) {
+        osal_printk("%s pair failed, rescan\r\n", PROBE_LOG);
+        scan_table_reset();
+        probe_start_scan();
+        return;
     }
+    ssap_exchange_info_t info = { 0 };
+    info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
+    info.version = 1;
+    ssapc_exchange_info_req(0, g_conn_id, &info);
 }
 
 static void probe_exchange_info_cb(uint8_t client_id, uint16_t conn_id,
@@ -138,6 +161,10 @@ static void probe_exchange_info_cb(uint8_t client_id, uint16_t conn_id,
 {
     (void)client_id;
     (void)conn_id;
+    if (status != ERRCODE_SUCC || param == NULL) {
+        osal_printk("%s exchange info failed: 0x%x\r\n", PROBE_LOG, status);
+        return;
+    }
     osal_printk("%s exchange info: 0x%x mtu=%u\r\n", PROBE_LOG, status, param->mtu_size);
     ssapc_find_structure_param_t find_param = { 0 };
     find_param.type = SSAP_FIND_TYPE_PROPERTY;
@@ -151,6 +178,10 @@ static void probe_find_service_cb(uint8_t client_id, uint16_t conn_id,
 {
     (void)client_id;
     (void)conn_id;
+    if (status != ERRCODE_SUCC || service == NULL) {
+        osal_printk("%s find service: status=0x%x\r\n", PROBE_LOG, status);
+        return;
+    }
     osal_printk("%s find service: status=0x%x start=0x%x end=0x%x uuid_len=%u\r\n",
                 PROBE_LOG, status, service->start_hdl, service->end_hdl, service->uuid.len);
 }
@@ -160,6 +191,10 @@ static void probe_find_property_cb(uint8_t client_id, uint16_t conn_id,
 {
     (void)client_id;
     (void)conn_id;
+    if (status != ERRCODE_SUCC || property == NULL) {
+        osal_printk("%s find property: status=0x%x\r\n", PROBE_LOG, status);
+        return;
+    }
     osal_printk("%s find property: status=0x%x handle=0x%x oper_ind=%u desc=%u\r\n",
                 PROBE_LOG, status, property->handle, property->operate_indication,
                 property->descriptors_count);
@@ -170,6 +205,10 @@ static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
 {
     (void)client_id;
     (void)conn_id;
+    if (status != ERRCODE_SUCC || result == NULL) {
+        osal_printk("%s find complete: status=0x%x\r\n", PROBE_LOG, status);
+        return;
+    }
     osal_printk("%s find complete: status=0x%x type=%u uuid_len=%u\r\n",
                 PROBE_LOG, status, result->type, result->uuid.len);
 }
