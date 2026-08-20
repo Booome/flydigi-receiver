@@ -52,6 +52,12 @@
   对端（G）重新上电后扫不到 T、无法重连。修复：断开且非本端主动时延迟 5s 重新
   announce。验证：A 断电 → B 约 2s 感知 → A 上电自动重连成功；"先复位 B、2s 后
   复位 A"顺序也连接成功（此前失败）。详见 `docs/bs21-development.md` M6.5。
+- **default app 连接管理/配对逻辑（2026-08-20）**：完成正式固件的连接管理：
+  连接状态机（RECONNECT/SEARCH/PAIR/ACTIVE，断开统一回 RECONNECT）、IO0 按键
+  （长按 3s 进配对、短按退出）、LED（红 IO11 严重错误常亮 / 蓝 IO13 配对闪烁）、
+  RSSI 就近选择（滑动滤波 + 持续保持 2s + 滞后抢占 + 失联宽限，阈值待标定）、
+  NV 记录存储（key 0x3001，无记录正常搜索，真读失败重试后红灯）。全 app
+  clean 编译零 warning/error。详见 `docs/bs21-development.md` M6.6。
 
 详见 `docs/bs21-development.md`。
 

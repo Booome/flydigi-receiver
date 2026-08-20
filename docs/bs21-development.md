@@ -342,6 +342,66 @@ sle_pair_remote_device(&addr);     // 发起配对
 - 复位/连接顺序：先复位 G（释放对端被占用的广播），再复位 T 重新广播。
 - 拔电测试前必须先确认连接建立（param update），否则"未感知"是连接未建立的假象。
 
+### M6.6: default app 连接管理与配对逻辑（正式固件）
+
+**目标**：`default` app 从"全自动单次连接演示"升级为正式固件——完整的连接
+状态机、就近手柄选择、手动配对与 NV 记录持久化。
+
+实现文件（`wireless/bs21/apps/default/`）：
+- `led.c`：LED 控制（红 IO11 / 蓝 IO13，高电平点亮）
+- `conn_nv.c`：NV 连接记录存储
+- `button.c`：IO0(S_MGPIO0) 按键检测（长按/短按）
+- `rssi_pick.c`：RSSI 就近选择（滑动滤波 + 持续保持）
+- `main.c`：连接状态机与模式调度
+
+**状态机**（`conn_state_t`）：`RECONNECT → SEARCH → PAIR → ACTIVE`，另有
+上电隐含 BOOT 阶段。断开统一回 `RECONNECT`（有记录）/`SEARCH`（无记录）：
+- **RECONNECT**：按 NV 记录地址扫描，命中记录地址即锁定连接（忽略 RSSI）。
+- **SEARCH**：无记录时的正常搜索，按 RSSI 就近选择设备。
+- **PAIR**：配对模式，同 SEARCH 的 RSSI 就近选择，但配对成功会覆盖 NV 记录。
+- **ACTIVE**：连接已建立，`pair_complete_cb` 成功后发送 param update
+  （superv=200ms），断开回调回 RECONNECT/SEARCH。
+- 上电 BOOT：初始化外设 → 读 NV → 有记录走 RECONNECT，无记录走 SEARCH。
+
+**按键**（`button.c`）：IO0(S_MGPIO0) 上拉输入，按下拉低。轮询 10ms：
+- 长按 3s（300 tick）→ 进入配对模式（仅触发一次）。
+- 释放且未达 3s → 短按，仅配对模式下退出配对模式。
+
+**LED**（`led.c`，高电平点亮）：
+- 红灯 IO11：NV 严重错误（真读/写失败重试后）常亮。
+- 蓝灯 IO13：配对模式 250ms 闪烁；退出配对或配对成功后熄灭。
+
+**RSSI 就近选择**（`rssi_pick.c`，参数宏见文件头）：
+- `RSSI_THRESHOLD` 50：近场判定阈值（`滤波均值 >= -50 dBm`），待标定。
+- 滑动滤波窗口 8（`RSSI_FILTER_WIN`），均值超过阈值且持续保持
+  `RSSI_HOLD_MS` 2000ms 才锁定。
+- 更强设备带滞后抢占：`rssi_pick_is_stronger` 用当前候选均值 + `RSSI_SWITCH_DB`
+  3dB 做迟滞，避免抖动频繁切换。
+- 失联宽限 `RSSI_LOST_MS` 1000ms：超时未上报则重置候选。
+
+**NV 存储**（`conn_nv.c`）：key `0x3001`，记录 `{valid, addr[6]}`。读失败
+重试 3 次；无记录（key 未写 / valid 不符）正常搜索非致命；真读/写失败重试后
+置致命标志 → `main.c` 红灯常亮。配对成功（SEARCH 无记录时 / PAIR 模式）后保存地址。
+
+**交互逻辑**（`main.c`）：
+- 配对模式超时 `PAIR_TIMEOUT_MS` 120s，超时自动退出回连旧设备。
+- 进入/退出配对模式时若处于 ACTIVE 会先断开当前链路。
+- `pair_complete_cb` 成功路径：配对模式且目标为本次目标 → 覆盖 NV 记录并退出
+  配对；SEARCH 且无记录 → 保存记录。
+
+**已知边界（待板上验证）**：
+- RSSI_THRESHOLD=50 为初始值，需按实际摆放距离标定。
+- 完整功能回归（上电自动连旧设备、长按配对、短按退出、超时回连、断连重连、
+  NV 红灯）需板上 + 手柄实测确认（见下方测试清单）。
+
+**测试清单（板上）**：
+1. 无记录 → SEARCH → 手柄靠近 → 连接+配对 → NV 记录 → 重启自动连旧设备。
+2. 长按 IO0 → 蓝灯闪烁 → 新手柄靠近 → 配对成功覆盖记录。
+3. 配对模式短按 → 退出 → 回连旧设备。
+4. 配对模式超时 2min → 回连旧设备。
+5. 断连 → 回 RECONNECT 自动重连。
+6. NV 多次失败 → IO11 红灯常亮。
+
 ### M7: 数据收发与协议解析
 
 **目标**：如果连接成功，解析手柄数据
