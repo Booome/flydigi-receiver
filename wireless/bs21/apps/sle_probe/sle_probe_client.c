@@ -57,7 +57,16 @@ static void probe_power_on_cb(uint8_t status)
 static void probe_enable_cb(uint8_t status)
 {
     osal_printk("%s sle enable: %d\r\n", PROBE_LOG, status);
-    probe_start_scan();
+    if (status == 0) {
+        sle_addr_t la = { 0 };
+        if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
+            osal_printk("%s local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
+                        PROBE_LOG, la.addr[0], la.addr[1], la.addr[2],
+                        la.addr[3], la.addr[4], la.addr[5], la.type);
+        }
+        sle_setup_set_local_addr();
+        probe_start_scan();
+    }
 }
 
 static void probe_seek_enable_cb(errcode_t status)
