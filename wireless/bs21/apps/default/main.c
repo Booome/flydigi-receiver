@@ -148,9 +148,12 @@ static void exit_pair_mode(void)
         return;
     }
     g_conn_mode = MODE_NORMAL;
-    g_conn_state = CONN_STATE_RECONNECT;
     led_blue(false);
     osal_printk("[conn] pair mode exit\r\n");
+    if (g_conn_state == CONN_STATE_ACTIVE) {
+        osal_printk("[conn] disconnecting current link\r\n");
+        sle_disconnect_remote_device(&g_peer_addr);
+    }
     conn_rescan();
 }
 
@@ -160,6 +163,7 @@ static void enter_pair_mode(void)
     g_pair_deadline_ms = g_now_ms + PAIR_TIMEOUT_MS;
     g_target_locked = false;
     osal_printk("[conn] pair mode enter\r\n");
+    sle_stop_seek();
     if (g_conn_state == CONN_STATE_ACTIVE) {
         osal_printk("[conn] disconnecting current link\r\n");
         sle_disconnect_remote_device(&g_peer_addr);
@@ -298,10 +302,13 @@ static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
     osal_printk("[conn] paired: 0x%x\r\n", status);
     if (status == ERRCODE_SUCC) {
         osal_printk("[conn] pairing done, keep connection\r\n");
-        if (g_conn_mode == MODE_PAIR || !g_record_valid) {
-            if (conn_nv_save(g_peer_addr.addr)) {
+        if (g_conn_mode == MODE_PAIR && addr != NULL &&
+            memcmp(addr->addr, g_target_addr.addr, SLE_ADDR_LEN) != 0) {
+            osal_printk("[conn] paired stale target, ignore\r\n");
+        } else if ((g_conn_mode == MODE_PAIR || !g_record_valid) && addr != NULL) {
+            if (conn_nv_save(addr->addr)) {
                 g_record_valid = true;
-                memcpy_s(g_record_addr, SLE_ADDR_LEN, g_peer_addr.addr, SLE_ADDR_LEN);
+                memcpy_s(g_record_addr, SLE_ADDR_LEN, addr->addr, SLE_ADDR_LEN);
                 osal_printk("[conn] record saved\r\n");
             }
             if (g_conn_mode == MODE_PAIR) {
@@ -343,6 +350,11 @@ static void seek_disable_cb(errcode_t status)
         return;
     }
     osal_printk("[conn] connecting...\r\n");
+    if (!g_target_locked) {
+        osal_printk("[conn] stale seek_disable, rescan\r\n");
+        conn_rescan();
+        return;
+    }
     if (sle_connect_remote_device(&g_target_addr) != ERRCODE_SUCC) {
         osal_printk("[conn] connect fail\r\n");
         conn_rescan();

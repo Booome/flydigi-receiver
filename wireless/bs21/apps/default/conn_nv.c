@@ -34,6 +34,9 @@ bool conn_nv_load(uint8_t addr_out[6])
             }
             return false;  /* no valid record yet, not an error */
         }
+        if (rc == ERRCODE_NV_KEY_NOT_FOUND) {
+            return false;  /* key never written yet, not an error */
+        }
     }
     g_fatal = true;
     osal_printk("[nv] read fatal after retries\r\n");
