@@ -16,7 +16,6 @@ void conn_mgr_on_short_press(void);
 void conn_mgr_on_very_long_press(void);
 void conn_mgr_tick(uint32_t now_ms);
 
-bool conn_mgr_record_valid(void);
 bool conn_mgr_is_scanning(void);
 
 void conn_mgr_seek_result(sle_seek_result_info_t *result);

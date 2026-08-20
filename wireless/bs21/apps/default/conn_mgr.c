@@ -115,11 +115,7 @@ void conn_mgr_on_long_press(void)
         osal_printk("[conn] disconnecting current link\r\n");
         sle_disconnect_remote_device(&g_peer_addr);
     }
-    if (g_record_valid) {
-        conn_start_search(true);
-    } else {
-        conn_start_search(false);
-    }
+    conn_start_search(g_record_valid);
 }
 
 void conn_mgr_on_short_press(void)
@@ -153,7 +149,6 @@ void conn_mgr_on_very_long_press(void)
 void conn_mgr_seek_result(sle_seek_result_info_t *result)
 {
     scan_device_t *dev;
-    bool locked = false;
     if (result == NULL || g_conn_state == CONN_STATE_FATAL) {
         return;
     }
@@ -179,8 +174,7 @@ void conn_mgr_seek_result(sle_seek_result_info_t *result)
     }
 
     /* SEARCH: RSSI proximity selection */
-    locked = rssi_pick_feed(result->addr.addr, result->rssi);
-    if (locked) {
+    if (rssi_pick_feed(result->addr.addr, result->rssi)) {
         memcpy_s(g_target_addr.addr, SLE_ADDR_LEN, rssi_pick_locked_addr(), SLE_ADDR_LEN);
         g_target_addr.type = result->addr.type;
         g_target_locked = true;
@@ -366,11 +360,6 @@ void conn_mgr_tick(uint32_t now_ms)
     default:
         break;
     }
-}
-
-bool conn_mgr_record_valid(void)
-{
-    return g_record_valid;
 }
 
 bool conn_mgr_is_scanning(void)

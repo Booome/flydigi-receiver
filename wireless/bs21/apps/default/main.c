@@ -21,6 +21,15 @@ static sle_connection_callbacks_t g_conn_cbk = { 0 };
 
 static uint32_t g_now_ms = 0;
 
+static void create_task(osal_kthread_handler handler, const char *name)
+{
+    osal_task *task_handle = osal_kthread_create(handler, 0, name, 0x1000);
+    if (task_handle != NULL) {
+        osal_kthread_set_priority(task_handle, 24);
+        osal_kfree(task_handle);
+    }
+}
+
 static void *scan_task(const char *arg)
 {
     (void)arg;
@@ -133,23 +142,10 @@ void axk_main(void)
     g_conn_cbk.auth_complete_cb = auth_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
 
-    osal_task *task_handle = NULL;
     osal_kthread_lock();
-    task_handle = osal_kthread_create((osal_kthread_handler)scan_task, 0, "scan_task", 0x1000);
-    if (task_handle != NULL) {
-        osal_kthread_set_priority(task_handle, 24);
-        osal_kfree(task_handle);
-    }
-    task_handle = osal_kthread_create((osal_kthread_handler)tick_task, 0, "tick_task", 0x1000);
-    if (task_handle != NULL) {
-        osal_kthread_set_priority(task_handle, 24);
-        osal_kfree(task_handle);
-    }
-    task_handle = osal_kthread_create((osal_kthread_handler)button_task, 0, "button_task", 0x1000);
-    if (task_handle != NULL) {
-        osal_kthread_set_priority(task_handle, 24);
-        osal_kfree(task_handle);
-    }
+    create_task((osal_kthread_handler)scan_task, "scan_task");
+    create_task((osal_kthread_handler)tick_task, "tick_task");
+    create_task((osal_kthread_handler)button_task, "button_task");
     osal_kthread_unlock();
 
     enable_sle();

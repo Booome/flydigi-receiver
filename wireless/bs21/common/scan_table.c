@@ -29,11 +29,6 @@ scan_device_t *scan_table_add(const sle_addr_t *addr)
     return NULL;
 }
 
-bool scan_table_full(void)
-{
-    return g_table_full;
-}
-
 void scan_table_print(void)
 {
     uint8_t n = 0;

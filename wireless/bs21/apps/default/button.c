@@ -37,7 +37,7 @@ void *button_task(const char *arg)
     while (1) {
         gpio_level_t level = uapi_gpio_get_val(KEY_PIN);
         if (level == GPIO_LEVEL_LOW) {
-            held++; /* pressed */
+            held++;
             if (held == LONG_PRESS_TICKS) {
                 osal_printk("[btn] long press threshold (3s)\r\n");
             } else if (held == VERY_LONG_PRESS_TICKS) {
@@ -48,11 +48,11 @@ void *button_task(const char *arg)
             if (held != 0) {
                 led_btn_feedback(0);
                 if (held < LONG_PRESS_TICKS && g_on_short) {
-                    g_on_short(); /* released before 3s => short press */
+                    g_on_short();
                 } else if (held < VERY_LONG_PRESS_TICKS && g_on_long) {
-                    g_on_long(); /* released 3-10s => long press */
+                    g_on_long();
                 } else if (g_on_very_long) {
-                    g_on_very_long(); /* held >= 10s => very long press */
+                    g_on_very_long();
                 }
             }
             held = 0;

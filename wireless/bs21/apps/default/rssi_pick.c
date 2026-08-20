@@ -60,13 +60,14 @@ static void cand_push(cand_t *c, const uint8_t addr[SLE_ADDR_LEN], int8_t rssi)
 {
     if (c->n == 0) {
         memcpy(c->addr, addr, SLE_ADDR_LEN);
-        c->n = 1;
-        c->hist[0] = rssi;
-    } else {
-        if (c->n < RSSI_FILTER_WIN) c->n++;
-        for (int i = RSSI_FILTER_WIN - 1; i > 0; i--) c->hist[i] = c->hist[i - 1];
-        c->hist[0] = rssi;
     }
+    if (c->n < RSSI_FILTER_WIN) {
+        c->n++;
+    }
+    for (int i = RSSI_FILTER_WIN - 1; i > 0; i--) {
+        c->hist[i] = c->hist[i - 1];
+    }
+    c->hist[0] = rssi;
     c->last_seen_ticks = g_ticks;
 }
 

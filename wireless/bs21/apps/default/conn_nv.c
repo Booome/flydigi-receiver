@@ -43,6 +43,17 @@ bool conn_nv_load(uint8_t addr_out[6])
     return false;
 }
 
+static bool nv_write_rec(const conn_record_t *rec)
+{
+    for (int i = 0; i < NV_RETRY_MAX; i++) {
+        if (uapi_nv_write(CONN_NV_KEY, (const uint8_t *)rec, sizeof(conn_record_t)) == ERRCODE_SUCC) {
+            return true;
+        }
+    }
+    g_fatal = true;
+    return false;
+}
+
 bool conn_nv_save(const uint8_t addr[6])
 {
     conn_record_t rec;
@@ -50,27 +61,21 @@ bool conn_nv_save(const uint8_t addr[6])
     for (int j = 0; j < SLE_ADDR_LEN; j++) {
         rec.addr[j] = addr[j];
     }
-    for (int i = 0; i < NV_RETRY_MAX; i++) {
-        if (uapi_nv_write(CONN_NV_KEY, (const uint8_t *)&rec, sizeof(rec)) == ERRCODE_SUCC) {
-            return true;
-        }
+    if (!nv_write_rec(&rec)) {
+        osal_printk("[nv] write fatal after retries\r\n");
+        return false;
     }
-    g_fatal = true;
-    osal_printk("[nv] write fatal after retries\r\n");
-    return false;
+    return true;
 }
 
 bool conn_nv_erase(void)
 {
     conn_record_t rec = { 0 };
-    for (int i = 0; i < NV_RETRY_MAX; i++) {
-        if (uapi_nv_write(CONN_NV_KEY, (const uint8_t *)&rec, sizeof(rec)) == ERRCODE_SUCC) {
-            return true;
-        }
+    if (!nv_write_rec(&rec)) {
+        osal_printk("[nv] erase fatal after retries\r\n");
+        return false;
     }
-    g_fatal = true;
-    osal_printk("[nv] erase fatal after retries\r\n");
-    return false;
+    return true;
 }
 
 bool conn_nv_is_fatal(void) { return g_fatal; }
