@@ -118,6 +118,7 @@ static void conn_start_search(void)
 {
     g_conn_state = CONN_STATE_SEARCH;
     g_target_locked = false;
+    rssi_pick_init();
     osal_printk("[conn] search (scan)\r\n");
     scan_start();
 }
