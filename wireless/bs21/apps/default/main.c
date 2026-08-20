@@ -163,6 +163,8 @@ static void enter_pair_mode(void)
     g_conn_mode = MODE_PAIR;
     g_pair_deadline_ms = g_now_ms + PAIR_TIMEOUT_MS;
     g_target_locked = false;
+    memset(&g_target_addr, 0, sizeof(g_target_addr));
+    rssi_pick_init();
     osal_printk("[conn] pair mode enter\r\n");
     sle_stop_seek();
     if (g_conn_state == CONN_STATE_ACTIVE) {
@@ -223,12 +225,7 @@ static void seek_result_cb(sle_seek_result_info_t *result)
     }
 
     /* SEARCH / PAIR: RSSI proximity selection */
-    if (rssi_pick_is_stronger(result->addr.addr, result->rssi)) {
-        rssi_pick_init();
-        locked = rssi_pick_feed(result->addr.addr, result->rssi);
-    } else if (memcmp(rssi_pick_locked_addr(), result->addr.addr, SLE_ADDR_LEN) == 0) {
-        locked = rssi_pick_feed(result->addr.addr, result->rssi);
-    }
+    locked = rssi_pick_feed(result->addr.addr, result->rssi);
     if (locked) {
         memcpy_s(g_target_addr.addr, SLE_ADDR_LEN, rssi_pick_locked_addr(), SLE_ADDR_LEN);
         g_target_addr.type = result->addr.type;
@@ -341,8 +338,8 @@ static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
         if (sle_update_connect_param(&up) != ERRCODE_SUCC) {
             osal_printk("[conn] param update send fail\r\n");
         }
+        g_conn_state = CONN_STATE_ACTIVE;
     }
-    g_conn_state = CONN_STATE_ACTIVE;
 }
 
 static void conn_param_update_cb(uint16_t conn_id, errcode_t status,

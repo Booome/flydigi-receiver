@@ -375,9 +375,11 @@ sle_pair_remote_device(&addr);     // 发起配对
 - `RSSI_THRESHOLD` 50：近场判定阈值（`滤波均值 >= -50 dBm`），待标定。
 - 滑动滤波窗口 8（`RSSI_FILTER_WIN`），均值超过阈值且持续保持
   `RSSI_HOLD_MS` 2000ms 才锁定。
-- 更强设备带滞后抢占：`rssi_pick_is_stronger` 用当前候选均值 + `RSSI_SWITCH_DB`
-  3dB 做迟滞，避免抖动频繁切换。
-- 失联宽限 `RSSI_LOST_MS` 1000ms：超时未上报则重置候选。
+- 更强设备带滞后抢占：新设备须比当前候选均值强 `RSSI_SWITCH_DB` 3dB 且持续
+  `RSSI_SWITCH_HOLD_MS` 500ms 才切换候选（`rssi_pick_feed` 内部跟踪接管候选并
+  维持独立滤波窗口，切换后重置 hold 计时）。
+- 失联宽限 `RSSI_LOST_MS` 1000ms：`rssi_pick_tick` 按 tick 超时重置当前候选，
+  接管候选则按 `RSSI_SWITCH_HOLD_MS` 重置。
 
 **NV 存储**（`conn_nv.c`）：key `0x3001`，记录 `{valid, addr[6]}`。读失败
 重试 3 次；无记录（key 未写 / valid 不符）正常搜索非致命；真读/写失败重试后
