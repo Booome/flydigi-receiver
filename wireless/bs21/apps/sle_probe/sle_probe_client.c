@@ -5,12 +5,16 @@
 #include "sle_device_manager.h"
 #include "sle_device_discovery.h"
 #include "sle_connection_manager.h"
+#include "sle_ssap_client.h"
 #include "scan_table.h"
 #include "bs21_util.h"
 #include "sle_probe_client.h"
 
 #define PROBE_LOG        "[probe]"
 #define PROBE_SCAN_MS    5000
+#define PROBE_MTU_SIZE_DEFAULT 520
+
+static ssapc_callbacks_t g_ssapc_cbk = { 0 };
 
 static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
@@ -112,6 +116,81 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
     (void)conn_id;
     (void)addr;
     osal_printk("%s pair complete: 0x%x\r\n", PROBE_LOG, status);
+    if (status == 0) {
+        ssap_exchange_info_t info = { 0 };
+        info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
+        info.version = 1;
+        ssapc_exchange_info_req(0, g_conn_id, &info);
+    }
+}
+
+static void probe_exchange_info_cb(uint8_t client_id, uint16_t conn_id,
+                                   ssap_exchange_info_t *param, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    osal_printk("%s exchange info: 0x%x mtu=%u\r\n", PROBE_LOG, status, param->mtu_size);
+    ssapc_find_structure_param_t find_param = { 0 };
+    find_param.type = SSAP_FIND_TYPE_PROPERTY;
+    find_param.start_hdl = 1;
+    find_param.end_hdl = 0xFFFF;
+    ssapc_find_structure(0, g_conn_id, &find_param);
+}
+
+static void probe_find_service_cb(uint8_t client_id, uint16_t conn_id,
+                                  ssapc_find_service_result_t *service, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    osal_printk("%s find service: status=0x%x start=0x%x end=0x%x uuid_len=%u\r\n",
+                PROBE_LOG, status, service->start_hdl, service->end_hdl, service->uuid.len);
+}
+
+static void probe_find_property_cb(uint8_t client_id, uint16_t conn_id,
+                                   ssapc_find_property_result_t *property, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    osal_printk("%s find property: status=0x%x handle=0x%x oper_ind=%u desc=%u\r\n",
+                PROBE_LOG, status, property->handle, property->operate_indication,
+                property->descriptors_count);
+}
+
+static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
+                              ssapc_find_structure_result_t *result, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    osal_printk("%s find complete: status=0x%x type=%u uuid_len=%u\r\n",
+                PROBE_LOG, status, result->type, result->uuid.len);
+}
+
+static void probe_print_hex(const uint8_t *buf, uint32_t len)
+{
+    for (uint32_t i = 0; i < len; i++) {
+        osal_printk("%02x ", buf[i]);
+    }
+    osal_printk("\r\n");
+}
+
+static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
+                                  ssapc_handle_value_t *data, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    (void)status;
+    osal_printk("%s recv len=%u ", PROBE_LOG, data->data_len);
+    probe_print_hex(data->data, data->data_len);
+}
+
+static void probe_indication_cb(uint8_t client_id, uint16_t conn_id,
+                                ssapc_handle_value_t *data, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    (void)status;
+    osal_printk("%s ind len=%u ", PROBE_LOG, data->data_len);
+    probe_print_hex(data->data, data->data_len);
 }
 
 void probe_init(void)
@@ -128,4 +207,12 @@ void probe_init(void)
     g_conn_cbk.connect_state_changed_cb = probe_conn_state_cb;
     g_conn_cbk.pair_complete_cb = probe_pair_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
+
+    g_ssapc_cbk.exchange_info_cb = probe_exchange_info_cb;
+    g_ssapc_cbk.find_structure_cb = probe_find_service_cb;
+    g_ssapc_cbk.ssapc_find_property_cbk = probe_find_property_cb;
+    g_ssapc_cbk.find_structure_cmp_cb = probe_find_cmp_cb;
+    g_ssapc_cbk.notification_cb = probe_notification_cb;
+    g_ssapc_cbk.indication_cb = probe_indication_cb;
+    ssapc_register_callbacks(&g_ssapc_cbk);
 }
