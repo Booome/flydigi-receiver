@@ -353,28 +353,41 @@ sle_pair_remote_device(&addr);     // 发起配对
 状态机、就近手柄选择、手动配对与 NV 记录持久化。
 
 实现文件（`wireless/bs21/apps/default/`）：
+- `conn_mgr.c`：连接状态机与回调调度（核心逻辑）
 - `led.c`：LED 控制（红 IO11 / 蓝 IO13，高电平点亮）
-- `conn_nv.c`：NV 连接记录存储
-- `button.c`：IO0(S_MGPIO0) 按键检测（长按/短按）
+- `conn_nv.c`：NV 连接记录存储 / 擦除
+- `button.c`：IO0(S_MGPIO0) 按键检测（短按/长按/超长按）
 - `rssi_pick.c`：RSSI 就近选择（滑动滤波 + 持续保持）
-- `main.c`：连接状态机与模式调度
+- `main.c`：外设初始化、回调注册、任务创建
 
-**状态机**（`conn_state_t`）：`RECONNECT → SEARCH → PAIR → ACTIVE`，另有
-上电隐含 BOOT 阶段。断开统一回 `RECONNECT`（有记录）/`SEARCH`（无记录）：
+公共层（`wireless/bs21/common/`）：
+- `scan_table.c`：扫描结果聚合表（地址/RSSI/计数）
+- `bs21_util.c`：GPIO 复位、扫描启动、本地地址设置
+
+**状态机**（`conn_state_t`）：`FATAL / RECONNECT / SEARCH / ACTIVE`：
 - **RECONNECT**：按 NV 记录地址扫描，命中记录地址即锁定连接（忽略 RSSI）。
-- **SEARCH**：无记录时的正常搜索，按 RSSI 就近选择设备。
-- **PAIR**：配对模式，同 SEARCH 的 RSSI 就近选择，但配对成功会覆盖 NV 记录。
+- **SEARCH**：就近搜索。可带配对超时（长按换新手柄）或不带（无记录初次配对）。
+  配对成功会覆盖/保存 NV 记录。
 - **ACTIVE**：连接已建立，`pair_complete_cb` 成功后发送 param update
-  （superv=200ms），断开回调回 RECONNECT/SEARCH。
-- 上电 BOOT：初始化外设 → 读 NV → 有记录走 RECONNECT，无记录走 SEARCH。
+  （superv=200ms），断开回调回 RECONNECT（有记录）/SEARCH（无记录）。
+- **FATAL**：NV 真读/写失败重试后置位，阻塞连接流程，红灯常亮。
+- 上电流程：初始化外设 → 读 NV → 有记录走 RECONNECT，无记录走 SEARCH。
 
-**按键**（`button.c`）：IO0(S_MGPIO0) 上拉输入，按下拉低。轮询 10ms：
-- 长按 3s（300 tick）→ 进入配对模式（仅触发一次）。
-- 释放且未达 3s → 短按，仅配对模式下退出配对模式。
+**按键**（`button.c`）：IO0(S_MGPIO0) 上拉输入，按下拉低。轮询 10ms，
+**动作在松开时判定**：
+- 按下 < 3s 松开 → 短按：配对超时期间退出配对回连旧设备。
+- 按下 3–10s 松开 → 长按：进入 SEARCH（有记录带 120s 配对超时，无记录不带）。
+- 按下 ≥ 10s 松开 → 超长按：强制擦除 NV 记录（失败进 FATAL），进入无超时 SEARCH。
+
+**按键 LED 反馈**（按下期间，`led_btn_feedback`）：
+- < 3s：不干预，保持当前状态 LED。
+- 3–10s：接管蓝灯快闪（125ms），提示已达长按门槛。
+- ≥ 10s：蓝灯常亮，提示已到擦除时刻。
+- 松开释放接管，恢复状态 LED（统一 systick 时钟，相位连续不抖动）。
 
 **LED**（`led.c`，高电平点亮）：
-- 红灯 IO11：NV 严重错误（真读/写失败重试后）常亮。
-- 蓝灯 IO13：配对模式 250ms 闪烁；退出配对或配对成功后熄灭。
+- 红灯 IO11：FATAL（NV 真读/写失败重试后）常亮。
+- 蓝灯 IO13：SEARCH 快闪 125ms；RECONNECT 慢闪 1000ms；ACTIVE 熄灭。
 
 **RSSI 就近选择**（`rssi_pick.c`，参数宏见文件头）：
 - `RSSI_THRESHOLD` 50：近场判定阈值（`滤波均值 >= -50 dBm`），待标定。
@@ -388,26 +401,28 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 **NV 存储**（`conn_nv.c`）：key `0x3001`，记录 `{valid, addr[6]}`。读失败
 重试 3 次；无记录（key 未写 / valid 不符）正常搜索非致命；真读/写失败重试后
-置致命标志 → `main.c` 红灯常亮。配对成功（SEARCH 无记录时 / PAIR 模式）后保存地址。
+置致命标志 → FATAL 红灯常亮。配对成功（无记录 SEARCH / 长按配对 SEARCH）后
+保存地址；超长按写无效记录实现擦除。
 
-**交互逻辑**（`main.c`）：
-- 配对模式超时 `PAIR_TIMEOUT_MS` 120s，超时自动退出回连旧设备。
-- 进入/退出配对模式时若处于 ACTIVE 会先断开当前链路。
-- `pair_complete_cb` 成功路径：配对模式且目标为本次目标 → 覆盖 NV 记录并退出
-  配对；SEARCH 且无记录 → 保存记录。
+**交互逻辑**（`conn_mgr.c`）：
+- SEARCH 带配对超时 `PAIR_TIMEOUT_MS` 120s，超时自动退出回连旧设备。
+- 进入/退出配对搜索时若处于 ACTIVE 会先断开当前链路。
+- `pair_complete_cb` 成功路径：SEARCH 带超时且目标为本次目标 → 覆盖 NV 记录；
+  无记录 SEARCH → 保存记录；成功后清除配对超时标记保持 ACTIVE。
 
 **已知边界（待板上验证）**：
 - RSSI_THRESHOLD=50 为初始值，需按实际摆放距离标定。
-- 完整功能回归（上电自动连旧设备、长按配对、短按退出、超时回连、断连重连、
-  NV 红灯）需板上 + 手柄实测确认（见下方测试清单）。
+- SMP 密钥持久化（`auth_complete_cb` 调 `sle_set_nv_smp_keys`）需确认重启后
+  免重新配对。
 
 **测试清单（板上）**：
-1. 无记录 → SEARCH → 手柄靠近 → 连接+配对 → NV 记录 → 重启自动连旧设备。
-2. 长按 IO0 → 蓝灯闪烁 → 新手柄靠近 → 配对成功覆盖记录。
-3. 配对模式短按 → 退出 → 回连旧设备。
-4. 配对模式超时 2min → 回连旧设备。
-5. 断连 → 回 RECONNECT 自动重连。
-6. NV 多次失败 → IO11 红灯常亮。
+- [x] 1. 无记录 → SEARCH → 手柄靠近 → 连接+配对 → NV 记录 → 重启自动连旧设备。
+- [ ] 2. 长按 IO0 → 蓝灯快闪 → 新手柄靠近 → 配对成功覆盖记录。
+- [ ] 3. 配对搜索短按 → 退出 → 回连旧设备。
+- [ ] 4. 配对搜索超时 2min → 回连旧设备。
+- [ ] 5. 断连 → 回 RECONNECT 自动重连。
+- [ ] 6. NV 多次失败 → IO11 红灯常亮（FATAL）。
+- [x] 7. 长按 3s 蓝灯快闪提示、10s 常亮、松开判定动作（长按/超长按）。
 
 ### M7: 数据收发与协议解析
 
