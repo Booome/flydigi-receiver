@@ -3,6 +3,7 @@ set(COMPONENT_NAME "default")
 set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/led.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/conn_nv.c
 )
 
 set(PUBLIC_HEADER
