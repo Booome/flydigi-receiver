@@ -79,17 +79,25 @@ BOOT
 
 ## 4. 按键逻辑
 
-按键在独立后台任务轮询（含消抖），不阻塞连接流程。长按进入 SEARCH 的意图统一在
-按键 callback 里判断是否有旧记录，决定 SEARCH 是否带 timeout。
+按键在独立后台任务轮询（含消抖），不阻塞连接流程。**按下期间用 LED 反馈提示时长，
+动作在松开时判定提交**——3s 前不进入任何状态，避免超长按过程中经历多余的 SEARCH
+跳转。长按进入 SEARCH 的意图统一在按键 callback 里判断是否有旧记录，决定 SEARCH
+是否带 timeout。
 
 | 事件 | 条件 | 动作 |
 |------|------|------|
-| 长按 | 按下持续 `LONG_PRESS_MS`(3000) | 判断 `record_valid`：有记录 → SEARCH(带 timeout，覆盖记录)；无记录 → SEARCH(无 timeout) |
-| 短按 | 按下时间 < `LONG_PRESS_MS` 后松开 | 若 SEARCH 带 timeout → 退出配对，回 RECONNECT（有记录）/ SEARCH(无 timeout)（无记录）；否则无操作 |
+| 短按 | 按下 < 3000ms 后松开 | 若 SEARCH 带 timeout → 退出配对，回 RECONNECT（有记录）/ SEARCH(无 timeout)（无记录）；否则无操作 |
+| 长按 | 按下 3000–10000ms 后松开 | 判断 `record_valid`：有记录 → SEARCH(带 timeout，覆盖记录)；无记录 → SEARCH(无 timeout) |
+| 超长按 | 按下 ≥ 10000ms 后松开 | 强制擦除 NV 记录（失败进入 FATAL）→ SEARCH(无 timeout) |
 | 无操作 | — | 无动作 |
 
+- **按键 LED 反馈**（按下期间，`led_btn_feedback`）：
+  - `<3000ms`：不干预，保持当前状态 LED
+  - `3000–10000ms`：接管蓝灯，**快闪** `BTN_FB_BLINK_MS`(125ms)，提示"已达长按门槛"
+  - `≥10000ms`：蓝灯**常亮**，提示"已到擦除时刻"
+  - 松开后释放接管，恢复状态 LED
 - SEARCH 蓝灯快闪（125ms），RECONNECT 蓝灯慢闪（1000ms）。
-- 进入 SEARCH 会停止当前连接动作（若正连旧设备则断开/停止 seek），切到扫描。
+- 长按/超长按进入 SEARCH 会停止当前连接动作（若正连旧设备则断开），切到扫描。
 
 ## 5. RSSI 靠近判定逻辑
 
@@ -127,8 +135,10 @@ BOOT
 | `RSSI_SWITCH_HOLD_MS` | 500 | 更强者需保持的时长 |
 | `RSSI_LOST_MS` | 1000 | 候选失联宽限 |
 | `LONG_PRESS_MS` | 3000 | 长按进入 SEARCH(带 timeout) 的阈值 |
+| `VERY_LONG_PRESS_MS` | 10000 | 超长按擦除 NV 记录的阈值 |
 | `SEARCH_BLINK_MS` | 125 | SEARCH 蓝灯快闪间隔 |
 | `RECONNECT_BLINK_MS` | 1000 | RECONNECT 蓝灯慢闪间隔 |
+| `BTN_FB_BLINK_MS` | 125 | 按键长按反馈快闪间隔（同 SEARCH，松开进 SEARCH 无缝不抖动） |
 | `PAIR_TIMEOUT_MS` | 120000 | SEARCH(带 timeout) 限时（2 分钟） |
 
 ## 6. NV 长期存储

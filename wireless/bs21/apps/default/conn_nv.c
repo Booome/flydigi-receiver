@@ -60,4 +60,17 @@ bool conn_nv_save(const uint8_t addr[6])
     return false;
 }
 
+bool conn_nv_erase(void)
+{
+    conn_record_t rec = { 0 };
+    for (int i = 0; i < NV_RETRY_MAX; i++) {
+        if (uapi_nv_write(CONN_NV_KEY, (const uint8_t *)&rec, sizeof(rec)) == ERRCODE_SUCC) {
+            return true;
+        }
+    }
+    g_fatal = true;
+    osal_printk("[nv] erase fatal after retries\r\n");
+    return false;
+}
+
 bool conn_nv_is_fatal(void) { return g_fatal; }

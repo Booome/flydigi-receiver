@@ -13,9 +13,11 @@ void conn_mgr_start(void);
 
 void conn_mgr_on_long_press(void);
 void conn_mgr_on_short_press(void);
+void conn_mgr_on_very_long_press(void);
 void conn_mgr_tick(uint32_t now_ms);
 
 bool conn_mgr_record_valid(void);
+bool conn_mgr_is_scanning(void);
 
 void conn_mgr_seek_result(sle_seek_result_info_t *result);
 void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,

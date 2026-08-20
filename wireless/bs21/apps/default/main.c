@@ -26,7 +26,9 @@ static void *scan_task(const char *arg)
     (void)arg;
     while (1) {
         osal_msleep(SCAN_PRINT_MS);
-        scan_table_print();
+        if (conn_mgr_is_scanning()) {
+            scan_table_print();
+        }
     }
     return NULL;
 }
@@ -113,7 +115,8 @@ void axk_main(void)
 
     conn_mgr_init();
 
-    button_set_cb(conn_mgr_on_long_press, conn_mgr_on_short_press);
+    button_set_cb(conn_mgr_on_long_press, conn_mgr_on_short_press,
+                  conn_mgr_on_very_long_press);
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;

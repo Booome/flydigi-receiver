@@ -2,19 +2,25 @@
 #include "gpio.h"
 #include "pinctrl.h"
 #include "soc_osal.h"
+#include "led.h"
 
 #define KEY_PIN          S_MGPIO0
 #define LONG_PRESS_MS    3000
+#define VERY_LONG_PRESS_MS 10000
 #define POLL_MS          10
-#define LONG_PRESS_TICKS (LONG_PRESS_MS / POLL_MS) /* 300 ticks = 3s */
+#define LONG_PRESS_TICKS (LONG_PRESS_MS / POLL_MS)      /* 300 ticks = 3s */
+#define VERY_LONG_PRESS_TICKS (VERY_LONG_PRESS_MS / POLL_MS) /* 1000 ticks = 10s */
 
-static void (*g_on_long)(void) = NULL;
-static void (*g_on_short)(void) = NULL;
+static button_cb_t g_on_long = NULL;
+static button_cb_t g_on_short = NULL;
+static button_cb_t g_on_very_long = NULL;
 
-void button_set_cb(void (*on_long)(void), void (*on_short)(void))
+void button_set_cb(button_cb_t on_long, button_cb_t on_short,
+                   button_cb_t on_very_long)
 {
     g_on_long = on_long;
     g_on_short = on_short;
+    g_on_very_long = on_very_long;
 }
 
 void button_init(void)
@@ -32,12 +38,22 @@ void *button_task(const char *arg)
         gpio_level_t level = uapi_gpio_get_val(KEY_PIN);
         if (level == GPIO_LEVEL_LOW) {
             held++; /* pressed */
-            if (held == LONG_PRESS_TICKS && g_on_long) {
-                g_on_long(); /* fire once on 3s held */
+            if (held == LONG_PRESS_TICKS) {
+                osal_printk("[btn] long press threshold (3s)\r\n");
+            } else if (held == VERY_LONG_PRESS_TICKS) {
+                osal_printk("[btn] very long press threshold (10s)\r\n");
             }
+            led_btn_feedback(held * POLL_MS);
         } else {
-            if (held != 0 && held < LONG_PRESS_TICKS && g_on_short) {
-                g_on_short(); /* released before 3s => short press */
+            if (held != 0) {
+                led_btn_feedback(0);
+                if (held < LONG_PRESS_TICKS && g_on_short) {
+                    g_on_short(); /* released before 3s => short press */
+                } else if (held < VERY_LONG_PRESS_TICKS && g_on_long) {
+                    g_on_long(); /* released 3-10s => long press */
+                } else if (g_on_very_long) {
+                    g_on_very_long(); /* held >= 10s => very long press */
+                }
             }
             held = 0;
         }

@@ -130,6 +130,26 @@ void conn_mgr_on_short_press(void)
     }
 }
 
+void conn_mgr_on_very_long_press(void)
+{
+    if (g_conn_state == CONN_STATE_FATAL) {
+        osal_printk("[btn] ignored (fatal)\r\n");
+        return;
+    }
+    osal_printk("[btn] very long press, erase record\r\n");
+    if (g_conn_state == CONN_STATE_ACTIVE) {
+        osal_printk("[conn] disconnecting current link\r\n");
+        sle_disconnect_remote_device(&g_peer_addr);
+    }
+    if (!conn_nv_erase()) {
+        conn_enter_fatal();
+        return;
+    }
+    g_record_valid = false;
+    memset_s(g_record_addr, sizeof(g_record_addr), 0, sizeof(g_record_addr));
+    conn_start_search(false);
+}
+
 void conn_mgr_seek_result(sle_seek_result_info_t *result)
 {
     scan_device_t *dev;
@@ -325,17 +345,20 @@ void conn_mgr_tick(uint32_t now_ms)
     if (g_conn_state == CONN_STATE_FATAL) {
         return;
     }
+    if (led_is_override()) {
+        return;
+    }
 
     switch (g_conn_state) {
     case CONN_STATE_SEARCH:
-        led_blink(now_ms, SEARCH_BLINK_MS);
+        led_blink(SEARCH_BLINK_MS);
         if (g_search_timeout && now_ms >= g_search_deadline_ms) {
             osal_printk("[conn] search timeout\r\n");
             conn_exit_search_timeout();
         }
         break;
     case CONN_STATE_RECONNECT:
-        led_blink(now_ms, RECONNECT_BLINK_MS);
+        led_blink(RECONNECT_BLINK_MS);
         break;
     case CONN_STATE_ACTIVE:
         led_blue(false);
@@ -348,4 +371,9 @@ void conn_mgr_tick(uint32_t now_ms)
 bool conn_mgr_record_valid(void)
 {
     return g_record_valid;
+}
+
+bool conn_mgr_is_scanning(void)
+{
+    return g_conn_state == CONN_STATE_SEARCH || g_conn_state == CONN_STATE_RECONNECT;
 }
