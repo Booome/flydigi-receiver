@@ -65,7 +65,7 @@ static void sle_enable_cb(uint8_t status)
 
 static void seek_enable_cb(errcode_t status)
 {
-    osal_printk("seek enable: 0x%x\r\n", status);
+    conn_mgr_seek_enable(status);
 }
 
 static void seek_result_cb(sle_seek_result_info_t *result)

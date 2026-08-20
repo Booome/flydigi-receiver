@@ -10,7 +10,7 @@
 
 #define PAIR_TIMEOUT_MS  120000
 #define PAIR_SUPERV_MS   200
-#define SEARCH_BLINK_MS  250
+#define SEARCH_BLINK_MS  125
 #define RECONNECT_BLINK_MS 1000
 
 typedef enum {
@@ -24,6 +24,7 @@ static conn_state_t g_conn_state = CONN_STATE_SEARCH;
 static bool g_search_timeout = false;
 static uint32_t g_search_deadline_ms = 0;
 static bool g_target_locked = false;
+static bool g_seek_active = false;
 static sle_addr_t g_target_addr = { 0 };
 
 static uint8_t g_record_addr[SLE_ADDR_LEN] = { 0 };
@@ -53,7 +54,9 @@ static void conn_start_search(bool timeout)
     g_target_locked = false;
     rssi_pick_init();
     osal_printk("[conn] search%s (scan)\r\n", timeout ? " +pair" : "");
-    sle_scan_start();
+    if (!g_seek_active) {
+        sle_scan_start();
+    }
 }
 
 static void conn_start_reconnect(void)
@@ -62,7 +65,9 @@ static void conn_start_reconnect(void)
     g_search_timeout = false;
     g_target_locked = false;
     osal_printk("[conn] reconnect to record\r\n");
-    sle_scan_start();
+    if (!g_seek_active) {
+        sle_scan_start();
+    }
 }
 
 static void conn_rescan(void)
@@ -106,7 +111,6 @@ void conn_mgr_on_long_press(void)
         return;
     }
     osal_printk("[btn] long press\r\n");
-    sle_stop_seek();
     if (g_conn_state == CONN_STATE_ACTIVE) {
         osal_printk("[conn] disconnecting current link\r\n");
         sle_disconnect_remote_device(&g_peer_addr);
@@ -258,27 +262,34 @@ void conn_mgr_auth_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t 
     osal_printk("[conn] smp keys saved\r\n");
 }
 
+void conn_mgr_seek_enable(errcode_t status)
+{
+    osal_printk("seek enable: 0x%x\r\n", status);
+    if (status == ERRCODE_SUCC) {
+        g_seek_active = true;
+    }
+}
+
 void conn_mgr_seek_disable(errcode_t status)
 {
     osal_printk("[conn] seek disabled: 0x%x\r\n", status);
+    g_seek_active = false;
     if (g_conn_state == CONN_STATE_FATAL) {
+        return;
+    }
+    if (g_target_locked) {
+        osal_printk("[conn] connecting...\r\n");
+        if (sle_connect_remote_device(&g_target_addr) != ERRCODE_SUCC) {
+            osal_printk("[conn] connect fail\r\n");
+            conn_rescan();
+        }
         return;
     }
     if (status != ERRCODE_SUCC) {
         osal_msleep(100);
-        conn_rescan();
-        return;
     }
-    osal_printk("[conn] connecting...\r\n");
-    if (!g_target_locked) {
-        osal_printk("[conn] stale seek_disable, rescan\r\n");
-        conn_rescan();
-        return;
-    }
-    if (sle_connect_remote_device(&g_target_addr) != ERRCODE_SUCC) {
-        osal_printk("[conn] connect fail\r\n");
-        conn_rescan();
-    }
+    osal_printk("[conn] restart scan\r\n");
+    sle_scan_start();
 }
 
 void conn_mgr_init(void)

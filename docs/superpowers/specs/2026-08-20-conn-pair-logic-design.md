@@ -34,7 +34,7 @@ LED 提示矩阵：
 
 | 状态 | 蓝灯 IO13 | 红灯 IO11 |
 |------|-----------|-----------|
-| SEARCH | **快闪** 250ms | 灭 |
+| SEARCH | **快闪** 125ms | 灭 |
 | RECONNECT | **慢闪** 1000ms | 灭 |
 | ACTIVE | 熄灭 | 灭 |
 | FATAL（NV 损坏） | 灭 | **常亮** |
@@ -88,7 +88,7 @@ BOOT
 | 短按 | 按下时间 < `LONG_PRESS_MS` 后松开 | 若 SEARCH 带 timeout → 退出配对，回 RECONNECT（有记录）/ SEARCH(无 timeout)（无记录）；否则无操作 |
 | 无操作 | — | 无动作 |
 
-- SEARCH 蓝灯快闪（250ms），RECONNECT 蓝灯慢闪（1000ms）。
+- SEARCH 蓝灯快闪（125ms），RECONNECT 蓝灯慢闪（1000ms）。
 - 进入 SEARCH 会停止当前连接动作（若正连旧设备则断开/停止 seek），切到扫描。
 
 ## 5. RSSI 靠近判定逻辑
@@ -127,7 +127,7 @@ BOOT
 | `RSSI_SWITCH_HOLD_MS` | 500 | 更强者需保持的时长 |
 | `RSSI_LOST_MS` | 1000 | 候选失联宽限 |
 | `LONG_PRESS_MS` | 3000 | 长按进入 SEARCH(带 timeout) 的阈值 |
-| `SEARCH_BLINK_MS` | 250 | SEARCH 蓝灯快闪间隔 |
+| `SEARCH_BLINK_MS` | 125 | SEARCH 蓝灯快闪间隔 |
 | `RECONNECT_BLINK_MS` | 1000 | RECONNECT 蓝灯慢闪间隔 |
 | `PAIR_TIMEOUT_MS` | 120000 | SEARCH(带 timeout) 限时（2 分钟） |
 
