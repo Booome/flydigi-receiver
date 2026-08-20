@@ -1,4 +1,4 @@
-#include "sle_setup.h"
+#include "bs21_util.h"
 #include "pinctrl.h"
 #include "gpio.h"
 #include "chip_io.h"
@@ -8,7 +8,15 @@
 #include "sle_device_discovery.h"
 #include "soc_osal.h"
 
-void sle_setup_rst(void)
+/*
+ * Enable S_MGPIO21 as a pull-up input. The first three calls are the standard
+ * SDK API for that. The two raw register writes below come verbatim from the
+ * SDK demo (application/demo/demo.c): the SDK exposes no named macro or API
+ * for register 0x5702C51C, so they are kept here as a single shared copy.
+ * TODO(hw): verify whether these two writes are actually required on hardware;
+ * if the pull-up input works without them, drop them.
+ */
+void bs21_rst(void)
 {
     uapi_pin_set_mode(S_MGPIO21, (pin_mode_t)HAL_PIO_FUNC_GPIO);
     uapi_gpio_set_dir(S_MGPIO21, GPIO_DIRECTION_INPUT);
@@ -26,18 +34,6 @@ void sle_setup_set_local_addr(void)
     if (sle_set_local_addr(&la) == ERRCODE_SUCC) {
         osal_printk("[conn] local addr set to aa:bb:cc:dd:ee:02\r\n");
     }
-}
-
-void sle_setup_handle_enable(uint8_t status)
-{
-    sle_addr_t la;
-    osal_printk("sle enable: %d\r\n", status);
-    if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
-        osal_printk("[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
-                    la.addr[0], la.addr[1], la.addr[2],
-                    la.addr[3], la.addr[4], la.addr[5], la.type);
-    }
-    sle_setup_set_local_addr();
 }
 
 void sle_scan_start(void)

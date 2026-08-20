@@ -5,8 +5,6 @@
 #define LED_RED_PIN  S_MGPIO11
 #define LED_BLUE_PIN S_MGPIO13
 
-#define PAIR_BLINK_MS 250
-
 static bool g_blink_on = false;
 static uint32_t g_last = 0;
 
@@ -30,9 +28,9 @@ void led_init(void)
 void led_red(bool on) { led_set(LED_RED_PIN, on); }
 void led_blue(bool on) { led_set(LED_BLUE_PIN, on); }
 
-void led_pair_blink(uint32_t now_ms)
+void led_blink(uint32_t now_ms, uint32_t period_ms)
 {
-    if (now_ms - g_last >= PAIR_BLINK_MS) {
+    if (now_ms - g_last >= period_ms) {
         g_last = now_ms;
         g_blink_on = !g_blink_on;
         led_set(LED_BLUE_PIN, g_blink_on);

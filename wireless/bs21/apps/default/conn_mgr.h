@@ -24,6 +24,8 @@ void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,
 void conn_mgr_pair_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t status);
 void conn_mgr_param_update(uint16_t conn_id, errcode_t status,
                            const sle_connection_param_update_evt_t *param);
+void conn_mgr_auth_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
+                            const sle_auth_info_evt_t *evt);
 void conn_mgr_seek_disable(errcode_t status);
 
 #endif /* CONN_MGR_H */

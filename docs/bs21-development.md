@@ -66,6 +66,11 @@ SDK 树不叠加源码。
   peripheral（广播方）
 - `sdk-compat/`：`bs21-n1100-rcu`（SLE-only）的 `libbth_sdk.a` 残留 36 个 `sapi_ble_*`
   BLE 符号引用（无实现），由 `ble_stub.c` 空实现补齐以满足链接
+- `common/`：跨工程共享的 SLE 连接工具模块，各 app 在 `CMakeLists.txt` 里通过
+  `${CMAKE_SOURCE_DIR}/common/` 引用（注意不可用相对 `../common/`，SDK 构建脚本会
+  错误规范化路径）。含 `bs21_util`（`bs21_rst` 引脚初始化含 `0x5702C51C` 底层寄存器
+  配置、`sle_scan_start`、本地地址设置）、`scan_table`（扫描设备表）、
+  `controller_state`（手柄状态定义）
 
 ### 2.2 Ai-BS21_SDK 环境搭建（Linux）
 

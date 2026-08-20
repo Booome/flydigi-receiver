@@ -7,6 +7,7 @@
 #include "sle_common.h"
 #include "sle_device_manager.h"
 #include "sle_device_discovery.h"
+#include "bs21_util.h"
 
 #define ADV_NAME             "flydigi_t"
 #define ADV_HANDLE           1
@@ -33,15 +34,6 @@ struct adv_common_value {
 
 static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
-
-static void bs21_rst(void)
-{
-    uapi_pin_set_mode(S_MGPIO21, (pin_mode_t)HAL_PIO_FUNC_GPIO);
-    uapi_gpio_set_dir(S_MGPIO21, GPIO_DIRECTION_INPUT);
-    uapi_pin_set_pull(S_MGPIO21, PIN_PULL_UP);
-    reg16_setbits(0x5702C51C, 4, 5, 21);
-    reg16_clrbit(0x5702C51C, 0);
-}
 
 static int set_announce_param(void)
 {

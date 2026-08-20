@@ -9,7 +9,7 @@
 #include "conn_nv.h"
 #include "button.h"
 #include "scan_table.h"
-#include "sle_setup.h"
+#include "bs21_util.h"
 #include "conn_mgr.h"
 
 #define SCAN_PRINT_MS  2000
@@ -50,8 +50,17 @@ static void sle_power_on_cb(uint8_t status)
 
 static void sle_enable_cb(uint8_t status)
 {
-    sle_setup_handle_enable(status);
-    conn_mgr_start();
+    osal_printk("sle enable: %d\r\n", status);
+    if (status == 0) {
+        sle_addr_t la = { 0 };
+        if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
+            osal_printk("[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
+                        la.addr[0], la.addr[1], la.addr[2],
+                        la.addr[3], la.addr[4], la.addr[5], la.type);
+        }
+        sle_setup_set_local_addr();
+        conn_mgr_start();
+    }
 }
 
 static void seek_enable_cb(errcode_t status)
@@ -87,10 +96,16 @@ static void conn_param_update_cb(uint16_t conn_id, errcode_t status,
     conn_mgr_param_update(conn_id, status, param);
 }
 
+static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
+                             const sle_auth_info_evt_t *evt)
+{
+    conn_mgr_auth_complete(conn_id, addr, status, evt);
+}
+
 void axk_main(void)
 {
     osal_printk("app: flydigi-wireless\r\n");
-    sle_setup_rst();
+    bs21_rst();
 
     led_init();
     button_init();
@@ -112,6 +127,7 @@ void axk_main(void)
     g_conn_cbk.connect_state_changed_cb = conn_state_changed_cb;
     g_conn_cbk.pair_complete_cb = pair_complete_cb;
     g_conn_cbk.connect_param_update_cb = conn_param_update_cb;
+    g_conn_cbk.auth_complete_cb = auth_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
 
     osal_task *task_handle = NULL;
@@ -132,11 +148,6 @@ void axk_main(void)
         osal_kfree(task_handle);
     }
     osal_kthread_unlock();
-
-    if (conn_nv_is_fatal()) {
-        led_red(true);
-        osal_printk("[conn] NV fatal, red led on\r\n");
-    }
 
     enable_sle();
 }

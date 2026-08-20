@@ -7,6 +7,6 @@
 void led_init(void);
 void led_red(bool on);
 void led_blue(bool on);
-void led_pair_blink(uint32_t now_ms);
+void led_blink(uint32_t now_ms, uint32_t period_ms);
 
 #endif /* LED_H */
