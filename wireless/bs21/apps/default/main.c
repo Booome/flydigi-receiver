@@ -10,17 +10,28 @@
 #include "sle_device_discovery.h"
 #include "sle_connection_manager.h"
 
+#include "led.h"
+#include "conn_nv.h"
+#include "button.h"
+
 #define SCAN_TABLE_SIZE  32
 #define SCAN_PRINT_MS    2000
 
-#define CONNECT_TARGET_ADDR  { 0xa1, 0xa2, 0xc8, 0x75, 0x43, 0xb8 }
+#define PAIR_TIMEOUT_MS  120000
+#define TICK_MS          10
+#define PAIR_SUPERV_MS   200
 
 typedef enum {
-    CONN_STATE_SCAN = 0,
-    CONN_STATE_CONNECTING,
-    CONN_STATE_PAIRING,
+    CONN_STATE_RECONNECT = 0,
+    CONN_STATE_SEARCH,
+    CONN_STATE_PAIR,
     CONN_STATE_ACTIVE,
 } conn_state_t;
+
+typedef enum {
+    MODE_NORMAL = 0,
+    MODE_PAIR,
+} conn_mode_t;
 
 typedef struct {
     sle_addr_t addr;
@@ -35,10 +46,17 @@ static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
 static sle_connection_callbacks_t g_conn_cbk = { 0 };
 
-static conn_state_t g_conn_state = CONN_STATE_SCAN;
+static conn_state_t g_conn_state = CONN_STATE_SEARCH;
+static conn_mode_t g_conn_mode = MODE_NORMAL;
 static bool g_target_locked = false;
 static sle_addr_t g_target_addr = { 0 };
-static const uint8_t g_target_mac[SLE_ADDR_LEN] = CONNECT_TARGET_ADDR;
+
+static uint8_t g_record_addr[SLE_ADDR_LEN] = { 0 };
+static bool g_record_valid = false;
+static sle_addr_t g_peer_addr = { 0 };
+
+static uint32_t g_now_ms = 0;
+static uint32_t g_pair_deadline_ms = 0;
 
 static void bs21_rst(void)
 {
@@ -73,12 +91,102 @@ static scan_device_t *table_add(const sle_addr_t *addr)
     return NULL;
 }
 
+static void scan_start(void)
+{
+    sle_seek_param_t param = { 0 };
+    errcode_t rc;
+    param.own_addr_type = 0;
+    param.filter_duplicates = 0;
+    param.seek_filter_policy = 0;
+    param.seek_phys = 1;
+    param.seek_type[0] = 1;
+    param.seek_interval[0] = 100;
+    param.seek_window[0] = 100;
+    rc = sle_set_seek_param(&param);
+    if (rc != ERRCODE_SUCC) {
+        osal_printk("sle_set_seek_param fail: 0x%x\r\n", rc);
+        return;
+    }
+    rc = sle_start_seek();
+    if (rc != ERRCODE_SUCC) {
+        osal_printk("sle_start_seek fail: 0x%x\r\n", rc);
+    }
+}
+
+static void conn_start_search(void)
+{
+    g_conn_state = CONN_STATE_SEARCH;
+    g_target_locked = false;
+    osal_printk("[conn] search (scan)\r\n");
+    scan_start();
+}
+
+static void conn_start_reconnect(void)
+{
+    g_conn_state = CONN_STATE_RECONNECT;
+    g_target_locked = false;
+    osal_printk("[conn] reconnect to record\r\n");
+    scan_start();
+}
+
 static void conn_rescan(void)
 {
+    if (g_conn_mode == MODE_PAIR) {
+        conn_start_search();
+        return;
+    }
+    if (g_record_valid) {
+        conn_start_reconnect();
+    } else {
+        conn_start_search();
+    }
+}
+
+static void exit_pair_mode(void)
+{
+    if (g_conn_mode != MODE_PAIR) {
+        return;
+    }
+    g_conn_mode = MODE_NORMAL;
+    g_conn_state = CONN_STATE_RECONNECT;
+    led_blue(false);
+    osal_printk("[conn] pair mode exit\r\n");
+    conn_rescan();
+}
+
+static void enter_pair_mode(void)
+{
+    g_conn_mode = MODE_PAIR;
+    g_pair_deadline_ms = g_now_ms + PAIR_TIMEOUT_MS;
     g_target_locked = false;
-    g_conn_state = CONN_STATE_SCAN;
-    osal_printk("[conn] rescan\r\n");
-    sle_start_seek();
+    osal_printk("[conn] pair mode enter\r\n");
+    if (g_conn_state == CONN_STATE_ACTIVE) {
+        osal_printk("[conn] disconnecting current link\r\n");
+        sle_disconnect_remote_device(&g_peer_addr);
+    }
+    conn_rescan();
+}
+
+static void on_long_press(void)
+{
+    osal_printk("[btn] long press\r\n");
+    enter_pair_mode();
+}
+
+static void on_short_press(void)
+{
+    osal_printk("[btn] short press\r\n");
+    if (g_conn_mode == MODE_PAIR) {
+        exit_pair_mode();
+    }
+}
+
+static void lock_and_connect(const sle_addr_t *addr)
+{
+    memcpy_s(&g_target_addr, sizeof(g_target_addr), addr, sizeof(g_target_addr));
+    g_target_locked = true;
+    osal_printk("[conn] target locked, stopping seek\r\n");
+    sle_stop_seek();
 }
 
 static void seek_result_cb(sle_seek_result_info_t *result)
@@ -96,14 +204,21 @@ static void seek_result_cb(sle_seek_result_info_t *result)
     }
     dev->count++;
     dev->rssi = result->rssi;
-    if (!g_target_locked &&
-        memcmp(result->addr.addr, g_target_mac, SLE_ADDR_LEN) == 0) {
-        memcpy_s(&g_target_addr, sizeof(g_target_addr),
-                 &result->addr, sizeof(g_target_addr));
-        g_target_locked = true;
-        osal_printk("[conn] target locked, stopping seek\r\n");
-        sle_stop_seek();
+
+    if (g_target_locked) {
+        return;
     }
+
+    if (g_conn_state == CONN_STATE_RECONNECT) {
+        if (memcmp(result->addr.addr, g_record_addr, SLE_ADDR_LEN) == 0) {
+            lock_and_connect(&result->addr);
+        }
+        return;
+    }
+
+    /* SEARCH / PAIR: lock the first device found (temporary pick).
+       RSSI selection: Task 5 */
+    lock_and_connect(&result->addr);
 }
 
 static void print_scan_table(void)
@@ -139,6 +254,22 @@ static void *scan_task(const char *arg)
     return NULL;
 }
 
+static void *tick_task(const char *arg)
+{
+    while (1) {
+        osal_msleep(TICK_MS);
+        g_now_ms += TICK_MS;
+        if (g_conn_mode == MODE_PAIR) {
+            led_pair_blink(g_now_ms);
+            if (g_now_ms >= g_pair_deadline_ms) {
+                osal_printk("[conn] pair timeout\r\n");
+                exit_pair_mode();
+            }
+        }
+    }
+    return NULL;
+}
+
 static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
                                   sle_acb_state_t conn_state, sle_pair_state_t pair_state,
                                   sle_disc_reason_t disc_reason)
@@ -146,17 +277,18 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
     osal_printk("[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n",
                 conn_id, conn_state, pair_state, disc_reason);
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
+        if (addr != NULL) {
+            memcpy_s(&g_peer_addr, sizeof(g_peer_addr), addr, sizeof(g_peer_addr));
+        }
+        g_conn_state = CONN_STATE_ACTIVE;
         if (pair_state == SLE_PAIR_NONE) {
-            g_conn_state = CONN_STATE_PAIRING;
             osal_printk("[conn] pairing...\r\n");
             if (sle_pair_remote_device(addr) != ERRCODE_SUCC) {
                 osal_printk("[conn] pair request fail\r\n");
-                g_conn_state = CONN_STATE_ACTIVE;
             }
-        } else {
-            g_conn_state = CONN_STATE_ACTIVE;
         }
     } else {
+        osal_printk("[conn] disconnected, rescan\r\n");
         conn_rescan();
     }
 }
@@ -164,20 +296,32 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
 static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status)
 {
     osal_printk("[conn] paired: 0x%x\r\n", status);
-    g_conn_state = CONN_STATE_ACTIVE;
     if (status == ERRCODE_SUCC) {
         osal_printk("[conn] pairing done, keep connection\r\n");
+        if (g_conn_mode == MODE_PAIR || !g_record_valid) {
+            if (conn_nv_save(g_peer_addr.addr)) {
+                g_record_valid = true;
+                memcpy_s(g_record_addr, SLE_ADDR_LEN, g_peer_addr.addr, SLE_ADDR_LEN);
+                osal_printk("[conn] record saved\r\n");
+            }
+            if (g_conn_mode == MODE_PAIR) {
+                g_conn_mode = MODE_NORMAL;
+                led_blue(false);
+                osal_printk("[conn] pair mode exit (paired)\r\n");
+            }
+        }
         sle_connection_param_update_t up = { 0 };
         up.conn_id = conn_id;
         up.interval_min = 100;
         up.interval_max = 100;
         up.max_latency = 0;
-        up.supervision_timeout = 200;
-        osal_printk("[conn] sending param update (superv=2s)\r\n");
+        up.supervision_timeout = PAIR_SUPERV_MS;
+        osal_printk("[conn] sending param update (superv=%ums)\r\n", PAIR_SUPERV_MS * 10);
         if (sle_update_connect_param(&up) != ERRCODE_SUCC) {
             osal_printk("[conn] param update send fail\r\n");
         }
     }
+    g_conn_state = CONN_STATE_ACTIVE;
 }
 
 static void conn_param_update_cb(uint16_t conn_id, errcode_t status,
@@ -198,33 +342,10 @@ static void seek_disable_cb(errcode_t status)
         conn_rescan();
         return;
     }
-    g_conn_state = CONN_STATE_CONNECTING;
     osal_printk("[conn] connecting...\r\n");
     if (sle_connect_remote_device(&g_target_addr) != ERRCODE_SUCC) {
         osal_printk("[conn] connect fail\r\n");
         conn_rescan();
-    }
-}
-
-static void scan_start(void)
-{
-    sle_seek_param_t param = { 0 };
-    errcode_t rc;
-    param.own_addr_type = 0;
-    param.filter_duplicates = 0;
-    param.seek_filter_policy = 0;
-    param.seek_phys = 1;
-    param.seek_type[0] = 1;
-    param.seek_interval[0] = 100;
-    param.seek_window[0] = 100;
-    rc = sle_set_seek_param(&param);
-    if (rc != ERRCODE_SUCC) {
-        osal_printk("sle_set_seek_param fail: 0x%x\r\n", rc);
-        return;
-    }
-    rc = sle_start_seek();
-    if (rc != ERRCODE_SUCC) {
-        osal_printk("sle_start_seek fail: 0x%x\r\n", rc);
     }
 }
 
@@ -251,7 +372,7 @@ static void sle_enable_cb(uint8_t status)
         osal_printk("[conn] local addr set to aa:bb:cc:dd:ee:02\r\n");
     }
     sle_announce_seek_register_callbacks(&g_seek_cbk);
-    scan_start();
+    conn_rescan();
 }
 
 static void seek_enable_cb(errcode_t status)
@@ -263,6 +384,21 @@ void axk_main(void)
 {
     osal_printk("app: flydigi-wireless\r\n");
     bs21_rst();
+
+    led_init();
+    button_init();
+    conn_nv_init();
+
+    g_record_valid = conn_nv_load(g_record_addr);
+    if (g_record_valid) {
+        osal_printk("[conn] record: %02x:%02x:%02x:%02x:%02x:%02x\r\n",
+                    g_record_addr[0], g_record_addr[1], g_record_addr[2],
+                    g_record_addr[3], g_record_addr[4], g_record_addr[5]);
+    } else {
+        osal_printk("[conn] no record, search\r\n");
+    }
+
+    button_set_cb(on_long_press, on_short_press);
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;
@@ -284,7 +420,22 @@ void axk_main(void)
         osal_kthread_set_priority(task_handle, 24);
         osal_kfree(task_handle);
     }
+    task_handle = osal_kthread_create((osal_kthread_handler)tick_task, 0, "tick_task", 0x1000);
+    if (task_handle != NULL) {
+        osal_kthread_set_priority(task_handle, 24);
+        osal_kfree(task_handle);
+    }
+    task_handle = osal_kthread_create((osal_kthread_handler)button_task, 0, "button_task", 0x1000);
+    if (task_handle != NULL) {
+        osal_kthread_set_priority(task_handle, 24);
+        osal_kfree(task_handle);
+    }
     osal_kthread_unlock();
+
+    if (conn_nv_is_fatal()) {
+        led_red(true);
+        osal_printk("[conn] NV fatal, red led on\r\n");
+    }
 
     enable_sle();
 }
