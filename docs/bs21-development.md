@@ -412,8 +412,14 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 **已知边界（待板上验证）**：
 - RSSI_THRESHOLD=50 为初始值，需按实际摆放距离标定。
-- SMP 密钥持久化（`auth_complete_cb` 调 `sle_set_nv_smp_keys`）需确认重启后
-  免重新配对。
+
+**待办（暂缓）**：
+- **SMP 密钥持久化（免重新配对）**：实测配对后断开重连/重启仍会重新配对
+  （重连时 `pair_state` 回到 NONE，`auth_complete` 不触发，`sle_set_nv_smp_keys`
+  未执行；断开时 `pair_state` 为 PAIRED，说明配对状态仅存在于会话内、未持久化）。
+  需显式调用 `sle_set_save_pair_keys_mode`（AUTO/MANU）开启密钥保存后再验证，
+  且结果还取决于手柄端是否支持 bonding。当前每次连接自动重新配对、流程可用，
+  此项延后处理。`conn_mgr_auth_complete` 中的保存逻辑保留（若 auth 触发即可用）。
 
 **测试清单（板上）**：
 - [x] 1. 无记录 → SEARCH → 手柄靠近 → 连接+配对 → NV 记录 → 重启自动连旧设备。
