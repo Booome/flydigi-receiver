@@ -17,6 +17,8 @@ typedef struct {
 scan_device_t *scan_table_find(const sle_addr_t *addr);
 scan_device_t *scan_table_add(const sle_addr_t *addr);
 void scan_table_print(void);
+scan_device_t *scan_table_best(void);
+void scan_table_reset(void);
 bool scan_table_full(void);
 
 #endif /* SCAN_TABLE_H */

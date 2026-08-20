@@ -52,3 +52,25 @@ void scan_table_print(void)
         osal_printk("[scan] table full\r\n");
     }
 }
+
+scan_device_t *scan_table_best(void)
+{
+    scan_device_t *best = NULL;
+    for (uint8_t i = 0; i < SCAN_TABLE_SIZE; i++) {
+        if (g_scan_table[i].used &&
+            (best == NULL || g_scan_table[i].rssi > best->rssi)) {
+            best = &g_scan_table[i];
+        }
+    }
+    return best;
+}
+
+void scan_table_reset(void)
+{
+    for (uint8_t i = 0; i < SCAN_TABLE_SIZE; i++) {
+        g_scan_table[i].used = 0;
+        g_scan_table[i].count = 0;
+        g_scan_table[i].rssi = 0;
+    }
+    g_table_full = false;
+}
