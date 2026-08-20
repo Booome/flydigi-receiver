@@ -13,6 +13,7 @@
 #include "led.h"
 #include "conn_nv.h"
 #include "button.h"
+#include "rssi_pick.h"
 
 #define SCAN_TABLE_SIZE  32
 #define SCAN_PRINT_MS    2000
@@ -196,6 +197,7 @@ static void lock_and_connect(const sle_addr_t *addr)
 static void seek_result_cb(sle_seek_result_info_t *result)
 {
     scan_device_t *dev;
+    bool locked = false;
     if (result == NULL) {
         return;
     }
@@ -220,9 +222,20 @@ static void seek_result_cb(sle_seek_result_info_t *result)
         return;
     }
 
-    /* SEARCH / PAIR: lock the first device found (temporary pick).
-       RSSI selection: Task 5 */
-    lock_and_connect(&result->addr);
+    /* SEARCH / PAIR: RSSI proximity selection */
+    if (rssi_pick_is_stronger(result->addr.addr, result->rssi)) {
+        rssi_pick_init();
+        locked = rssi_pick_feed(result->addr.addr, result->rssi);
+    } else if (memcmp(rssi_pick_locked_addr(), result->addr.addr, SLE_ADDR_LEN) == 0) {
+        locked = rssi_pick_feed(result->addr.addr, result->rssi);
+    }
+    if (locked) {
+        memcpy_s(g_target_addr.addr, SLE_ADDR_LEN, rssi_pick_locked_addr(), SLE_ADDR_LEN);
+        g_target_addr.type = result->addr.type;
+        g_target_locked = true;
+        osal_printk("[conn] rssi target locked, stopping seek\r\n");
+        sle_stop_seek();
+    }
 }
 
 static void print_scan_table(void)
@@ -263,6 +276,7 @@ static void *tick_task(const char *arg)
     while (1) {
         osal_msleep(TICK_MS);
         g_now_ms += TICK_MS;
+        rssi_pick_tick();
         if (g_conn_mode == MODE_PAIR) {
             led_pair_blink(g_now_ms);
             if (g_now_ms >= g_pair_deadline_ms) {
