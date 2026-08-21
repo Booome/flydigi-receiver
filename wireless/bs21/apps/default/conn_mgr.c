@@ -180,7 +180,6 @@ static void conn_apply_state_led(void)
 
 static void pair_timeout_cb(void *arg)
 {
-    (void)arg;
     if (g_conn_state == CONN_STATE_SEARCH && g_search_timeout) {
         osal_printk("[conn] search timeout\r\n");
         conn_exit_search_timeout();
@@ -189,7 +188,6 @@ static void pair_timeout_cb(void *arg)
 
 static void on_btn_hold(uint32_t held_ms, void *ctx)
 {
-    (void)ctx;
     if (held_ms == 3000) {
         led_blink(g_led_blue, 125);
     } else if (held_ms == 10000) {
@@ -200,7 +198,6 @@ static void on_btn_hold(uint32_t held_ms, void *ctx)
 
 static void on_btn_up(uint32_t held_ms, void *ctx)
 {
-    (void)ctx;
     if (held_ms < 3000) {
         conn_mgr_on_short_press();
     } else if (held_ms < 10000) {
