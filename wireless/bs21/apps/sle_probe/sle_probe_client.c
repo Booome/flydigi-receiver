@@ -24,6 +24,8 @@ static uint16_t g_conn_id = 0;
 static uint64_t g_scan_start_ms = 0;
 static uint16_t g_write_hdls[8];
 static uint8_t g_write_cnt = 0;
+static uint16_t g_notify_hdls[8];
+static uint8_t g_notify_cnt = 0;
 
 static void probe_start_scan(void)
 {
@@ -209,6 +211,11 @@ static void probe_find_property_cb(uint8_t client_id, uint16_t conn_id,
         g_write_cnt < 8) {
         g_write_hdls[g_write_cnt++] = property->handle;
     }
+    if ((property->operate_indication & (SSAP_OPERATE_INDICATION_BIT_NOTIFY |
+                                         SSAP_OPERATE_INDICATION_BIT_INDICATE)) &&
+        g_notify_cnt < 8) {
+        g_notify_hdls[g_notify_cnt++] = property->handle;
+    }
 }
 
 static void probe_print_hex(const uint8_t *buf, uint32_t len)
@@ -253,46 +260,25 @@ static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
     }
     osal_printk("%s find complete: status=0x%x type=%u uuid_len=%u\r\n",
                 PROBE_LOG, status, result->type, result->uuid.len);
-    uint8_t en[2] = { 0x01, 0x00 };
-    for (uint16_t h = 0x12; h <= 0x19; h++) {
-        ssapc_write_param_t wp = { 0 };
-        wp.handle = h;
-        wp.type = SSAP_PROPERTY_TYPE_VALUE;
-        wp.data_len = sizeof(en);
-        wp.data = en;
-        if (ssapc_write_req(0, g_conn_id, &wp) == ERRCODE_SUCC) {
-            osal_printk("%s enable notify on 0x%x\r\n", PROBE_LOG, h);
-        }
-    }
-    for (uint8_t i = 0; i < g_write_cnt; i++) {
-        uint8_t cmd[1] = { 0x01 };
-        ssapc_write_param_t wp = { 0 };
-        wp.handle = g_write_hdls[i];
-        wp.type = SSAP_PROPERTY_TYPE_VALUE;
-        wp.data_len = sizeof(cmd);
-        wp.data = cmd;
-        if (ssapc_write_req(0, g_conn_id, &wp) == ERRCODE_SUCC) {
-            osal_printk("%s write cmd 0x01 to 0x%x\r\n", PROBE_LOG, g_write_hdls[i]);
-        }
-    }
-    uint8_t trial[][1] = {{0x03}, {0x05}, {0x08}, {0x02}};
-    for (uint8_t t = 0; t < 4; t++) {
-        for (uint8_t i = 0; i < g_write_cnt; i++) {
+
+    /* Enable notifications: write 0x0001 to the CCC descriptor handle.
+       SDK gives no descriptor handle, so try property+1 then +2 (GATT layout). */
+    uint8_t ccc[2] = { 0x01, 0x00 };
+    for (uint8_t i = 0; i < g_notify_cnt; i++) {
+        for (uint8_t off = 1; off <= 2; off++) {
             ssapc_write_param_t wp = { 0 };
-            wp.handle = g_write_hdls[i];
-            wp.type = SSAP_PROPERTY_TYPE_VALUE;
-            wp.data_len = 1;
-            wp.data = trial[t];
+            wp.handle = g_notify_hdls[i] + off;
+            wp.type = SSAP_DESCRIPTOR_CLIENT_CONFIGURATION;
+            wp.data_len = sizeof(ccc);
+            wp.data = ccc;
             if (ssapc_write_req(0, g_conn_id, &wp) == ERRCODE_SUCC) {
-                osal_printk("%s write cmd 0x%02x to 0x%x\r\n", PROBE_LOG, trial[t][0], g_write_hdls[i]);
+                osal_printk("%s enable notify on ccc 0x%x (prop 0x%x)\r\n",
+                            PROBE_LOG, wp.handle, g_notify_hdls[i]);
             }
         }
     }
-    for (uint16_t h = 0x11; h <= 0x18; h++) {
-        if (ssapc_read_req(0, g_conn_id, h, 0) == ERRCODE_SUCC) {
-            osal_printk("%s read 0x%x\r\n", PROBE_LOG, h);
-        }
-    }
+
+    /* V2 init+enable sequence is appended by Task 2. */
 }
 
 static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
