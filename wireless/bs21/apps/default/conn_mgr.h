@@ -8,13 +8,11 @@
 #include "sle_connection_manager.h"
 #include "sle_device_discovery.h"
 #include "led.h"
+#include "button.h"
 
-void conn_mgr_init(led_t led_red, led_t led_blue);
+void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn);
 void conn_mgr_start(void);
 
-void conn_mgr_on_long_press(void);
-void conn_mgr_on_short_press(void);
-void conn_mgr_on_very_long_press(void);
 void conn_mgr_tick(uint32_t now_ms);
 
 bool conn_mgr_is_scanning(void);

@@ -14,6 +14,7 @@
 
 #define RED_PIN   S_MGPIO11
 #define BLUE_PIN  S_MGPIO13
+#define KEY_PIN   S_MGPIO0
 
 #define SCAN_PRINT_MS  2000
 #define TICK_MS        10
@@ -123,13 +124,10 @@ void axk_main(void)
 
     led_t led_red = led_init(RED_PIN);
     led_t led_blue = led_init(BLUE_PIN);
-    button_init();
+    button_t btn = button_init(KEY_PIN);
     conn_nv_init();
 
-    conn_mgr_init(led_red, led_blue);
-
-    button_set_cb(conn_mgr_on_long_press, conn_mgr_on_short_press,
-                  conn_mgr_on_very_long_press);
+    conn_mgr_init(led_red, led_blue, btn);
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;
@@ -149,7 +147,6 @@ void axk_main(void)
     osal_kthread_lock();
     create_task((osal_kthread_handler)scan_task, "scan_task");
     create_task((osal_kthread_handler)tick_task, "tick_task");
-    create_task((osal_kthread_handler)button_task, "button_task");
     osal_kthread_unlock();
 
     enable_sle();

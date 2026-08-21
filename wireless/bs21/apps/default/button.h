@@ -1,10 +1,22 @@
 #ifndef BUTTON_H
 #define BUTTON_H
 
-typedef void (*button_cb_t)(void);
+#include <stdint.h>
+#include "pinctrl.h"
 
-void button_init(void);
-void button_set_cb(button_cb_t on_long, button_cb_t on_short, button_cb_t on_very_long);
-void *button_task(const char *arg);
+typedef uint8_t button_t;
+
+typedef void (*button_down_cb)(void *ctx);
+typedef void (*button_up_cb)(uint32_t held_ms, void *ctx);
+typedef void (*button_hold_cb)(uint32_t held_ms, void *ctx);
+
+typedef struct {
+    button_down_cb on_down;
+    button_up_cb on_up;
+    button_hold_cb on_hold;
+} button_callbacks_t;
+
+button_t button_init(pin_t port);
+void button_set_cb(button_t btn, const button_callbacks_t *cb, void *ctx);
 
 #endif /* BUTTON_H */

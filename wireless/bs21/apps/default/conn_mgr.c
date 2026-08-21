@@ -34,6 +34,7 @@ static uint32_t g_now_ms = 0;
 
 static led_t g_led_red;
 static led_t g_led_blue;
+static button_t g_btn;
 
 static void conn_enter_fatal(void)
 {
@@ -106,7 +107,7 @@ static void lock_and_connect(const sle_addr_t *addr)
     sle_stop_seek();
 }
 
-void conn_mgr_on_long_press(void)
+static void conn_mgr_on_long_press(void)
 {
     if (g_conn_state == CONN_STATE_FATAL) {
         osal_printk("[btn] ignored (fatal)\r\n");
@@ -120,7 +121,7 @@ void conn_mgr_on_long_press(void)
     conn_start_search(g_record_valid);
 }
 
-void conn_mgr_on_short_press(void)
+static void conn_mgr_on_short_press(void)
 {
     osal_printk("[btn] short press\r\n");
     if (g_search_timeout) {
@@ -128,7 +129,7 @@ void conn_mgr_on_short_press(void)
     }
 }
 
-void conn_mgr_on_very_long_press(void)
+static void conn_mgr_on_very_long_press(void)
 {
     if (g_conn_state == CONN_STATE_FATAL) {
         osal_printk("[btn] ignored (fatal)\r\n");
@@ -146,6 +147,47 @@ void conn_mgr_on_very_long_press(void)
     g_record_valid = false;
     memset_s(g_record_addr, sizeof(g_record_addr), 0, sizeof(g_record_addr));
     conn_start_search(false);
+}
+
+static void conn_mgr_show_state_led(void)
+{
+    switch (g_conn_state) {
+    case CONN_STATE_SEARCH:
+        led_blink(g_led_blue, SEARCH_BLINK_MS);
+        break;
+    case CONN_STATE_RECONNECT:
+        led_blink(g_led_blue, RECONNECT_BLINK_MS);
+        break;
+    case CONN_STATE_ACTIVE:
+        led_off(g_led_blue);
+        break;
+    default:
+        break;
+    }
+}
+
+static void on_btn_hold(uint32_t held_ms, void *ctx)
+{
+    (void)ctx;
+    if (held_ms == 3000) {
+        led_blink(g_led_blue, 125);
+    } else if (held_ms == 10000) {
+        led_stop_blinking(g_led_blue);
+        led_on(g_led_blue);
+    }
+}
+
+static void on_btn_up(uint32_t held_ms, void *ctx)
+{
+    (void)ctx;
+    conn_mgr_show_state_led();
+    if (held_ms < 3000) {
+        conn_mgr_on_short_press();
+    } else if (held_ms < 10000) {
+        conn_mgr_on_long_press();
+    } else {
+        conn_mgr_on_very_long_press();
+    }
 }
 
 void conn_mgr_seek_result(sle_seek_result_info_t *result)
@@ -308,10 +350,11 @@ void conn_mgr_seek_disable(errcode_t status)
     sle_scan_start();
 }
 
-void conn_mgr_init(led_t led_red, led_t led_blue)
+void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn)
 {
     g_led_red = led_red;
     g_led_blue = led_blue;
+    g_btn = btn;
     g_record_valid = conn_nv_load(g_record_addr);
     if (conn_nv_is_fatal()) {
         conn_enter_fatal();
@@ -324,6 +367,11 @@ void conn_mgr_init(led_t led_red, led_t led_blue)
     } else {
         osal_printk("[conn] no record, search\r\n");
     }
+
+    button_callbacks_t cb = { 0 };
+    cb.on_hold = on_btn_hold;
+    cb.on_up = on_btn_up;
+    button_set_cb(g_btn, &cb, NULL);
 }
 
 void conn_mgr_start(void)
