@@ -262,24 +262,10 @@ static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
     osal_printk("%s find complete: status=0x%x type=%u uuid_len=%u\r\n",
                 PROBE_LOG, status, result->type, result->uuid.len);
 
-    /* Enable notifications: write 0x0001 to the CCC descriptor handle.
-       SDK gives no descriptor handle, so try property+1 then +2 (GATT layout). */
-    uint8_t ccc[2] = { 0x01, 0x00 };
-    for (uint8_t i = 0; i < g_notify_cnt; i++) {
-        for (uint8_t off = 1; off <= 2; off++) {
-            ssapc_write_param_t wp = { 0 };
-            wp.handle = g_notify_hdls[i] + off;
-            wp.type = SSAP_DESCRIPTOR_CLIENT_CONFIGURATION;
-            wp.data_len = sizeof(ccc);
-            wp.data = ccc;
-            if (ssapc_write_req(0, g_conn_id, &wp) == ERRCODE_SUCC) {
-                osal_printk("%s enable notify on ccc 0x%x (prop 0x%x)\r\n",
-                            PROBE_LOG, wp.handle, g_notify_hdls[i]);
-            }
-        }
-    }
-
-    /* V2 init+enable sequence is appended by Task 2. */
+    /* SSAP pushes notifications/indications from the server without a client-side
+       CCC subscription (the SDK exposes no descriptor handle). The
+       notification_cb/indication_cb are already registered, so just send the
+       V2 init+enable handshake and listen. */
     trials_run();
 }
 
