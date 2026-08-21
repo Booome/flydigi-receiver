@@ -81,8 +81,8 @@ static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
 
 void axk_main(void)
 {
-    osal_printk("app: flydigi-wireless\r\n");
     bs21_rst();
+    osal_printk("app: flydigi-wireless\r\n");
 
     led_t led_red = led_init(RED_PIN);
     led_t led_blue = led_init(BLUE_PIN);

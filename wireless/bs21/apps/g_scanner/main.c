@@ -45,8 +45,8 @@ static void seek_result_cb(sle_seek_result_info_t *result)
 
 void axk_main(void)
 {
-    osal_printk("app: g_scanner\r\n");
     bs21_rst();
+    osal_printk("app: g_scanner\r\n");
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;

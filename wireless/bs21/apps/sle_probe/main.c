@@ -5,8 +5,8 @@
 
 void axk_main(void)
 {
-    osal_printk("app: sle-probe\r\n");
     bs21_rst();
+    osal_printk("app: sle-probe\r\n");
     probe_init();
     enable_sle();
 }

@@ -197,8 +197,8 @@ static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
 
 void axk_main(void)
 {
-    osal_printk("app: sle_accept\r\n");
     bs21_rst();
+    osal_printk("app: sle_accept\r\n");
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;

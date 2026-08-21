@@ -135,8 +135,8 @@ static void seek_enable_cb(errcode_t status)
 
 void axk_main(void)
 {
-    osal_printk("app: sle_connect\r\n");
     bs21_rst();
+    osal_printk("app: sle_connect\r\n");
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;
