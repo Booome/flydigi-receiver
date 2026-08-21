@@ -59,6 +59,21 @@ reset 轮特征（靠内容区分每轮）：
 - 标志行：`Unkown Boot Type 0xDEAD000D`、`Jump to app! addr = 0x9010B300`、`Debug uart init succ:80000`
 - 应用起点：`app: <工程名>`（`default` 为 `flydigi-wireless`）
 
+### 用户协同操作提示音
+
+当任务需要用户**联合操作**（如连接/断开手柄、拔插 USB 电源、按复位键等）时，
+**先播放提示音通知用户，再给出文字操作说明**。不要静默等待用户自己发现需要操作。
+
+提示音脚本：`wireless/bs21/tools/notify.sh`（播放 `notify_alarm.wav`，一段明显的
+三连蜂鸣 + 收尾高音，方波 + 淡入淡出包络，避免破音）。重新生成用
+`notify_gen.py`。播放依赖 `paplay`（PulseAudio），无音频环境会报错退出。
+
+调用示例：
+```bash
+bash wireless/bs21/tools/notify.sh
+# 然后打印："请连接手柄并进入 2.4GHz SLE 配对模式"
+```
+
 ## 手柄硬件信息
 
 - 型号：飞智八爪鱼5 (Flydigi Apex 5)
