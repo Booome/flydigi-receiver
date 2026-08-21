@@ -13,6 +13,8 @@ typedef struct {
     osTimerId_t timer;
     uint32_t period_ms;
     bool level;
+    led_change_cb change_cb;
+    void *change_ctx;
 } led_inst_t;
 
 static led_inst_t g_leds[LED_MAX];
@@ -23,6 +25,9 @@ static void led_timer_cb(void *arg)
     led_inst_t *l = &g_leds[idx];
     l->level = !l->level;
     uapi_gpio_set_val(l->pin, l->level ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW);
+    if (l->change_cb != NULL) {
+        l->change_cb(l->level, l->change_ctx);
+    }
 }
 
 static led_inst_t *led_get(led_t led)
@@ -46,6 +51,8 @@ led_t led_init(pin_t port)
         g_leds[i].pin = port;
         g_leds[i].period_ms = 0;
         g_leds[i].level = false;
+        g_leds[i].change_cb = NULL;
+        g_leds[i].change_ctx = NULL;
         g_leds[i].timer = osTimerNew(led_timer_cb, osTimerPeriodic,
                                      (void *)(uintptr_t)i, NULL);
         return i;
@@ -134,4 +141,14 @@ uint32_t led_get_blink_period(led_t led)
         return 0;
     }
     return l->period_ms;
+}
+
+void led_set_change_cb(led_t led, led_change_cb cb, void *ctx)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
+        return;
+    }
+    l->change_cb = cb;
+    l->change_ctx = ctx;
 }
