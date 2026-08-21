@@ -43,13 +43,11 @@ static void conn_apply_state_led(void);
 
 static void conn_enter_fatal(void)
 {
-    if (g_conn_state == CONN_STATE_FATAL) {
-        return;
-    }
     g_conn_state = CONN_STATE_FATAL;
     led_off(g_led_blue);
     led_on(g_led_red);
     osal_printk("[conn] FATAL: NV broken, blocking connection flow\r\n");
+    osKernelLock();
 }
 
 static void conn_start_search(bool timeout)
@@ -85,9 +83,6 @@ static void conn_start_reconnect(void)
 
 static void conn_rescan(void)
 {
-    if (g_conn_state == CONN_STATE_FATAL) {
-        return;
-    }
     if (g_record_valid) {
         conn_start_reconnect();
     } else {
@@ -120,10 +115,6 @@ static void lock_and_connect(const sle_addr_t *addr)
 
 static void conn_mgr_on_long_press(void)
 {
-    if (g_conn_state == CONN_STATE_FATAL) {
-        osal_printk("[btn] ignored (fatal)\r\n");
-        return;
-    }
     osal_printk("[btn] long press\r\n");
     if (g_conn_state == CONN_STATE_ACTIVE) {
         osal_printk("[conn] disconnecting current link\r\n");
@@ -143,10 +134,6 @@ static void conn_mgr_on_short_press(void)
 
 static void conn_mgr_on_very_long_press(void)
 {
-    if (g_conn_state == CONN_STATE_FATAL) {
-        osal_printk("[btn] ignored (fatal)\r\n");
-        return;
-    }
     osal_printk("[btn] very long press, erase record\r\n");
     if (g_conn_state == CONN_STATE_ACTIVE) {
         osal_printk("[conn] disconnecting current link\r\n");
@@ -210,7 +197,7 @@ static void on_btn_up(uint32_t held_ms, void *ctx)
 void conn_mgr_seek_result(sle_seek_result_info_t *result)
 {
     scan_device_t *dev;
-    if (result == NULL || g_conn_state == CONN_STATE_FATAL) {
+    if (result == NULL) {
         return;
     }
     dev = scan_table_find(&result->addr);
@@ -250,9 +237,6 @@ void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,
 {
     osal_printk("[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n",
                 conn_id, conn_state, pair_state, disc_reason);
-    if (g_conn_state == CONN_STATE_FATAL) {
-        return;
-    }
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         if (addr != NULL) {
             memcpy_s(&g_peer_addr, sizeof(g_peer_addr), addr, sizeof(g_peer_addr));
@@ -275,9 +259,6 @@ void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,
 void conn_mgr_pair_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t status)
 {
     osal_printk("[conn] paired: 0x%x\r\n", status);
-    if (g_conn_state == CONN_STATE_FATAL) {
-        return;
-    }
     if (status == ERRCODE_SUCC) {
         osal_printk("[conn] pairing done, keep connection\r\n");
         if (g_search_timeout && addr != NULL &&
@@ -351,9 +332,6 @@ void conn_mgr_seek_disable(errcode_t status)
 {
     osal_printk("[conn] seek disabled: 0x%x\r\n", status);
     g_seek_active = false;
-    if (g_conn_state == CONN_STATE_FATAL) {
-        return;
-    }
     if (g_target_locked) {
         osal_printk("[conn] connecting...\r\n");
         if (sle_connect_remote_device(&g_target_addr) != ERRCODE_SUCC) {
@@ -394,9 +372,5 @@ void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn)
 
 void conn_mgr_start(void)
 {
-    if (g_conn_state == CONN_STATE_FATAL) {
-        osal_printk("[conn] start blocked (fatal)\r\n");
-        return;
-    }
     conn_rescan();
 }
