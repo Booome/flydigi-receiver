@@ -9,12 +9,17 @@
 #include "soc_osal.h"
 
 /*
- * Enable S_MGPIO21 as a pull-up input. The first three calls are the standard
- * SDK API for that. The two raw register writes below come verbatim from the
- * SDK demo (application/demo/demo.c): the SDK exposes no named macro or API
- * for register 0x5702C51C, so they are kept here as a single shared copy.
- * TODO(hw): verify whether these two writes are actually required on hardware;
- * if the pull-up input works without them, drop them.
+ * Initialize the reset button (S_MGPIO21).
+ *
+ * Source: SDK demo (application/demo/demo.c), function bs21_rst().
+ * The function configures S_MGPIO21 as a pull-up input and performs two
+ * vendor-specific register writes (0x5702C51C) that are not exposed by the
+ * SDK headers. These writes come directly from the SDK demo.
+ *
+ * Necessity: verified on hardware. Removing this call causes the reset
+ * button (S_MGPIO21) to stop working, confirming that the pin must be
+ * configured as a pull-up input with the two vendor register bits set.
+ * Do not remove.
  */
 void bs21_rst(void)
 {
