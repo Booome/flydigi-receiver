@@ -22,6 +22,8 @@ static sle_connection_callbacks_t g_conn_cbk = { 0 };
 static sle_addr_t g_target_addr = { 0 };
 static uint16_t g_conn_id = 0;
 static uint64_t g_scan_start_ms = 0;
+static uint16_t g_write_hdls[8];
+static uint8_t g_write_cnt = 0;
 
 static void probe_start_scan(void)
 {
@@ -187,7 +189,7 @@ static void probe_find_service_cb(uint8_t client_id, uint16_t conn_id,
 }
 
 static void probe_find_property_cb(uint8_t client_id, uint16_t conn_id,
-                                   ssapc_find_property_result_t *property, errcode_t status)
+                                    ssapc_find_property_result_t *property, errcode_t status)
 {
     (void)client_id;
     (void)conn_id;
@@ -195,18 +197,49 @@ static void probe_find_property_cb(uint8_t client_id, uint16_t conn_id,
         osal_printk("%s find property: status=0x%x\r\n", PROBE_LOG, status);
         return;
     }
-    osal_printk("%s find property: status=0x%x handle=0x%x oper_ind=%u desc=%u\r\n",
+    osal_printk("%s find property: status=0x%x handle=0x%x oper_ind=%u desc=%u uuid=",
                 PROBE_LOG, status, property->handle, property->operate_indication,
                 property->descriptors_count);
+    for (uint8_t i = 0; i < property->uuid.len && i < 16; i++) {
+        osal_printk("%02x ", property->uuid.uuid[i]);
+    }
+    osal_printk("\r\n");
+    if ((property->operate_indication & (SSAP_OPERATE_INDICATION_BIT_WRITE |
+                                         SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP)) &&
+        g_write_cnt < 8) {
+        g_write_hdls[g_write_cnt++] = property->handle;
+    }
+}
+
+static void probe_print_hex(const uint8_t *buf, uint32_t len)
+{
+    for (uint32_t i = 0; i < len; i++) {
+        osal_printk("%02x ", buf[i]);
+    }
+    osal_printk("\r\n");
 }
 
 static void probe_write_cfm_cb(uint8_t client_id, uint16_t conn_id,
-                               ssapc_write_result_t *write_result, errcode_t status)
+                                ssapc_write_result_t *write_result, errcode_t status)
 {
     (void)client_id;
     (void)conn_id;
     osal_printk("%s write cfm: status=0x%x handle=0x%x\r\n",
                 PROBE_LOG, status, write_result->handle);
+}
+
+static void probe_read_cfm_cb(uint8_t client_id, uint16_t conn_id,
+                              ssapc_handle_value_t *read_data, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    if (status != ERRCODE_SUCC || read_data == NULL) {
+        osal_printk("%s read cfm: status=0x%x\r\n", PROBE_LOG, status);
+        return;
+    }
+    osal_printk("%s read cfm: status=0x%x handle=0x%x len=%u ",
+                PROBE_LOG, status, read_data->handle, read_data->data_len);
+    probe_print_hex(read_data->data, read_data->data_len);
 }
 
 static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
@@ -231,14 +264,35 @@ static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
             osal_printk("%s enable notify on 0x%x\r\n", PROBE_LOG, h);
         }
     }
-}
-
-static void probe_print_hex(const uint8_t *buf, uint32_t len)
-{
-    for (uint32_t i = 0; i < len; i++) {
-        osal_printk("%02x ", buf[i]);
+    for (uint8_t i = 0; i < g_write_cnt; i++) {
+        uint8_t cmd[1] = { 0x01 };
+        ssapc_write_param_t wp = { 0 };
+        wp.handle = g_write_hdls[i];
+        wp.type = SSAP_PROPERTY_TYPE_VALUE;
+        wp.data_len = sizeof(cmd);
+        wp.data = cmd;
+        if (ssapc_write_req(0, g_conn_id, &wp) == ERRCODE_SUCC) {
+            osal_printk("%s write cmd 0x01 to 0x%x\r\n", PROBE_LOG, g_write_hdls[i]);
+        }
     }
-    osal_printk("\r\n");
+    uint8_t trial[][1] = {{0x03}, {0x05}, {0x08}, {0x02}};
+    for (uint8_t t = 0; t < 4; t++) {
+        for (uint8_t i = 0; i < g_write_cnt; i++) {
+            ssapc_write_param_t wp = { 0 };
+            wp.handle = g_write_hdls[i];
+            wp.type = SSAP_PROPERTY_TYPE_VALUE;
+            wp.data_len = 1;
+            wp.data = trial[t];
+            if (ssapc_write_req(0, g_conn_id, &wp) == ERRCODE_SUCC) {
+                osal_printk("%s write cmd 0x%02x to 0x%x\r\n", PROBE_LOG, trial[t][0], g_write_hdls[i]);
+            }
+        }
+    }
+    for (uint16_t h = 0x11; h <= 0x18; h++) {
+        if (ssapc_read_req(0, g_conn_id, h, 0) == ERRCODE_SUCC) {
+            osal_printk("%s read 0x%x\r\n", PROBE_LOG, h);
+        }
+    }
 }
 
 static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
@@ -281,6 +335,7 @@ void probe_init(void)
     g_ssapc_cbk.ssapc_find_property_cbk = probe_find_property_cb;
     g_ssapc_cbk.find_structure_cmp_cb = probe_find_cmp_cb;
     g_ssapc_cbk.write_cfm_cb = probe_write_cfm_cb;
+    g_ssapc_cbk.read_cfm_cb = probe_read_cfm_cb;
     g_ssapc_cbk.notification_cb = probe_notification_cb;
     g_ssapc_cbk.indication_cb = probe_indication_cb;
     ssapc_register_callbacks(&g_ssapc_cbk);
