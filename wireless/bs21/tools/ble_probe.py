@@ -54,8 +54,9 @@ async def main():
     devices = await BleakScanner.discover(timeout=8)
     target = None
     for d in devices:
-        nm = d.name or ""
-        log(f"  found {d.address} name={nm!r} rssi={d.rssi}")
+        nm = getattr(d, "name", None) or ""
+        rssi = getattr(d, "rssi", None)
+        log(f"  found {d.address} name={nm!r} rssi={rssi}")
         if mac and d.address.lower() == mac.lower():
             target = d
         elif name_filter and name_filter.lower() in nm.lower():
