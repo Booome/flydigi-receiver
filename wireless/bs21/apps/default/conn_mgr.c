@@ -386,7 +386,6 @@ void conn_mgr_start(void)
 void conn_mgr_tick(uint32_t now_ms)
 {
     g_now_ms = now_ms;
-    rssi_pick_tick();
 
     if (g_conn_state == CONN_STATE_FATAL) {
         return;
