@@ -9,6 +9,7 @@
 #include "scan_table.h"
 #include "bs21_util.h"
 #include "sle_probe_client.h"
+#include "sle_probe_trials.h"
 
 #define PROBE_LOG        "[probe]"
 #define PROBE_SCAN_MS    5000
@@ -20,10 +21,10 @@ static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
 static sle_connection_callbacks_t g_conn_cbk = { 0 };
 static sle_addr_t g_target_addr = { 0 };
-static uint16_t g_conn_id = 0;
+uint16_t g_conn_id = 0;
 static uint64_t g_scan_start_ms = 0;
-static uint16_t g_write_hdls[8];
-static uint8_t g_write_cnt = 0;
+uint16_t g_write_hdls[8];
+uint8_t g_write_cnt = 0;
 static uint16_t g_notify_hdls[8];
 static uint8_t g_notify_cnt = 0;
 
@@ -279,6 +280,7 @@ static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
     }
 
     /* V2 init+enable sequence is appended by Task 2. */
+    trials_run();
 }
 
 static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
