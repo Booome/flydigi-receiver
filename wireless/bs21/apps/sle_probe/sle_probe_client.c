@@ -27,6 +27,8 @@ uint16_t g_write_hdls[8];
 uint8_t g_write_cnt = 0;
 static uint16_t g_notify_hdls[8];
 static uint8_t g_notify_cnt = 0;
+static uint16_t g_all_hdls[8];
+static uint8_t g_all_cnt = 0;
 
 static void probe_start_scan(void)
 {
@@ -217,6 +219,9 @@ static void probe_find_property_cb(uint8_t client_id, uint16_t conn_id,
         g_notify_cnt < 8) {
         g_notify_hdls[g_notify_cnt++] = property->handle;
     }
+    if (g_all_cnt < 8) {
+        g_all_hdls[g_all_cnt++] = property->handle;
+    }
 }
 
 static void probe_print_hex(const uint8_t *buf, uint32_t len)
@@ -267,6 +272,12 @@ static void probe_find_cmp_cb(uint8_t client_id, uint16_t conn_id,
        notification_cb/indication_cb are already registered, so just send the
        V2 init+enable handshake and listen. */
     trials_run();
+
+    /* Dump every discovered property value to learn the controller state. */
+    for (uint8_t i = 0; i < g_all_cnt; i++) {
+        ssapc_read_req(0, g_conn_id, g_all_hdls[i], SSAP_PROPERTY_TYPE_VALUE);
+        uapi_systick_delay_ms(30);
+    }
 }
 
 static void probe_parse_report(const uint8_t *d, uint32_t len)
