@@ -18,8 +18,12 @@ typedef struct {
     uint32_t held_ms;
     bool pressed;
     uint32_t last_hold_idx;
-    button_callbacks_t cb;
-    void *ctx;
+    button_down_cb down_cb;
+    void *down_ctx;
+    button_up_cb up_cb;
+    void *up_ctx;
+    button_hold_cb hold_cb;
+    void *hold_ctx;
 } btn_inst_t;
 
 static btn_inst_t g_btns[BTN_MAX];
@@ -35,8 +39,8 @@ static void btn_poll_cb(void *arg)
             b->pressed = true;
             b->held_ms = 0;
             b->last_hold_idx = 0;
-            if (b->cb.on_down != NULL) {
-                b->cb.on_down(b->ctx);
+            if (b->down_cb != NULL) {
+                b->down_cb(b->down_ctx);
             }
         }
         b->held_ms += POLL_MS;
@@ -44,13 +48,13 @@ static void btn_poll_cb(void *arg)
                b->held_ms >= HOLD_MARKS_MS[b->last_hold_idx]) {
             uint32_t mark = HOLD_MARKS_MS[b->last_hold_idx];
             b->last_hold_idx++;
-            if (b->cb.on_hold != NULL) {
-                b->cb.on_hold(mark, b->ctx);
+            if (b->hold_cb != NULL) {
+                b->hold_cb(mark, b->hold_ctx);
             }
         }
     } else if (b->pressed) {
-        if (b->cb.on_up != NULL) {
-            b->cb.on_up(b->held_ms, b->ctx);
+        if (b->up_cb != NULL) {
+            b->up_cb(b->held_ms, b->up_ctx);
         }
         b->pressed = false;
     }
@@ -78,11 +82,29 @@ button_t button_init(pin_t port)
     return (button_t)-1;
 }
 
-void button_set_cb(button_t btn, const button_callbacks_t *cb, void *ctx)
+void button_set_down_cb(button_t btn, button_down_cb cb, void *ctx)
 {
-    if (btn >= BTN_MAX || !g_btns[btn].used || cb == NULL) {
+    if (btn >= BTN_MAX || !g_btns[btn].used) {
         return;
     }
-    g_btns[btn].cb = *cb;
-    g_btns[btn].ctx = ctx;
+    g_btns[btn].down_cb = cb;
+    g_btns[btn].down_ctx = ctx;
+}
+
+void button_set_up_cb(button_t btn, button_up_cb cb, void *ctx)
+{
+    if (btn >= BTN_MAX || !g_btns[btn].used) {
+        return;
+    }
+    g_btns[btn].up_cb = cb;
+    g_btns[btn].up_ctx = ctx;
+}
+
+void button_set_hold_cb(button_t btn, button_hold_cb cb, void *ctx)
+{
+    if (btn >= BTN_MAX || !g_btns[btn].used) {
+        return;
+    }
+    g_btns[btn].hold_cb = cb;
+    g_btns[btn].hold_ctx = ctx;
 }

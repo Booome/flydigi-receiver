@@ -391,10 +391,8 @@ void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn)
         osal_printk("[conn] no record, search\r\n");
     }
 
-    button_callbacks_t cb = { 0 };
-    cb.on_hold = on_btn_hold;
-    cb.on_up = on_btn_up;
-    button_set_cb(g_btn, &cb, NULL);
+    button_set_hold_cb(g_btn, on_btn_hold, NULL);
+    button_set_up_cb(g_btn, on_btn_up, NULL);
 }
 
 void conn_mgr_start(void)

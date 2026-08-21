@@ -10,13 +10,9 @@ typedef void (*button_down_cb)(void *ctx);
 typedef void (*button_up_cb)(uint32_t held_ms, void *ctx);
 typedef void (*button_hold_cb)(uint32_t held_ms, void *ctx);
 
-typedef struct {
-    button_down_cb on_down;
-    button_up_cb on_up;
-    button_hold_cb on_hold;
-} button_callbacks_t;
-
 button_t button_init(pin_t port);
-void button_set_cb(button_t btn, const button_callbacks_t *cb, void *ctx);
+void button_set_down_cb(button_t btn, button_down_cb cb, void *ctx);
+void button_set_up_cb(button_t btn, button_up_cb cb, void *ctx);
+void button_set_hold_cb(button_t btn, button_hold_cb cb, void *ctx);
 
 #endif /* BUTTON_H */
