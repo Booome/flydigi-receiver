@@ -2,7 +2,6 @@
 #include "scan_table.h"
 #include "rssi_pick.h"
 #include "conn_nv.h"
-#include "led.h"
 #include "bs21_util.h"
 #include "soc_osal.h"
 #include "securec.h"
@@ -33,14 +32,17 @@ static sle_addr_t g_peer_addr = { 0 };
 
 static uint32_t g_now_ms = 0;
 
+static led_t g_led_red;
+static led_t g_led_blue;
+
 static void conn_enter_fatal(void)
 {
     if (g_conn_state == CONN_STATE_FATAL) {
         return;
     }
     g_conn_state = CONN_STATE_FATAL;
-    led_blue(false);
-    led_red(true);
+    led_off(g_led_blue);
+    led_on(g_led_red);
     osal_printk("[conn] FATAL: NV broken, blocking connection flow\r\n");
 }
 
@@ -306,8 +308,10 @@ void conn_mgr_seek_disable(errcode_t status)
     sle_scan_start();
 }
 
-void conn_mgr_init(void)
+void conn_mgr_init(led_t led_red, led_t led_blue)
 {
+    g_led_red = led_red;
+    g_led_blue = led_blue;
     g_record_valid = conn_nv_load(g_record_addr);
     if (conn_nv_is_fatal()) {
         conn_enter_fatal();
@@ -339,23 +343,20 @@ void conn_mgr_tick(uint32_t now_ms)
     if (g_conn_state == CONN_STATE_FATAL) {
         return;
     }
-    if (led_is_override()) {
-        return;
-    }
 
     switch (g_conn_state) {
     case CONN_STATE_SEARCH:
-        led_blink(SEARCH_BLINK_MS);
+        led_blink(g_led_blue, SEARCH_BLINK_MS);
         if (g_search_timeout && now_ms >= g_search_deadline_ms) {
             osal_printk("[conn] search timeout\r\n");
             conn_exit_search_timeout();
         }
         break;
     case CONN_STATE_RECONNECT:
-        led_blink(RECONNECT_BLINK_MS);
+        led_blink(g_led_blue, RECONNECT_BLINK_MS);
         break;
     case CONN_STATE_ACTIVE:
-        led_blue(false);
+        led_off(g_led_blue);
         break;
     default:
         break;

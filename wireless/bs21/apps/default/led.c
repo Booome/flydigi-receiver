@@ -1,73 +1,137 @@
 #include "led.h"
 #include "gpio.h"
-#include "pinctrl.h"
-#include "systick.h"
+#include "cmsis_os2.h"
 
-#define LED_RED_PIN  S_MGPIO11
-#define LED_BLUE_PIN S_MGPIO13
+#define LED_MAX 8
 
-#define BTN_FB_START_MS  3000
-#define BTN_FB_SOLID_MS  10000
-#define BTN_FB_BLINK_MS  125
+#define MS2TICK(ms) \
+    ((uint32_t)(((uint64_t)(ms) * osKernelGetTickFreq()) / 1000))
 
-static bool g_blink_on = false;
-static uint32_t g_last = 0;
-static bool g_override = false;
+typedef struct {
+    bool used;
+    pin_t pin;
+    osTimerId_t timer;
+    uint32_t period_ms;
+    bool level;
+} led_inst_t;
 
-static void led_set(pin_t pin, bool on)
+static led_inst_t g_leds[LED_MAX];
+
+static void led_timer_cb(void *arg)
 {
-    uapi_gpio_set_val(pin, on ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW);
+    led_t idx = (led_t)(uintptr_t)arg;
+    led_inst_t *l = &g_leds[idx];
+    l->level = !l->level;
+    uapi_gpio_set_val(l->pin, l->level ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW);
 }
 
-static uint32_t led_now_ms(void)
+static led_inst_t *led_get(led_t led)
 {
-    return (uint32_t)uapi_systick_get_ms();
-}
-
-void led_init(void)
-{
-    g_blink_on = false;
-    g_last = 0;
-    g_override = false;
-    uapi_pin_set_mode(LED_RED_PIN, (pin_mode_t)HAL_PIO_FUNC_GPIO);
-    uapi_gpio_set_dir(LED_RED_PIN, GPIO_DIRECTION_OUTPUT);
-    uapi_pin_set_mode(LED_BLUE_PIN, (pin_mode_t)HAL_PIO_FUNC_GPIO);
-    uapi_gpio_set_dir(LED_BLUE_PIN, GPIO_DIRECTION_OUTPUT);
-    led_set(LED_RED_PIN, false);
-    led_set(LED_BLUE_PIN, false);
-}
-
-void led_red(bool on) { led_set(LED_RED_PIN, on); }
-void led_blue(bool on) { led_set(LED_BLUE_PIN, on); }
-
-void led_blink(uint32_t period_ms)
-{
-    uint32_t now_ms = led_now_ms();
-    if (now_ms - g_last >= period_ms) {
-        g_last = now_ms;
-        g_blink_on = !g_blink_on;
-        led_set(LED_BLUE_PIN, g_blink_on);
+    if (led >= LED_MAX || !g_leds[led].used) {
+        return NULL;
     }
+    return &g_leds[led];
 }
 
-void led_btn_feedback(uint32_t held_ms)
+led_t led_init(pin_t port)
 {
-    if (held_ms == 0) {
-        g_override = false;
+    for (led_t i = 0; i < LED_MAX; i++) {
+        if (g_leds[i].used) {
+            continue;
+        }
+        uapi_pin_set_mode(port, (pin_mode_t)HAL_PIO_FUNC_GPIO);
+        uapi_gpio_set_dir(port, GPIO_DIRECTION_OUTPUT);
+        uapi_gpio_set_val(port, GPIO_LEVEL_LOW);
+        g_leds[i].used = true;
+        g_leds[i].pin = port;
+        g_leds[i].period_ms = 0;
+        g_leds[i].level = false;
+        g_leds[i].timer = osTimerNew(led_timer_cb, osTimerPeriodic,
+                                     (void *)(uintptr_t)i, NULL);
+        return i;
+    }
+    return (led_t)-1;
+}
+
+void led_on(led_t led)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
         return;
     }
-    if (held_ms < BTN_FB_START_MS) {
-        return;
+    if (l->timer != NULL) {
+        osTimerStop(l->timer);
     }
-    g_override = true;
-    if (held_ms >= BTN_FB_SOLID_MS) {
-        led_set(LED_BLUE_PIN, true);
-    } else {
-        led_blink(BTN_FB_BLINK_MS);
-    }
+    l->period_ms = 0;
+    l->level = true;
+    uapi_gpio_set_val(l->pin, GPIO_LEVEL_HIGH);
 }
 
-bool led_is_override(void)
+void led_off(led_t led)
 {
-    return g_override;
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
+        return;
+    }
+    if (l->timer != NULL) {
+        osTimerStop(l->timer);
+    }
+    l->period_ms = 0;
+    l->level = false;
+    uapi_gpio_set_val(l->pin, GPIO_LEVEL_LOW);
+}
+
+void led_toggle(led_t led)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
+        return;
+    }
+    l->level = !l->level;
+    uapi_gpio_set_val(l->pin, l->level ? GPIO_LEVEL_HIGH : GPIO_LEVEL_LOW);
+}
+
+void led_blink(led_t led, uint32_t period_ms)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL || period_ms == 0) {
+        return;
+    }
+    if (l->timer != NULL) {
+        osTimerStop(l->timer);
+    }
+    l->period_ms = period_ms;
+    l->level = false;
+    uapi_gpio_set_val(l->pin, GPIO_LEVEL_LOW);
+    osTimerStart(l->timer, MS2TICK(period_ms));
+}
+
+void led_stop_blinking(led_t led)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
+        return;
+    }
+    if (l->timer != NULL) {
+        osTimerStop(l->timer);
+    }
+    l->period_ms = 0;
+}
+
+bool led_is_blinking(led_t led)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
+        return false;
+    }
+    return l->period_ms != 0;
+}
+
+uint32_t led_get_blink_period(led_t led)
+{
+    led_inst_t *l = led_get(led);
+    if (l == NULL) {
+        return 0;
+    }
+    return l->period_ms;
 }

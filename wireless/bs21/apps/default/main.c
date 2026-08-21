@@ -12,6 +12,9 @@
 #include "bs21_util.h"
 #include "conn_mgr.h"
 
+#define RED_PIN   S_MGPIO11
+#define BLUE_PIN  S_MGPIO13
+
 #define SCAN_PRINT_MS  2000
 #define TICK_MS        10
 
@@ -118,11 +121,12 @@ void axk_main(void)
     osal_printk("app: flydigi-wireless\r\n");
     bs21_rst();
 
-    led_init();
+    led_t led_red = led_init(RED_PIN);
+    led_t led_blue = led_init(BLUE_PIN);
     button_init();
     conn_nv_init();
 
-    conn_mgr_init();
+    conn_mgr_init(led_red, led_blue);
 
     button_set_cb(conn_mgr_on_long_press, conn_mgr_on_short_press,
                   conn_mgr_on_very_long_press);

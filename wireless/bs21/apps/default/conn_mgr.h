@@ -7,8 +7,9 @@
 #include "sle_common.h"
 #include "sle_connection_manager.h"
 #include "sle_device_discovery.h"
+#include "led.h"
 
-void conn_mgr_init(void);
+void conn_mgr_init(led_t led_red, led_t led_blue);
 void conn_mgr_start(void);
 
 void conn_mgr_on_long_press(void);

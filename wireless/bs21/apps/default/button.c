@@ -2,7 +2,6 @@
 #include "gpio.h"
 #include "pinctrl.h"
 #include "soc_osal.h"
-#include "led.h"
 
 #define KEY_PIN          S_MGPIO0
 #define LONG_PRESS_MS    3000
@@ -43,10 +42,8 @@ void *button_task(const char *arg)
             } else if (held == VERY_LONG_PRESS_TICKS) {
                 osal_printk("[btn] very long press threshold (10s)\r\n");
             }
-            led_btn_feedback(held * POLL_MS);
         } else {
             if (held != 0) {
-                led_btn_feedback(0);
                 if (held < LONG_PRESS_TICKS && g_on_short) {
                     g_on_short();
                 } else if (held < VERY_LONG_PRESS_TICKS && g_on_long) {
