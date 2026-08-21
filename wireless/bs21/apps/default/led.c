@@ -104,6 +104,9 @@ void led_blink(led_t led, uint32_t period_ms)
     if (l == NULL || period_ms == 0) {
         return;
     }
+    if (l->period_ms == period_ms) {
+        return;
+    }
     if (l->timer != NULL) {
         osTimerStop(l->timer);
     }

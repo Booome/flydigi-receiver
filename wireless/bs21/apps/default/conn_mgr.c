@@ -201,7 +201,6 @@ static void on_btn_hold(uint32_t held_ms, void *ctx)
 static void on_btn_up(uint32_t held_ms, void *ctx)
 {
     (void)ctx;
-    conn_apply_state_led();
     if (held_ms < 3000) {
         conn_mgr_on_short_press();
     } else if (held_ms < 10000) {
