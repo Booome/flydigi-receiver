@@ -13,10 +13,6 @@
 void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn);
 void conn_mgr_start(void);
 
-void conn_mgr_tick(uint32_t now_ms);
-
-bool conn_mgr_is_scanning(void);
-
 void conn_mgr_seek_result(sle_seek_result_info_t *result);
 void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,
                             sle_acb_state_t conn_state, sle_pair_state_t pair_state,

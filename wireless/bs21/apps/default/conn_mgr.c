@@ -6,11 +6,15 @@
 #include "soc_osal.h"
 #include "securec.h"
 #include "string.h"
+#include "cmsis_os2.h"
 
 #define PAIR_TIMEOUT_MS  120000
 #define PAIR_SUPERV_MS   200
 #define SEARCH_BLINK_MS  125
 #define RECONNECT_BLINK_MS 1000
+
+#define MS2TICK(ms) \
+    ((uint32_t)(((uint64_t)(ms) * osKernelGetTickFreq()) / 1000))
 
 typedef enum {
     CONN_STATE_FATAL = 0,
@@ -21,7 +25,6 @@ typedef enum {
 
 static conn_state_t g_conn_state = CONN_STATE_SEARCH;
 static bool g_search_timeout = false;
-static uint32_t g_search_deadline_ms = 0;
 static bool g_target_locked = false;
 static bool g_seek_active = false;
 static sle_addr_t g_target_addr = { 0 };
@@ -30,11 +33,13 @@ static uint8_t g_record_addr[SLE_ADDR_LEN] = { 0 };
 static bool g_record_valid = false;
 static sle_addr_t g_peer_addr = { 0 };
 
-static uint32_t g_now_ms = 0;
-
 static led_t g_led_red;
 static led_t g_led_blue;
 static button_t g_btn;
+
+static osTimerId_t g_pair_timer = NULL;
+
+static void conn_apply_state_led(void);
 
 static void conn_enter_fatal(void)
 {
@@ -52,7 +57,9 @@ static void conn_start_search(bool timeout)
     g_conn_state = CONN_STATE_SEARCH;
     g_search_timeout = timeout;
     if (timeout) {
-        g_search_deadline_ms = g_now_ms + PAIR_TIMEOUT_MS;
+        osTimerStart(g_pair_timer, MS2TICK(PAIR_TIMEOUT_MS));
+    } else {
+        osTimerStop(g_pair_timer);
     }
     g_target_locked = false;
     rssi_pick_init();
@@ -60,17 +67,20 @@ static void conn_start_search(bool timeout)
     if (!g_seek_active) {
         sle_scan_start();
     }
+    conn_apply_state_led();
 }
 
 static void conn_start_reconnect(void)
 {
     g_conn_state = CONN_STATE_RECONNECT;
     g_search_timeout = false;
+    osTimerStop(g_pair_timer);
     g_target_locked = false;
     osal_printk("[conn] reconnect to record\r\n");
     if (!g_seek_active) {
         sle_scan_start();
     }
+    conn_apply_state_led();
 }
 
 static void conn_rescan(void)
@@ -92,6 +102,7 @@ static void conn_exit_search_timeout(void)
     }
     osal_printk("[conn] search timeout exit\r\n");
     g_search_timeout = false;
+    osTimerStop(g_pair_timer);
     if (g_conn_state == CONN_STATE_ACTIVE) {
         osal_printk("[conn] disconnecting current link\r\n");
         sle_disconnect_remote_device(&g_peer_addr);
@@ -125,6 +136,7 @@ static void conn_mgr_on_short_press(void)
 {
     osal_printk("[btn] short press\r\n");
     if (g_search_timeout) {
+        osTimerStop(g_pair_timer);
         conn_exit_search_timeout();
     }
 }
@@ -149,7 +161,7 @@ static void conn_mgr_on_very_long_press(void)
     conn_start_search(false);
 }
 
-static void conn_mgr_show_state_led(void)
+static void conn_apply_state_led(void)
 {
     switch (g_conn_state) {
     case CONN_STATE_SEARCH:
@@ -163,6 +175,15 @@ static void conn_mgr_show_state_led(void)
         break;
     default:
         break;
+    }
+}
+
+static void pair_timeout_cb(void *arg)
+{
+    (void)arg;
+    if (g_conn_state == CONN_STATE_SEARCH && g_search_timeout) {
+        osal_printk("[conn] search timeout\r\n");
+        conn_exit_search_timeout();
     }
 }
 
@@ -180,7 +201,7 @@ static void on_btn_hold(uint32_t held_ms, void *ctx)
 static void on_btn_up(uint32_t held_ms, void *ctx)
 {
     (void)ctx;
-    conn_mgr_show_state_led();
+    conn_apply_state_led();
     if (held_ms < 3000) {
         conn_mgr_on_short_press();
     } else if (held_ms < 10000) {
@@ -241,6 +262,8 @@ void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,
             memcpy_s(&g_peer_addr, sizeof(g_peer_addr), addr, sizeof(g_peer_addr));
         }
         g_conn_state = CONN_STATE_ACTIVE;
+        osTimerStop(g_pair_timer);
+        conn_apply_state_led();
         if (pair_state == SLE_PAIR_NONE) {
             osal_printk("[conn] pairing...\r\n");
             if (sle_pair_remote_device(addr) != ERRCODE_SUCC) {
@@ -355,6 +378,7 @@ void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn)
     g_led_red = led_red;
     g_led_blue = led_blue;
     g_btn = btn;
+    g_pair_timer = osTimerNew(pair_timeout_cb, osTimerOnce, NULL, NULL);
     g_record_valid = conn_nv_load(g_record_addr);
     if (conn_nv_is_fatal()) {
         conn_enter_fatal();
@@ -381,36 +405,4 @@ void conn_mgr_start(void)
         return;
     }
     conn_rescan();
-}
-
-void conn_mgr_tick(uint32_t now_ms)
-{
-    g_now_ms = now_ms;
-
-    if (g_conn_state == CONN_STATE_FATAL) {
-        return;
-    }
-
-    switch (g_conn_state) {
-    case CONN_STATE_SEARCH:
-        led_blink(g_led_blue, SEARCH_BLINK_MS);
-        if (g_search_timeout && now_ms >= g_search_deadline_ms) {
-            osal_printk("[conn] search timeout\r\n");
-            conn_exit_search_timeout();
-        }
-        break;
-    case CONN_STATE_RECONNECT:
-        led_blink(g_led_blue, RECONNECT_BLINK_MS);
-        break;
-    case CONN_STATE_ACTIVE:
-        led_off(g_led_blue);
-        break;
-    default:
-        break;
-    }
-}
-
-bool conn_mgr_is_scanning(void)
-{
-    return g_conn_state == CONN_STATE_SEARCH || g_conn_state == CONN_STATE_RECONNECT;
 }

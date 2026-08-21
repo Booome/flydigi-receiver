@@ -8,7 +8,6 @@
 #include "led.h"
 #include "conn_nv.h"
 #include "button.h"
-#include "scan_table.h"
 #include "bs21_util.h"
 #include "conn_mgr.h"
 
@@ -16,46 +15,9 @@
 #define BLUE_PIN  S_MGPIO13
 #define KEY_PIN   S_MGPIO0
 
-#define SCAN_PRINT_MS  2000
-#define TICK_MS        10
-
 static sle_dev_manager_callbacks_t g_dev_cbk = { 0 };
 static sle_announce_seek_callbacks_t g_seek_cbk = { 0 };
 static sle_connection_callbacks_t g_conn_cbk = { 0 };
-
-static uint32_t g_now_ms = 0;
-
-static void create_task(osal_kthread_handler handler, const char *name)
-{
-    osal_task *task_handle = osal_kthread_create(handler, 0, name, 0x1000);
-    if (task_handle != NULL) {
-        osal_kthread_set_priority(task_handle, 24);
-        osal_kfree(task_handle);
-    }
-}
-
-static void *scan_task(const char *arg)
-{
-    (void)arg;
-    while (1) {
-        osal_msleep(SCAN_PRINT_MS);
-        if (conn_mgr_is_scanning()) {
-            scan_table_print();
-        }
-    }
-    return NULL;
-}
-
-static void *tick_task(const char *arg)
-{
-    (void)arg;
-    while (1) {
-        osal_msleep(TICK_MS);
-        g_now_ms += TICK_MS;
-        conn_mgr_tick(g_now_ms);
-    }
-    return NULL;
-}
 
 static void sle_power_on_cb(uint8_t status)
 {
@@ -143,11 +105,6 @@ void axk_main(void)
     g_conn_cbk.connect_param_update_cb = conn_param_update_cb;
     g_conn_cbk.auth_complete_cb = auth_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
-
-    osal_kthread_lock();
-    create_task((osal_kthread_handler)scan_task, "scan_task");
-    create_task((osal_kthread_handler)tick_task, "tick_task");
-    osal_kthread_unlock();
 
     enable_sle();
 }
