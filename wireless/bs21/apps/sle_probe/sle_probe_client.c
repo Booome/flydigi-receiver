@@ -298,13 +298,9 @@ static void probe_parse_report(const uint8_t *d, uint32_t len)
                 PROBE_LOG, lx, ly, rx, ry, d[15], d[16], btn);
 }
 
-static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
-                                   ssapc_handle_value_t *data, errcode_t status)
+static void probe_log_frame(const char *tag, const ssapc_handle_value_t *data)
 {
-    (void)client_id;
-    (void)conn_id;
-    (void)status;
-    osal_printk("%s recv len=%u ", PROBE_LOG, data->data_len);
+    osal_printk("%s %s len=%u ", PROBE_LOG, tag, data->data_len);
     probe_print_hex(data->data, data->data_len);
     if (data->data_len >= 3 && data->data[0] == 0x5a && data->data[1] == 0xa5) {
         if (data->data[2] == 0xef) {
@@ -316,22 +312,22 @@ static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
     }
 }
 
-static void probe_indication_cb(uint8_t client_id, uint16_t conn_id,
-                                 ssapc_handle_value_t *data, errcode_t status)
+static void probe_notification_cb(uint8_t client_id, uint16_t conn_id,
+                                  ssapc_handle_value_t *data, errcode_t status)
 {
     (void)client_id;
     (void)conn_id;
     (void)status;
-    osal_printk("%s ind len=%u ", PROBE_LOG, data->data_len);
-    probe_print_hex(data->data, data->data_len);
-    if (data->data_len >= 3 && data->data[0] == 0x5a && data->data[1] == 0xa5) {
-        if (data->data[2] == 0xef) {
-            osal_printk("%s *** INPUT STREAM STARTED *** (5a a5 ef)\r\n", PROBE_LOG);
-            probe_parse_report(data->data, data->data_len);
-        } else {
-            osal_printk("%s ACK (5a a5 %02x)\r\n", PROBE_LOG, data->data[2]);
-        }
-    }
+    probe_log_frame("recv", data);
+}
+
+static void probe_indication_cb(uint8_t client_id, uint16_t conn_id,
+                                ssapc_handle_value_t *data, errcode_t status)
+{
+    (void)client_id;
+    (void)conn_id;
+    (void)status;
+    probe_log_frame("ind", data);
 }
 
 void probe_init(void)
