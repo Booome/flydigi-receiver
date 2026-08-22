@@ -1,8 +1,8 @@
 #ifndef BUTTON_H
 #define BUTTON_H
 
-#include <stdint.h>
 #include "pinctrl.h"
+#include <stdint.h>
 
 typedef uint8_t button_t;
 

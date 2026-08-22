@@ -5,7 +5,8 @@
 
 typedef uint32_t errcode_t;
 
-#define STUB(name) errcode_t name(void) { return 1; }
+#define STUB(name)                                                             \
+  errcode_t name(void) { return 1; }
 
 STUB(sapi_ble_add_white_list)
 STUB(sapi_ble_clean_product_type)

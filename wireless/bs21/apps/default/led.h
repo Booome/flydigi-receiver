@@ -1,13 +1,14 @@
 #ifndef LED_H
 #define LED_H
 
+#include "pinctrl.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "pinctrl.h"
 
 typedef uint8_t led_t;
 
-/* Fired on each blink toggle (software-timer flip), with the post-flip level. */
+/* Fired on each blink toggle (software-timer flip), with the post-flip level.
+ */
 typedef void (*led_change_cb)(bool level, void *ctx);
 
 led_t led_init(pin_t port);
