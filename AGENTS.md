@@ -85,3 +85,16 @@ bash wireless/bs21/tools/notify.sh
 - 2.4GHz 芯片：P352903N1（星闪 SLE 1.0，飞智定制编号）
 - 蓝牙芯片：BP1Y303-D4（BR/EDR）
 - USB VID/PID：0x37D7 / 0x2501
+
+## 开发规范
+
+### C 代码格式
+
+修改任何 `.c` 或 `.h` 文件后，**必须**使用 `clang-format` 格式化：
+
+```bash
+clang-format -i <修改的文件>
+```
+
+项目根目录已配置 `.clang-format`（LLVM 风格，4 空格缩进，100 列宽）。
+格式化后再提交，确保代码风格一致。
