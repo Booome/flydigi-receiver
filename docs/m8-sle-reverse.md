@@ -114,3 +114,94 @@ BS21 SDK 存在两套 OS 抽象接口，风格不统一：
 
 **后续 default app 中多个定时器使用的是 `osTimerNew`(CMSIS-RTOS2)**，而非 `osal_timer_init`。
 迁移或重构时需注意两套 API 不可混用，统一选型待定。
+
+## 重大发现：`ssapc_find_structure` 的 type 白名单限制
+
+### 现象
+
+`find_structure` 按 type 查询时：
+- **type=0 (SERVICE_STRUCTURE)**: 请求发出，对端返回 status=0x2（拒绝）
+- **type=1 (PRIMARY_SERVICE)**: 正常返回 2 个服务
+- **type=3 (PROPERTY)**: 正常返回 7 个属性
+- **type=2 (REFERENCE_SERVICE) / 4 (METHOD) / 5 (EVENT)**: 永远等不到 `find_structure_cmp_cb`，表现为"卡死"
+
+### 根因（反汇编确认）
+
+反汇编 `libbth_gle.a` 中 `ssapc_find_structure` 的入口校验：
+
+```asm
+22:  lbu   a2,0(s0)        # a2 = param->type
+24:  bgeui a2,4,5e         # type >= 4 → 拒绝
+28:  li    a5,1
+2a:  sll   a5,a5,a2        # a5 = 1 << type
+2e:  andi  a5,a5,11        # a5 &= 0b1011   ← 位掩码白名单
+30:  beqz  a5,5e           # == 0 → 拒绝
+...
+5e:  (错误分支) li a0,7     # 同步返回 errcode = 7，请求不发空中
+```
+
+位掩码 `0b1011` 白名单：
+
+| type | 值 | 结果 |
+|------|-----|------|
+| 0 SERVICE_STRUCTURE | `0b0001 & 0b1011` | ✅ 放行 |
+| 1 PRIMARY_SERVICE | `0b0010 & 0b1011` | ✅ 放行 |
+| **2 REFERENCE_SERVICE** | `0b0100 & 0b1011 = 0` | ❌ **API 层直接拒绝** |
+| 3 PROPERTY | `0b1000 & 0b1011` | ✅ 放行 |
+| **4 METHOD / 5 EVENT** | — | ❌ `type>=4` 直接拒绝 |
+
+**结论**：BS21 SDK 的 SSAP client API 只支持 find type 0/1/3。type=2/4/5 在 API 入口处被拒绝，同步返回 errcode=7，请求根本不会发到空中。手柄从未收到过这些请求。
+
+### 我们的 bug
+
+`start_next_find()` 没有检查 `ssapc_find_structure()` 的返回值。API 返回错误（errcode=7），我们忽略了它，继续傻等永远不会来的 `cmp_cb`——这就是"卡死"的真相。
+
+### 修复
+
+重构为**全 task 驱动架构**（见下一节），同时检查所有 SSAP API 的返回值。
+
+## 架构重构：全 task 驱动
+
+### 旧架构（回调驱动）
+
+```
+enable_sle() → cb → start_scan() → cb → connect() → cb → pair()
+→ cb → exchange_info_req() → cb → find_structure() → cb → ...
+```
+
+每一步都依赖上一步的回调来推进。同步失败（API 返回非 SUCC）意味着回调永远不来，链条断裂。
+
+### 新架构（task 驱动）
+
+```
+exp_task 主循环（唯一的流程驱动者）
+├─ enable_sle / scan / connect / pair / exchange_info
+│     └─ 每个异步操作：API 返回值检查 + 等待事件标志（带超时）
+├─ find_structure 循环（顶层类型 + 每服务子类型）
+│     └─ 同步拒绝 → 打印 + 跳过（不再傻等）
+│     └─ 异步完成 → wait_flag(g_find_done, timeout)
+└─ 实验段（线性 sleep 驱动）
+```
+
+- **回调职责**：只记录数据和置事件标志，绝不发起下一个请求
+- **任务职责**：发起每个请求、检查返回值、等待完成、决定重试或推进
+- **关键原语**：`wait_flag(&flag, timeout_ms)` — 100ms 步进轮询，同时检查 `g_disconnected`
+- **三类失败续链**：
+  - 同步拒绝（find type 2/4/5）→ 打印 REJECTED + 跳过，链条继续
+  - 异步失败/超时 → 本轮失败计数 + 退避后重扫
+  - 断连 → 立即中止本轮 + 退避后重扫
+
+### 返回值检查清单
+
+| API | 返回值 | 处理 |
+|-----|--------|------|
+| `sle_scan_start()` | void | 无法检查（SDK 限制），靠 seek_disable_cb |
+| `sle_stop_seek()` | errcode_t | 失败打印 |
+| `sle_connect_remote_device()` | errcode_t | 失败 retry |
+| `sle_pair_remote_device()` | errcode_t | 失败 retry |
+| `ssapc_exchange_info_req()` | errcode_t | 失败 retry |
+| `ssapc_find_structure()` | errcode_t | 失败 = SDK 不支持，打印 + 跳过 |
+| `ssapc_read_req()` | errcode_t | 失败打印 |
+| `ssapc_write_req()` | errcode_t | 失败打印 |
+| `enable_sle()` | errcode_t | 失败打印 |
+| `sle_remove_paired_remote_device()` | errcode_t | 失败打印（低风险） |
