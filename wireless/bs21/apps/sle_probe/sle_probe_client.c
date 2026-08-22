@@ -39,17 +39,34 @@ static uint16_t g_all_hdls[8];    static uint8_t g_all_cnt = 0;
 static uint16_t g_cmd_hdls[8];    static uint8_t g_cmd_cnt = 0;
 static uint8_t g_desc_types[8][4]; static uint8_t g_desc_cnt[8];
 
-/* SSAP find sequence: scan all 6 structure types in order. */
+/* SSAP find sequence: top-level types first, then per-service sub-elements. */
 static const uint8_t g_find_types[] = {
     SSAP_FIND_TYPE_PROPERTY,
-    SSAP_FIND_TYPE_SERVICE_STRUCTURE,
     SSAP_FIND_TYPE_PRIMARY_SERVICE,
+};
+#define FIND_TYPE_COUNT (sizeof(g_find_types) / sizeof(g_find_types[0]))
+static uint8_t g_find_idx = 0;
+
+/* Sub-element types queried per primary service (require UUID context). */
+static const uint8_t g_sub_types[] = {
     SSAP_FIND_TYPE_REFERENCE_SERVICE,
     SSAP_FIND_TYPE_METHOD,
     SSAP_FIND_TYPE_EVENT,
 };
-#define FIND_TYPE_COUNT (sizeof(g_find_types) / sizeof(g_find_types[0]))
-static uint8_t g_find_idx = 0;
+#define SUB_TYPE_COUNT (sizeof(g_sub_types) / sizeof(g_sub_types[0]))
+
+/* Discovered primary services. */
+#define MAX_SERVICES 8
+static ssapc_find_service_result_t g_primary_services[MAX_SERVICES];
+static uint8_t g_primary_cnt = 0;
+static uint8_t g_service_idx = 0;
+static uint8_t g_sub_idx = 0;
+
+/* Query timeout protection (ticks). The controller does not respond to
+ * sub-element queries (REFERENCE_SERVICE/METHOD/EVENT) even with UUID;
+ * without a timeout the discovery loop would hang forever. */
+#define QUERY_TIMEOUT_MS 3000
+static volatile int g_query_pending = 0;
 
 /* Experiment task synchronization. */
 static volatile int g_discovery_done = 0;
@@ -61,6 +78,7 @@ static osal_task *g_exp_task = NULL;
 
 static int exp_task_entry(void *data);
 static void probe_start_exp_task(void);
+static void start_next_find(void);
 
 /* *****************************************************************************
  * Helpers
@@ -93,7 +111,6 @@ static void probe_log_frame(const char *tag, const ssapc_handle_value_t *data)
 
 static int exp_task_entry(void *data)
 {
-    (void)data;
     uint8_t w[17];
     ssapc_write_param_t wp;
 
@@ -245,6 +262,9 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
         osal_printk("%s connected, conn_id=%u\r\n", PROBE_LOG, conn_id);
         g_discovery_done = 0;
         g_find_idx = 0;
+        g_primary_cnt = 0;
+        g_service_idx = 0;
+        g_sub_idx = 0;
         g_notify_cnt = 0; g_write_cnt = 0; g_all_cnt = 0; g_cmd_cnt = 0;
         if (pair_state == SLE_PAIR_NONE) {
             const sle_addr_t *pair_addr = (addr != NULL) ? addr : &g_target_addr;
@@ -258,8 +278,7 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
 
 static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status)
 {
-    (void)conn_id; (void)addr;
-    osal_printk("%s pair complete: 0x%x\r\n", PROBE_LOG, status);
+    osal_printk("%s pair complete: c=%u conn=%u status=0x%x\r\n", PROBE_LOG, 0, conn_id, status);
     if (status != ERRCODE_SUCC) {
         osal_printk("%s pair failed, rescan\r\n", PROBE_LOG);
         scan_table_reset();
@@ -279,39 +298,52 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
 static void ssapc_exchange_info_cb(uint8_t client_id, uint16_t conn_id,
                                    ssap_exchange_info_t *param, errcode_t status)
 {
-    (void)client_id; (void)conn_id;
     if (status != ERRCODE_SUCC || param == NULL) {
-        osal_printk("%s exchange info failed: 0x%x\r\n", PROBE_LOG, status);
+        osal_printk("%s exchange info failed: c=%u conn=%u 0x%x\r\n", PROBE_LOG, client_id, conn_id, status);
         return;
     }
-    osal_printk("%s exchange info: mtu=%u\r\n", PROBE_LOG, param->mtu_size);
+    osal_printk("%s exchange info: c=%u conn=%u mtu=%u\r\n", PROBE_LOG, client_id, conn_id, param->mtu_size);
     g_find_idx = 0;
-    ssapc_find_structure_param_t fp = { 0 };
-    fp.type = g_find_types[g_find_idx];
-    fp.start_hdl = 1;
-    fp.end_hdl = 0xFFFF;
-    osal_printk("%s find type=%u\r\n", PROBE_LOG, fp.type);
-    ssapc_find_structure(0, g_conn_id, &fp);
+    g_primary_cnt = 0;
+    g_service_idx = 0;
+    g_sub_idx = 0;
+    start_next_find();
 }
 
 static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
                                     ssapc_find_service_result_t *service,
                                     errcode_t status)
 {
-    (void)client_id; (void)conn_id;
     if (status != ERRCODE_SUCC || service == NULL) return;
-    osal_printk("%s find_structure_cb: status=0x%x start=0x%x end=0x%x uuid_len=%u\r\n",
+    osal_printk("%s find_structure_cb: c=%u conn=%u status=0x%x start=0x%x end=0x%x uuid_len=%u",
                 PROBE_LOG, status, service->start_hdl, service->end_hdl, service->uuid.len);
+    if (service->uuid.len > 0) {
+        osal_printk(" UUID=");
+        for (uint8_t i = 0; i < service->uuid.len && i < SLE_UUID_LEN; i++) {
+            osal_printk("%02X", service->uuid.uuid[i]);
+        }
+    }
+    osal_printk("\r\n");
+    if (g_find_types[g_find_idx] == SSAP_FIND_TYPE_PRIMARY_SERVICE &&
+        g_primary_cnt < MAX_SERVICES && service->uuid.len > 0) {
+        ssapc_find_service_result_t *dst = &g_primary_services[g_primary_cnt];
+        dst->start_hdl = service->start_hdl;
+        dst->end_hdl = service->end_hdl;
+        dst->uuid.len = service->uuid.len;
+        for (uint8_t i = 0; i < service->uuid.len && i < SLE_UUID_LEN; i++) {
+            dst->uuid.uuid[i] = service->uuid.uuid[i];
+        }
+        g_primary_cnt++;
+    }
 }
 
 static void ssapc_find_property_cbk(uint8_t client_id, uint16_t conn_id,
                                     ssapc_find_property_result_t *property,
                                     errcode_t status)
 {
-    (void)client_id; (void)conn_id;
     if (status != ERRCODE_SUCC || property == NULL) return;
 
-    osal_printk("%s find_property: hdl=0x%x oper=0x%x desc_cnt=%u types=[",
+    osal_printk("%s find_property: c=%u conn=%u hdl=0x%x oper=0x%x desc_cnt=%u types=[",
                 PROBE_LOG, property->handle, property->operate_indication,
                 property->descriptors_count);
     for (uint8_t i = 0; i < property->descriptors_count && i < 4; i++) {
@@ -348,23 +380,68 @@ static void ssapc_find_structure_cmp_cb(uint8_t client_id, uint16_t conn_id,
                                         ssapc_find_structure_result_t *result,
                                         errcode_t status)
 {
-    (void)client_id; (void)conn_id;
-    osal_printk("%s find_cmp[%u/%u]: status=0x%x type=%u\r\n",
-                PROBE_LOG, g_find_idx + 1, FIND_TYPE_COUNT, status,
-                (result != NULL) ? result->type : 0xFF);
+    uint8_t cur_type = (g_find_idx < FIND_TYPE_COUNT) ?
+                       g_find_types[g_find_idx] :
+                       ((g_service_idx < g_primary_cnt) ?
+                        g_sub_types[g_sub_idx] : 0xFF);
+    osal_printk("%s find_cmp: c=%u conn=%u status=0x%x type=%u\r\n", PROBE_LOG, client_id, conn_id, status, cur_type);
 
-    g_find_idx++;
-    if (g_find_idx >= FIND_TYPE_COUNT) {
-        osal_printk("%s all %u find types done\r\n", PROBE_LOG, FIND_TYPE_COUNT);
-        g_discovery_done = 1;
-        return;
+    if (g_find_idx < FIND_TYPE_COUNT) {
+        /* Phase 1: top-level types. */
+        g_find_idx++;
+        if (g_find_idx >= FIND_TYPE_COUNT) {
+            /* Top-level done. If we have primary services, start sub-element queries. */
+            if (g_primary_cnt > 0) {
+                g_service_idx = 0;
+                g_sub_idx = 0;
+                osal_printk("%s starting sub-element queries for %u services\r\n",
+                            PROBE_LOG, g_primary_cnt);
+            } else {
+                osal_printk("%s no primary services found, discovery done\r\n", PROBE_LOG);
+                g_discovery_done = 1;
+                return;
+            }
+        }
+    } else {
+        /* Phase 2: sub-element types for current service. */
+        g_sub_idx++;
+        if (g_sub_idx >= SUB_TYPE_COUNT) {
+            g_service_idx++;
+            g_sub_idx = 0;
+            if (g_service_idx >= g_primary_cnt) {
+                osal_printk("%s all sub-element queries done\r\n", PROBE_LOG);
+                g_discovery_done = 1;
+                return;
+            }
+        }
     }
 
+    start_next_find();
+}
+
+static void start_next_find(void)
+{
     ssapc_find_structure_param_t fp = { 0 };
-    fp.type = g_find_types[g_find_idx];
-    fp.start_hdl = 1;
-    fp.end_hdl = 0xFFFF;
-    osal_printk("%s find type=%u\r\n", PROBE_LOG, fp.type);
+
+    if (g_find_idx < FIND_TYPE_COUNT) {
+        fp.type = g_find_types[g_find_idx];
+        fp.start_hdl = 1;
+        fp.end_hdl = 0xFFFF;
+        osal_printk("%s find type=%u (top-level, conn=%u)\r\n", PROBE_LOG, fp.type, g_conn_id);
+    } else {
+        fp.type = g_sub_types[g_sub_idx];
+        ssapc_find_service_result_t *svc = &g_primary_services[g_service_idx];
+        fp.start_hdl = svc->start_hdl;
+        fp.end_hdl = svc->end_hdl;
+        fp.uuid = svc->uuid;
+        osal_printk("%s find type=%u for service[%u] hdl=0x%x-0x%x uuid=",
+                    PROBE_LOG, fp.type, g_service_idx, fp.start_hdl, fp.end_hdl);
+        for (uint8_t i = 0; i < svc->uuid.len && i < SLE_UUID_LEN; i++) {
+            osal_printk("%02X", svc->uuid.uuid[i]);
+        }
+        osal_printk(" conn=%u\r\n", g_conn_id);
+    }
+
     ssapc_find_structure(0, g_conn_id, &fp);
 }
 
@@ -375,35 +452,33 @@ static void ssapc_find_structure_cmp_cb(uint8_t client_id, uint16_t conn_id,
 static void ssapc_write_cfm_cb(uint8_t client_id, uint16_t conn_id,
                                ssapc_write_result_t *write_result, errcode_t status)
 {
-    (void)client_id; (void)conn_id;
-    osal_printk("%s write_cfm: status=0x%x handle=0x%x type=0x%02x\r\n",
-                PROBE_LOG, status, write_result->handle, write_result->type);
+    osal_printk("%s write_cfm: c=%u conn=%u status=0x%x handle=0x%x type=0x%02x\r\n",
+                PROBE_LOG, client_id, conn_id, status, write_result->handle, write_result->type);
 }
 
 static void ssapc_read_cfm_cb(uint8_t client_id, uint16_t conn_id,
                               ssapc_handle_value_t *read_data, errcode_t status)
 {
-    (void)client_id; (void)conn_id;
     if (status != ERRCODE_SUCC || read_data == NULL) {
-        osal_printk("%s read_cfm: fail status=0x%x\r\n", PROBE_LOG, status);
+        osal_printk("%s read_cfm: c=%u conn=%u fail status=0x%x\r\n", PROBE_LOG, client_id, conn_id, status);
         return;
     }
-    osal_printk("%s read_cfm: handle=0x%x type=0x%02x len=%u ",
-                PROBE_LOG, read_data->handle, read_data->type, read_data->data_len);
+    osal_printk("%s read_cfm: c=%u conn=%u handle=0x%x type=0x%02x len=%u ",
+                PROBE_LOG, client_id, conn_id, read_data->handle, read_data->type, read_data->data_len);
     probe_print_hex(read_data->data, read_data->data_len);
 }
 
 static void ssapc_notification_cb(uint8_t client_id, uint16_t conn_id,
                                   ssapc_handle_value_t *data, errcode_t status)
 {
-    (void)client_id; (void)conn_id; (void)status;
+    osal_printk("%s notification: c=%u conn=%u status=0x%x ", PROBE_LOG, client_id, conn_id, status);
     probe_log_frame("notification", data);
 }
 
 static void ssapc_indication_cb(uint8_t client_id, uint16_t conn_id,
                                 ssapc_handle_value_t *data, errcode_t status)
 {
-    (void)client_id; (void)conn_id; (void)status;
+    osal_printk("%s indication: c=%u conn=%u status=0x%x ", PROBE_LOG, client_id, conn_id, status);
     probe_log_frame("indication", data);
 }
 
