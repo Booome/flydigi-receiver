@@ -48,6 +48,7 @@ static uint8_t g_desc_cnt[8];
 /* SSAP find sequence: top-level types first, then per-service sub-elements. */
 static const uint8_t g_find_types[] = {
     SSAP_FIND_TYPE_PROPERTY,
+    SSAP_FIND_TYPE_SERVICE_STRUCTURE,
     SSAP_FIND_TYPE_PRIMARY_SERVICE,
 };
 #define FIND_TYPE_COUNT (sizeof(g_find_types) / sizeof(g_find_types[0]))
