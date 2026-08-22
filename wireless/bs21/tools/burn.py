@@ -83,7 +83,8 @@ def get_board(env, name):
     if not (port and rst_port and pin):
         sys.exit(f"[ERROR] incomplete .env config for {name} "
                  f"(need BS21_BOARD_{name.upper()}_PORT/RST_PORT/RST_PIN)")
-    reset_cmd = f"uart-gpio pulse {rst_port} A {pin} 0 2000"
+    reset_cmd = f"uart-gpio config {rst_port} A {pin} open-drain && " \
+                f"uart-gpio pulse {rst_port} A {pin} 0 2000"
     return port, reset_cmd
 
 
@@ -124,9 +125,10 @@ def ensure_port_free(port):
 
 
 def pulse_reset(reset_cmd):
-    parts = shlex.split(reset_cmd)
-    print(f"[reset] {' '.join(parts)}")
-    subprocess.run(parts, check=False)
+    """reset_cmd may chain a config step via '&&' — run each part in order."""
+    print(f"[reset] {reset_cmd}")
+    for part in reset_cmd.split("&&"):
+        subprocess.run(shlex.split(part.strip()), check=False)
 
 
 def ws63flash_cmd(port, fwpkg):

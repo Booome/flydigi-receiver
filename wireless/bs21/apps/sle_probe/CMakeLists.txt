@@ -3,7 +3,6 @@ set(COMPONENT_NAME "sle_probe")
 set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/sle_probe_client.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/sle_probe_trials.c
     ${CMAKE_SOURCE_DIR}/src/scan_table.c
     ${CMAKE_SOURCE_DIR}/src/bs21_util.c
 )
