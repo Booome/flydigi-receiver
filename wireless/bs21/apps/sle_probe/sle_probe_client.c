@@ -521,8 +521,8 @@ static void probe_connect_best(void) {
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s connect req failed 0x%x\r\n", PROBE_LOG, ret);
         /* Simulate disconnect to trigger rescan */
-        probe_connect_state_changed_cb(0, &g_target_addr, SLE_ACB_STATE_DISCONNECTED, SLE_PAIR_NONE,
-                                       0x0);
+        probe_connect_state_changed_cb(g_conn_id, &g_target_addr, SLE_ACB_STATE_DISCONNECTED,
+                                       SLE_PAIR_NONE, 0x0);
     }
 }
 

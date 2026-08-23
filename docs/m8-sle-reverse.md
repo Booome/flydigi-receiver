@@ -94,8 +94,56 @@
 - fwpkg 固件包经 AES-128-CBC 加密,密钥由 ePass2001 硬件加密狗保护,无法软件破解
 
 ## 当前固件状态 (sle_probe, board_a)
-- 实验开关:EXP_ENABLE_CCC / CTRL / PARAMUPD / LL / PAIRFRM / READS / SINGLE_PROBE
-- 最新实验 N:逐 handle 遍历所有 type 读取,得出权威结构表
+- 架构：回调驱动 + 返回值参与流程控制（同步拒绝自动续链，见下文架构节）
+- 常驻 exp_task：等 discovery_done 后执行实验段（read 0x13 → write CCC → listen 8s）
+- 发现链路已端到端跑通，无卡死点
+
+## 发现链路最终验证 (2025-08 权威日志)
+
+```
+find type=3 PROPERTY          → ✅ 7 属性 (0x11-0x18)
+find type=0 SERVICE_STRUCTURE → ⚠️ status=0x2 (手柄侧拒绝,请求真实到达对端)
+find type=1 PRIMARY_SERVICE   → ✅ 2 个服务:
+                                  svc[0] hdl 0x10-0x14 UUID=37BE
+                                  svc[1] hdl 0x15-0x18 UUID=37BE
+find type=2 REFERENCE_SERVICE → ❌ REJECTED err=0x7 (SDK 白名单,未上空中)
+find type=4 METHOD            → ❌ REJECTED err=0x7 (同上)
+find type=5 EVENT             → ❌ REJECTED err=0x7 (同上)
+discovery complete → exp_task 自动衔接实验段
+```
+
+两个服务共用 UUID 0x37BE（飞智自定义），按 handle 分段：
+svc[0]=命令/报告区(含 0x11 CCCD), svc[1]=设备信息区(DIS 名称/序号)。
+
+## 0x13 = HID Report Descriptor (鼠标形态)
+
+`read(0x13)` 返回 69 字节,前段可完整解析为标准 HID 鼠标描述符:
+
+```
+05 01        Usage Page (Generic Desktop)
+09 02        Usage (Mouse)
+A1 01        Collection (Application)
+09 01        Usage (Pointer)
+A1 00        Collection (Physical)
+85 01        Report ID (1)
+05 09        Usage Page (Button)
+19 01 29 03  3 个按键
+15 00 25 01  Logical 0..1
+95 03 75 01 81 02   Input 3-bit 按键位域
+95 01 75 05 81 01   5-bit 填充
+05 01        Usage Page (Generic Desktop)
+09 30 09 31  Usage X, Y
+16 01 F8     Logical Min (-2047)
+26 FF 07     Logical Max (+2047)   ← 12-bit 相对位移
+75 0C 95 02  2 × 12-bit
+```
+
+**结论**: Apex 5 的 SLE SSAP 上层承载标准 HID 报告协议,与 openflydigi
+逆向的 USB HID 协议同源。输入流预期为带 Report ID 的 HID 报告。
+
+⚠️ 待核实: len=69 但串口仅见 ~51 字节,且缺少收尾项(X/Y 的 `81 06`、
+两层 End Collection `C0 C0`)。可能是 SDK 读缓冲截断或 printk 丢字节,
+需复测确认完整内容。
 
 ## 待验证 / 下一步
 - **按结构长度写入**：对 0x12(8B)、0x14(2B)写长度匹配的值,观察行为/状态变化
