@@ -184,22 +184,33 @@ static void decoy_write_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_write_
  * Service registration — mirrors the controller attribute table
  * *****************************************************************************/
 
-void decoy_server_init(void) {
+/* Register SSAP callbacks. Must run BEFORE enable_sle() (official flow). */
+void decoy_server_early_init(void) {
+    ssaps_callbacks_t cbks = {0};
+    cbks.read_request_cb = decoy_read_cb;
+    cbks.write_request_cb = decoy_write_cb;
+    cbks.mtu_changed_cb = decoy_mtu_changed_cb;
+    errcode_t ret = ssaps_register_callbacks(&cbks);
+    if (ret != ERRCODE_SUCC) {
+        osal_printk("%s register_callbacks fail 0x%x\r\n", DECOY_LOG, ret);
+    }
+}
+
+/* Register server id and the mirrored attribute table.
+ * Must run from the SLE-enable callback, AFTER ssaps_set_info(). */
+void decoy_services_add(void) {
+    ssap_exchange_info_t info = {0};
+    info.mtu_size = 520;
+    if (ssaps_set_info(0, &info) != ERRCODE_SUCC) {
+        osal_printk("%s set_info fail\r\n", DECOY_LOG);
+        return;
+    }
+
     sle_uuid_t app_uuid = {0};
     app_uuid.len = 16;
     errcode_t ret = ssaps_register_server(&app_uuid, &g_server_id);
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s register_server fail 0x%x\r\n", DECOY_LOG, ret);
-        return;
-    }
-
-    ssaps_callbacks_t cbks = {0};
-    cbks.read_request_cb = decoy_read_cb;
-    cbks.write_request_cb = decoy_write_cb;
-    cbks.mtu_changed_cb = decoy_mtu_changed_cb;
-    ret = ssaps_register_callbacks(&cbks);
-    if (ret != ERRCODE_SUCC) {
-        osal_printk("%s register_callbacks fail 0x%x\r\n", DECOY_LOG, ret);
         return;
     }
 

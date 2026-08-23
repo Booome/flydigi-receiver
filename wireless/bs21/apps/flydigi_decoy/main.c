@@ -93,8 +93,9 @@ static void sle_enable_cb(uint8_t status) {
         return;
     }
 
-    /* Bring up the mirrored attribute table first. */
-    decoy_server_init();
+    /* Official flow: set_info + service registration from the enable
+     * callback; SSAP callbacks were registered before enable_sle(). */
+    decoy_services_add();
 
     sle_addr_t la = {0};
     if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
@@ -169,6 +170,9 @@ void axk_main(void) {
     g_conn_cbk.connect_state_changed_cb = conn_state_changed_cb;
     g_conn_cbk.auth_complete_cb = auth_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
+
+    /* Official flow: SSAP callbacks registered BEFORE enable_sle(). */
+    decoy_server_early_init();
 
     enable_sle();
 }
