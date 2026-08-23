@@ -336,6 +336,11 @@ static void ssapc_find_property_cbk(uint8_t client_id, uint16_t conn_id,
         osal_printk("%s%02x", (i > 0) ? "," : "", property->descriptors_type[i]);
     }
     osal_printk("]\r\n");
+    osal_printk("%s   prop uuid: len=%u ", PROBE_LOG, property->uuid.len);
+    for (uint8_t i = 0; i < property->uuid.len && i < SLE_UUID_LEN; i++) {
+        osal_printk("%02X", property->uuid.uuid[i]);
+    }
+    osal_printk("\r\n");
 
     if (g_all_cnt < 8) {
         uint8_t idx = g_all_cnt;
