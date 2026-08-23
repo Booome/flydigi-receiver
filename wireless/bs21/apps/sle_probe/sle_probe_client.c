@@ -446,7 +446,7 @@ static int exp_task_entry(void *arg) {
          * with reason 0x7. */
         errcode_t ll_ret = sle_low_latency_rx_enable();
         osal_printk("%s low_latency_rx_enable: 0x%x\r\n", PROBE_LOG, ll_ret);
-        ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_1K);
+        ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_2K);
         osal_printk("%s low_latency_set(1K): 0x%x\r\n", PROBE_LOG, ll_ret);
 
         /* 1. Read 0x13 value (baseline). */
