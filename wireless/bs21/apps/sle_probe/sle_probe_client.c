@@ -474,37 +474,42 @@ static int exp_task_entry(void *arg) {
             osal_msleep(100);
         }
 
-        /* 2b. Rumble probe: send the Vader5 8-byte command frame
-         * [00 08 00 FF FF 00 00 00] (full-strength rumble) to 0x12.
-         * If the controller vibrates, the SLE command protocol is the
-         * same as the Vader5 USB one, and 0x12 is the command channel. */
-        osal_printk("%s EXP: rumble probe -> 0x12\r\n", PROBE_LOG);
-        memset(&wp, 0, sizeof(wp));
-        wp.handle = 0x12;
-        wp.type = SSAP_PROPERTY_TYPE_VALUE;
-        w[0] = 0x00;
-        w[1] = 0x08;
-        w[2] = 0x00;
-        w[3] = 0xFF;
-        w[4] = 0xFF;
-        w[5] = 0x00;
-        w[6] = 0x00;
-        w[7] = 0x00;
-        wp.data = w;
-        wp.data_len = 8;
-        ret = ssapc_write_cmd(g_client_id, g_conn_id, &wp);
-        if (ret != ERRCODE_SUCC) {
-            osal_printk("%s EXP: rumble write failed 0x%x\r\n", PROBE_LOG, ret);
-        }
-        for (int i = 0; i < 20 && !g_disconnected; i++) {
-            uint8_t rxbuf[64];
-            uint16_t rxlen = 0;
-            if (sle_low_latency_rx_get_data(rxbuf, sizeof(rxbuf), &rxlen) == ERRCODE_SUCC &&
-                rxlen > 0) {
-                osal_printk("%s LLRX: len=%u ", PROBE_LOG, rxlen);
-                probe_print_hex(rxbuf, rxlen);
+        /* 2b. Vader5 V2 protocol replay on 0x12 (8-byte command channel).
+         * Frame format: 5a a5 <cmd> <len> <data...>. The rumble frame is
+         * exactly 8 bytes; if the controller vibrates, the SLE command
+         * protocol matches the Vader5 one. Then replay the known init
+         * sequence from openflydigi. */
+        static const uint8_t v2_frames[][8] = {
+            {0x5A, 0xA5, 0x12, 0x06, 0xFF, 0xFF, 0x00, 0x00}, /* rumble max */
+            {0x5A, 0xA5, 0x01, 0x02, 0x03, 0x00, 0x00, 0x00}, /* device info */
+            {0x5A, 0xA5, 0xA1, 0x02, 0xA3, 0x00, 0x00, 0x00}, /* mac/serial */
+            {0x5A, 0xA5, 0x02, 0x02, 0x04, 0x00, 0x00, 0x00}, /* config read */
+            {0x5A, 0xA5, 0x04, 0x02, 0x06, 0x00, 0x00, 0x00}, /* config data */
+        };
+        const uint8_t v2_lens[] = {8, 5, 5, 5, 5};
+        const char *v2_names[] = {"rumble", "dev-info", "mac", "cfg-read", "cfg-data"};
+        for (uint8_t f = 0; f < 5 && !g_disconnected; f++) {
+            osal_printk("%s EXP: V2 %s -> 0x12\r\n", PROBE_LOG, v2_names[f]);
+            memset(&wp, 0, sizeof(wp));
+            wp.handle = 0x12;
+            wp.type = SSAP_PROPERTY_TYPE_VALUE;
+            memcpy(w, v2_frames[f], 8);
+            wp.data = w;
+            wp.data_len = v2_lens[f];
+            ret = ssapc_write_cmd(g_client_id, g_conn_id, &wp);
+            if (ret != ERRCODE_SUCC) {
+                osal_printk("%s EXP: V2 %s write failed 0x%x\r\n", PROBE_LOG, v2_names[f], ret);
             }
-            osal_msleep(100);
+            for (int i = 0; i < 10 && !g_disconnected; i++) {
+                uint8_t rxbuf[64];
+                uint16_t rxlen = 0;
+                if (sle_low_latency_rx_get_data(rxbuf, sizeof(rxbuf), &rxlen) == ERRCODE_SUCC &&
+                    rxlen > 0) {
+                    osal_printk("%s LLRX: len=%u ", PROBE_LOG, rxlen);
+                    probe_print_hex(rxbuf, rxlen);
+                }
+                osal_msleep(100);
+            }
         }
 
         /* 3. Listen 8s, polling the low-latency RX buffer (the official
