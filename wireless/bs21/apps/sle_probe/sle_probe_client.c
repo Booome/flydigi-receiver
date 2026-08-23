@@ -430,7 +430,6 @@ static int exp_task_entry(void *arg) {
     ssapc_write_param_t wp;
     errcode_t ret;
 
-    (void)arg;
     while (1) {
         /* Wait for this round's discovery to complete. */
         while (!g_discovery_done) {
