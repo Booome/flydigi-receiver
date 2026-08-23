@@ -474,6 +474,39 @@ static int exp_task_entry(void *arg) {
             osal_msleep(100);
         }
 
+        /* 2b. Rumble probe: send the Vader5 8-byte command frame
+         * [00 08 00 FF FF 00 00 00] (full-strength rumble) to 0x12.
+         * If the controller vibrates, the SLE command protocol is the
+         * same as the Vader5 USB one, and 0x12 is the command channel. */
+        osal_printk("%s EXP: rumble probe -> 0x12\r\n", PROBE_LOG);
+        memset(&wp, 0, sizeof(wp));
+        wp.handle = 0x12;
+        wp.type = SSAP_PROPERTY_TYPE_VALUE;
+        w[0] = 0x00;
+        w[1] = 0x08;
+        w[2] = 0x00;
+        w[3] = 0xFF;
+        w[4] = 0xFF;
+        w[5] = 0x00;
+        w[6] = 0x00;
+        w[7] = 0x00;
+        wp.data = w;
+        wp.data_len = 8;
+        ret = ssapc_write_cmd(g_client_id, g_conn_id, &wp);
+        if (ret != ERRCODE_SUCC) {
+            osal_printk("%s EXP: rumble write failed 0x%x\r\n", PROBE_LOG, ret);
+        }
+        for (int i = 0; i < 20 && !g_disconnected; i++) {
+            uint8_t rxbuf[64];
+            uint16_t rxlen = 0;
+            if (sle_low_latency_rx_get_data(rxbuf, sizeof(rxbuf), &rxlen) == ERRCODE_SUCC &&
+                rxlen > 0) {
+                osal_printk("%s LLRX: len=%u ", PROBE_LOG, rxlen);
+                probe_print_hex(rxbuf, rxlen);
+            }
+            osal_msleep(100);
+        }
+
         /* 3. Listen 8s, polling the low-latency RX buffer (the official
          * dongle sample also uses timer polling via rx_get_data). */
         osal_printk("%s EXP: listening 8s\r\n", PROBE_LOG);
