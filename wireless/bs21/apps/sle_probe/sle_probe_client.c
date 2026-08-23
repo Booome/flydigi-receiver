@@ -260,13 +260,6 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
         probe_start_scan();
         return;
     }
-    /* Mirror the official dongle flow: enable the low-latency RX channel
-     * right after pairing. The controller likely streams input over this
-     * bypass channel instead of SSAP notifications. */
-    errcode_t ll_ret = sle_low_latency_rx_enable();
-    osal_printk("%s low_latency_rx_enable: 0x%x\r\n", PROBE_LOG, ll_ret);
-    ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_1K);
-    osal_printk("%s low_latency_set(1K): 0x%x\r\n", PROBE_LOG, ll_ret);
     ssap_exchange_info_t info = {0};
     info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
     info.version = 1;
@@ -446,6 +439,15 @@ static int exp_task_entry(void *arg) {
             osal_msleep(100);
         }
         osal_printk("%s EXP: start, conn_id=%u\r\n", PROBE_LOG, g_conn_id);
+
+        /* 0. Enable the low-latency RX channel AFTER the whole SSAP layer
+         * is up (pair + MTU + discovery + param update done). Issuing it
+         * earlier (right after pairing) made the controller disconnect
+         * with reason 0x7. */
+        errcode_t ll_ret = sle_low_latency_rx_enable();
+        osal_printk("%s low_latency_rx_enable: 0x%x\r\n", PROBE_LOG, ll_ret);
+        ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_1K);
+        osal_printk("%s low_latency_set(1K): 0x%x\r\n", PROBE_LOG, ll_ret);
 
         /* 1. Read 0x13 value (baseline). */
         ret = ssapc_read_req(g_client_id, g_conn_id, 0x13, SSAP_PROPERTY_TYPE_VALUE);
