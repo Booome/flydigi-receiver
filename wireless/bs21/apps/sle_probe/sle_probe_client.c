@@ -556,6 +556,22 @@ static void start_next_find(void) {
     /* Phase 2: per-service sub-element queries with UUID context. */
     while (1) {
         if (g_service_idx >= g_primary_cnt) {
+            /* Mirror the official dongle: right after discovery completes,
+             * switch the link to the high-rate profile. The controller may
+             * stay idle until this happens. */
+            sle_connection_param_update_t params = {0};
+            params.conn_id = g_conn_id;
+            params.interval_min = 0x64;
+            params.interval_max = 0x64;
+            params.max_latency = 0x3;
+            params.supervision_timeout = 0x1F4;
+            ret = sle_update_connect_param(&params);
+            if (ret != ERRCODE_SUCC) {
+                osal_printk("%s update_connect_param failed 0x%x\r\n", PROBE_LOG, ret);
+            } else {
+                osal_printk("%s update_connect_param: interval=0x64 latency=3 timeout=0x1F4\r\n",
+                            PROBE_LOG);
+            }
             osal_printk("%s discovery complete\r\n", PROBE_LOG);
             g_discovery_done = 1;
             return;
