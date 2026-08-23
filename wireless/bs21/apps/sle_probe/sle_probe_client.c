@@ -447,7 +447,7 @@ static int exp_task_entry(void *arg) {
         errcode_t ll_ret = sle_low_latency_rx_enable();
         osal_printk("%s low_latency_rx_enable: 0x%x\r\n", PROBE_LOG, ll_ret);
         ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_2K);
-        osal_printk("%s low_latency_set(1K): 0x%x\r\n", PROBE_LOG, ll_ret);
+        osal_printk("%s low_latency_set(2K): 0x%x\r\n", PROBE_LOG, ll_ret);
 
         /* 1. Read 0x13 value (baseline). */
         ret = ssapc_read_req(g_client_id, g_conn_id, 0x13, SSAP_PROPERTY_TYPE_VALUE);
@@ -474,9 +474,17 @@ static int exp_task_entry(void *arg) {
             osal_msleep(100);
         }
 
-        /* 3. Listen 8s (notifications logged by callbacks). */
+        /* 3. Listen 8s, polling the low-latency RX buffer (the official
+         * dongle sample also uses timer polling via rx_get_data). */
         osal_printk("%s EXP: listening 8s\r\n", PROBE_LOG);
         for (int i = 0; i < 80 && !g_disconnected; i++) {
+            uint8_t rxbuf[64];
+            uint16_t rxlen = 0;
+            if (sle_low_latency_rx_get_data(rxbuf, sizeof(rxbuf), &rxlen) == ERRCODE_SUCC &&
+                rxlen > 0) {
+                osal_printk("%s LLRX: len=%u ", PROBE_LOG, rxlen);
+                probe_print_hex(rxbuf, rxlen);
+            }
             osal_msleep(100);
         }
         osal_printk("%s EXP: done%s\r\n", PROBE_LOG,
