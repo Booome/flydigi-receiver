@@ -260,6 +260,13 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
         probe_start_scan();
         return;
     }
+    /* Mirror the official dongle flow: enable the low-latency RX channel
+     * right after pairing. The controller likely streams input over this
+     * bypass channel instead of SSAP notifications. */
+    errcode_t ll_ret = sle_low_latency_rx_enable();
+    osal_printk("%s low_latency_rx_enable: 0x%x\r\n", PROBE_LOG, ll_ret);
+    ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_1K);
+    osal_printk("%s low_latency_set(1K): 0x%x\r\n", PROBE_LOG, ll_ret);
     ssap_exchange_info_t info = {0};
     info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
     info.version = 1;
