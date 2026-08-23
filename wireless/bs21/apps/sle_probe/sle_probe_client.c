@@ -444,12 +444,11 @@ static int exp_task_entry(void *arg) {
             osal_msleep(100);
         }
 
-        /* 2. Subscribe indications on 0x11 (write CCC 0x0002, matching the
-         * controller's factory preset). */
+        /* 2. Subscribe notifications on 0x11 (write CCC 0x0001). */
         memset(&wp, 0, sizeof(wp));
         wp.handle = 0x11;
         wp.type = SSAP_DESCRIPTOR_CLIENT_CONFIGURATION;
-        w[0] = 0x02;
+        w[0] = 0x01;
         w[1] = 0x00;
         wp.data = w;
         wp.data_len = 2;
