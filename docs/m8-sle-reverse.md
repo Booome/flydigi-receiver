@@ -158,38 +158,78 @@ BS21 SDK 存在两套 OS 抽象接口，风格不统一：
 
 ### 修复
 
-重构为**全 task 驱动架构**（见下一节），同时检查所有 SSAP API 的返回值。
+重构为**回调驱动 + 返回值检查**模式：
 
-## 架构重构：全 task 驱动
+- 每个回调负责驱动下一步（发起下一个请求）
+- 检查所有 SSAP/SLE API 的返回值
+- 同步失败（API 返回非 SUCC）时，手动调用完成回调以推进状态机（相当于本地 NACK），避免卡死
+- 全链路由回调自然驱动，断连回调立即触发 rescan，响应及时
 
-### 旧架构（回调驱动）
+核心修复在 `start_next_find()`：使用 while 循环连续跳过被 SDK 拒绝的类型（type 2/4/5），打印 REJECTED 后自动推进到下一个类型，最终完成发现流程。
+
+### 返回值检查清单
+
+| API | 返回值 | 处理 |
+|-----|--------|------|
+| `sle_scan_start()` | void | 无法检查（SDK 限制），靠 seek_disable_cb |
+| `sle_stop_seek()` | errcode_t | 失败打印 |
+| `sle_connect_remote_device()` | errcode_t | 失败→模拟断连回调触发 rescan |
+| `sle_pair_remote_device()` | errcode_t | 失败→模拟 pair_complete_cb(错误)→rescan |
+| `ssapc_exchange_info_req()` | errcode_t | 失败→模拟 exchange_info_cb(错误)→rescan |
+| `ssapc_find_structure()` | errcode_t | 失败=SDK 不支持，打印 + 跳过 |
+| `ssapc_read_req()` | errcode_t | 失败打印 |
+| `ssapc_write_req()` | errcode_t | 失败打印 |
+| `enable_sle()` | errcode_t | 失败→模拟 sle_enable_cb(错误)→重试 |
+| `sle_remove_paired_remote_device()` | errcode_t | 失败打印（低风险） |
+
+## 架构：回调驱动 + 返回值检查
+
+### 旧架构（纯回调驱动，无返回值检查）
 
 ```
 enable_sle() → cb → start_scan() → cb → connect() → cb → pair()
 → cb → exchange_info_req() → cb → find_structure() → cb → ...
 ```
 
-每一步都依赖上一步的回调来推进。同步失败（API 返回非 SUCC）意味着回调永远不来，链条断裂。
+每一步都依赖上一步的回调来推进。同步失败（API 返回非 SUCC）意味着回调永远不来，链条断裂卡死。
 
-### 新架构（task 驱动）
+### 新架构（回调驱动 + 返回值参与流程控制）
 
 ```
-exp_task 主循环（唯一的流程驱动者）
-├─ enable_sle / scan / connect / pair / exchange_info
-│     └─ 每个异步操作：API 返回值检查 + 等待事件标志（带超时）
-├─ find_structure 循环（顶层类型 + 每服务子类型）
-│     └─ 同步拒绝 → 打印 + 跳过（不再傻等）
-│     └─ 异步完成 → wait_flag(g_find_done, timeout)
-└─ 实验段（线性 sleep 驱动）
+enable_sle() ──失败──> 手动调用 sle_enable_cb(错误) ──重试
+    │
+  成功 cb
+    ↓
+start_scan() → seek_disable_cb → connect()
+    │                              │
+    │                            失败 → 手动调用 connect_state_changed_cb(DISCONNECTED) → rescan
+    │                              │
+    │                           成功 cb → pair()
+    │                                     │
+    │                                   失败 → 手动调用 pair_complete_cb(错误) → rescan
+    │                                     │
+    │                                  成功 cb → exchange_info_req()
+    │                                             │
+    │                                           失败 → 手动调用 exchange_info_cb(错误) → rescan
+    │                                             │
+    │                                          成功 cb → find_structure() 循环
+    │                                                     │
+    │                                                   被拒绝 → while 循环跳过，打印 REJECTED
+    │                                                     │
+    │                                                  成功 → cmp_cb 推进
+    └─────────────────────────────────────────────────────┘
 ```
 
-- **回调职责**：只记录数据和置事件标志，绝不发起下一个请求
-- **任务职责**：发起每个请求、检查返回值、等待完成、决定重试或推进
-- **关键原语**：`wait_flag(&flag, timeout_ms)` — 100ms 步进轮询，同时检查 `g_disconnected`
-- **三类失败续链**：
-  - 同步拒绝（find type 2/4/5）→ 打印 REJECTED + 跳过，链条继续
-  - 异步失败/超时 → 本轮失败计数 + 退避后重扫
-  - 断连 → 立即中止本轮 + 退避后重扫
+**核心设计**：
+- 回调驱动链条推进（响应及时，断连立即触发 rescan）
+- 所有 API 返回值参与流程控制
+- 同步失败 = 手动调用完成回调（本地 NACK），链条不断
+- `start_next_find()` 用 while 循环跳过 SDK 不支持的类型
+
+**优点**：
+- 断连响应及时（回调直接触发 rescan，无需等待 task 唤醒）
+- 无卡死点（同步失败有明确的续链路径）
+- 代码量小，逻辑集中
 
 ### 返回值检查清单
 
