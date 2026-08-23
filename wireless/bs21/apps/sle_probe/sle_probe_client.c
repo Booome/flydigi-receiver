@@ -423,8 +423,6 @@ static void low_latency_rx_cb(uint16_t len, uint8_t *value) {
  * Experiment task — resident, waits for discovery_done each round
  * *****************************************************************************/
 
-static void probe_start_exp_task(void);
-
 static int exp_task_entry(void *arg) {
     uint8_t w[17];
     ssapc_write_param_t wp;
