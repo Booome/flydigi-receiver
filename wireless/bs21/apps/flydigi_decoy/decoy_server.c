@@ -339,15 +339,14 @@ void decoy_services_add(void) {
     }
     osal_printk("%s svc0 @0x%02x\r\n", DECOY_LOG, h_svc0);
 
-    /* 0x11: notify channel with CCC descriptor. Note: no DESCRITOR_WRITE
-     * bit here — the fbb reference never sets it on the property and the
-     * stack rejects the combination with PARAM_ERR. */
+    /* 0x11: notify channel with CCC descriptor. Real controller oper =
+     * 0x30d: READ|WRITE|NOTIFY|DESCRITOR_WRITE(0x100)|bit9(0x200, undefined
+     * in the SDK enum but present on the real device). add_property_core
+     * does not validate oper bits (verified by disassembly), so the full
+     * value registers fine. */
     uint16_t h_11 = 0;
-    ret = decoy_add_property(h_svc0,
-                             SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
-                                 SSAP_OPERATE_INDICATION_BIT_NOTIFY,
-                             SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11, VAL11_LEN,
-                             &h_11);
+    ret = decoy_add_property(h_svc0, 0x30D, SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11,
+                             VAL11_LEN, &h_11);
     if (ret != ERRCODE_SUCC) {
         return;
     }
