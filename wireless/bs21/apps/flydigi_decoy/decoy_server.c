@@ -12,15 +12,17 @@
  * Attribute storage — mirrors the real controller layout (experiment N)
  * *****************************************************************************/
 
-#define VAL11_LEN 8
+/* Default values captured from the real controller (experiment N). */
+#define VAL11_LEN 4
 #define VAL12_LEN 8
 #define MAP13_LEN 69
 #define VAL14_LEN 2
 
 static uint8_t g_val_11[VAL11_LEN];
-static uint8_t g_cccd_11[2];
-static uint8_t g_val_12[VAL12_LEN];
-static uint8_t g_val_14[VAL14_LEN];
+static uint8_t g_cccd_11[2] = {0x02, 0x00}; /* controller preset: indication mode */
+static uint8_t g_val_12[VAL12_LEN] = {0x01, 0x01, 0x11, 0x00,
+                                      0x00, 0x00, 0x00, 0x00}; /* last read back (exp N) */
+static uint8_t g_val_14[VAL14_LEN] = {0x06, 0x00};
 
 /* Report map captured from the real controller. First 51 bytes known from
  * the read log, remainder zero-padded to the declared length of 69. */
@@ -71,10 +73,10 @@ static attr_entry_t *decoy_find_attr(uint16_t handle) {
     return NULL;
 }
 
-static errcode_t decoy_add_uuid2(sle_uuid_t *uuid) {
+static errcode_t decoy_add_uuid2(sle_uuid_t *uuid, uint8_t b1) {
     uuid->len = 2;
     uuid->uuid[0] = 0x37;
-    uuid->uuid[1] = 0xBE;
+    uuid->uuid[1] = b1;
     return ERRCODE_SUCC;
 }
 
@@ -82,7 +84,7 @@ static errcode_t decoy_add_uuid2(sle_uuid_t *uuid) {
 static errcode_t decoy_add_property(uint16_t svc_hdl, uint32_t oper, uint16_t perms, uint8_t *buf,
                                     uint16_t len, uint16_t *hdl_out) {
     ssaps_property_info_t prop = {0};
-    errcode_t ret = decoy_add_uuid2(&prop.uuid);
+    errcode_t ret = decoy_add_uuid2(&prop.uuid, 0xBE);
     if (ret != ERRCODE_SUCC) {
         return ret;
     }
@@ -290,7 +292,7 @@ void decoy_services_add(void) {
     }
 
     sle_uuid_t svc_uuid = {0};
-    ret = decoy_add_uuid2(&svc_uuid);
+    ret = decoy_add_uuid2(&svc_uuid, 0xBE);
     if (ret != ERRCODE_SUCC) {
         return;
     }
@@ -319,7 +321,7 @@ void decoy_services_add(void) {
     g_notify_hdl = h_11;
 
     ssaps_desc_info_t desc = {0};
-    ret = decoy_add_uuid2(&desc.uuid);
+    ret = decoy_add_uuid2(&desc.uuid, 0xBE);
     if (ret != ERRCODE_SUCC) {
         return;
     }
@@ -335,20 +337,21 @@ void decoy_services_add(void) {
     }
     osal_printk("%s   ccc descriptor on 0x%02x\r\n", DECOY_LOG, h_11);
 
-    /* 0x12: output report, 8 bytes. */
+    /* 0x12: output report, 8 bytes. Real controller oper = 0x5 (READ|WRITE). */
     ret = decoy_add_property(
-        h_svc0, SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP,
+        h_svc0, SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE,
         SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_12, VAL12_LEN, NULL);
     if (ret != ERRCODE_SUCC) {
         return;
     }
 
-    /* 0x13: report map, 69 bytes. */
-    ret = decoy_add_property(
-        h_svc0,
-        SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP |
-            SSAP_OPERATE_INDICATION_BIT_NOTIFY,
-        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_map_13, MAP13_LEN, NULL);
+    /* 0x13: report map, 69 bytes. Real controller oper = 0xd
+     * (READ|WRITE|NOTIFY). */
+    ret =
+        decoy_add_property(h_svc0,
+                           SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
+                               SSAP_OPERATE_INDICATION_BIT_NOTIFY,
+                           SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_map_13, MAP13_LEN, NULL);
     if (ret != ERRCODE_SUCC) {
         return;
     }
@@ -360,8 +363,14 @@ void decoy_services_add(void) {
         return;
     }
 
-    /* Service 1: device information. */
+    /* Service 1: device information. Distinct UUID — the HiSilicon stack
+     * rejects a second service reusing svc0's UUID with STATUS_ERR
+     * (the Flydigi custom stack allows duplicates, ours does not). */
     uint16_t h_svc1 = 0;
+    ret = decoy_add_uuid2(&svc_uuid, 0xBF);
+    if (ret != ERRCODE_SUCC) {
+        return;
+    }
     ret = ssaps_add_service_sync(g_server_id, &svc_uuid, 1, &h_svc1);
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s add_service1 fail 0x%x\r\n", DECOY_LOG, ret);
