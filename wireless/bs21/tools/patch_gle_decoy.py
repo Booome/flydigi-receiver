@@ -50,6 +50,32 @@ PATCHES = [
         bytes.fromhex('9307f0ff'),
         'check_property_info: remove oper<=256 cap',
     ),
+    # register_server init: srli(a5=-1,15)=0x0001FFFF stored as one word at
+    # server+28, giving state(+28)=0xFFFF and handle cursor(+30)=1. Replace
+    # the srli with c.li a5,1 + nop so the stored word is 1: state=1 (normal
+    # path) and cursor=0, which makes the patched "cursor==0 -> 16" branch
+    # in add_service_core fire for the FIRST service only.
+    (
+        bytes.fromhex('fd57bd835ccc'),
+        1,
+        2,
+        bytes.fromhex('bd83'),
+        bytes.fromhex('8547'),
+        'register_server: handle cursor init 1 -> 0',
+    ),
+    # cs_range_allocate: first candidate handle starts at 1. The SSAP
+    # mirror layer and the cs (ATT server) tree allocate handles
+    # independently, so BOTH must be moved to 0x10 or discovery responses
+    # show handles shifted by -0x0F vs the app-visible ones.
+    # c.li s2,1 -> c.li s2,16 (rd=x18, imm=16).
+    (
+        bytes.fromhex('0149b5a80041054905e4c167'),
+        1,
+        6,
+        bytes.fromhex('0549'),
+        bytes.fromhex('4149'),
+        'cs_range_allocate: first db handle 1 -> 0x10',
+    ),
 ]
 
 
