@@ -39,7 +39,7 @@ PATCHES = [
              # the property-side copy is a dead path in our call order
         0,
         bytes.fromhex('8547'),
-        bytes.fromhex('9147'),
+        bytes.fromhex('c147'),
         'first service/property handle 1 -> 0x10',
     ),
     (
@@ -47,7 +47,7 @@ PATCHES = [
         1,
         4,
         bytes.fromhex('93070010'),
-        bytes.fromhex('9307ffff'),
+        bytes.fromhex('9307f0ff'),
         'check_property_info: remove oper<=256 cap',
     ),
 ]
