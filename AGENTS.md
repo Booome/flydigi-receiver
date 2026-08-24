@@ -86,6 +86,24 @@ bash wireless/bs21/tools/notify.sh
 - 蓝牙芯片：BP1Y303-D4（BR/EDR）
 - USB VID/PID：0x37D7 / 0x2501
 
+## 双模块调试分工（M8 逆向阶段）
+
+固定角色，避免混淆：
+- **board_a = 接收器侧**：烧 `sle_probe`（client，扫描/连接/发现/读写实验）
+- **board_b = 手柄侧**：烧 `flydigi_decoy`（server，镜像手柄属性表，记录 dongle 行为）
+
+双 build 目录（协议栈库随 sle_role 不同，不能共用）：
+```bash
+cmake -S wireless/bs21 -B wireless/bs21/build-decoy -DBS21_APP=flydigi_decoy
+cmake -S wireless/bs21 -B wireless/bs21/build-probe -DBS21_APP=sle_probe
+# 烧录（显式指定 fwpkg）：
+python3 wireless/bs21/tools/burn.py board_b wireless/bs21/build-decoy/bs21_all_in_one.fwpkg
+python3 wireless/bs21/tools/burn.py board_a wireless/bs21/build-probe/bs21_all_in_one.fwpkg
+```
+
+用途：decoy 改动后先用 probe 本地读回属性表验证呈现效果（handle+type+值），
+无需消耗 dongle 测试轮次；最终再插官方 dongle 做端到端确认。
+
 ## 开发规范
 
 ### C 代码格式

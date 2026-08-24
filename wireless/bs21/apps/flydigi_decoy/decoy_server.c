@@ -297,10 +297,12 @@ void decoy_services_add(void) {
         return;
     }
 
-    /* Handle padding: the stack allocates handles sequentially from 0x01,
-     * but the real controller's table starts at 0x10. A Flydigi dongle may
-     * reference properties by hardcoded handle, so pad 0x01-0x0F with a
-     * filler service to land the mirrored table exactly on 0x10-0x18. */
+    /* Handle padding (A/B experiment): occupies 0x02-0x0F so the mirrored
+     * table lands on the real controller's handles (0x10-0x18) — needed IF
+     * the dongle hardcodes handles. Cost: 14 extra handle+type pairs that
+     * do not exist on the real controller. Toggle to isolate. */
+#define DECOY_ENABLE_PAD 0
+#if DECOY_ENABLE_PAD
     sle_uuid_t pad_uuid = {0};
     static uint8_t g_pad_vals[14];
     uint16_t h_pad = 0;
@@ -326,6 +328,7 @@ void decoy_services_add(void) {
     }
     ret = ssaps_start_service(g_server_id, h_pad);
     osal_printk("%s pad svc @0x%02x (14 props), start: 0x%x\r\n", DECOY_LOG, h_pad, ret);
+#endif
 
     /* Service 0: command/report channel. */
     uint16_t h_svc0 = 0;
