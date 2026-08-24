@@ -39,6 +39,13 @@ elif role == 'peripheral':
 elif role is not None:
     print('warning: unknown sle_role %r in %s' % (role, cfg_path))
 
+# Optional library-profile override: points the protocol stack libs at a
+# custom directory (e.g. a patched libbth_gle for the decoy app) without
+# changing the sle_role semantics. Value = full suffix after <chip>-.
+lib_profile = app_cfg.get('lib_profile')
+if lib_profile:
+    env.config['config_sle_ble_support'] = lib_profile
+
 if 'rom_sym_path' in env.config:
     env.config['rom_sym_path'] = env.config['rom_sym_path'].replace('<root>', SDK)
     if os.path.exists(env.config['rom_sym_path']):
