@@ -337,6 +337,12 @@ void decoy_services_add(void) {
     }
     osal_printk("%s   ccc descriptor on 0x%02x\r\n", DECOY_LOG, h_11);
 
+    /* Official flow: start each service after its attributes/descriptors
+     * are registered. Unstarted services break multi-service registration
+     * (STATUS_ERR on the next add_service) and are invisible to clients. */
+    ret = ssaps_start_service(g_server_id, h_svc0);
+    osal_printk("%s start svc0: 0x%x\r\n", DECOY_LOG, ret);
+
     /* 0x12: output report, 8 bytes. Real controller oper = 0x5 (READ|WRITE). */
     ret = decoy_add_property(
         h_svc0, SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE,
@@ -394,5 +400,7 @@ void decoy_services_add(void) {
         return;
     }
 
+    ret = ssaps_start_service(g_server_id, h_svc1);
+    osal_printk("%s start svc1: 0x%x\r\n", DECOY_LOG, ret);
     osal_printk("%s service table ready (%u tracked attrs)\r\n", DECOY_LOG, g_attr_cnt);
 }
