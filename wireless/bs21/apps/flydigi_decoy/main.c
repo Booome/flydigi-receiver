@@ -24,8 +24,9 @@
 #define ADV_DATA_TYPE_TX_POWER_LEVEL 0x0C
 #define ADV_TX_POWER 10
 
-/* Set to the real controller address if the dongle refuses unknown peers. */
-#define USE_SPOOFED_ADDR 0
+/* Spoof the real controller address so the dongle's binding matches.
+ * Power off the real controller during the test to avoid conflicts. */
+#define USE_SPOOFED_ADDR 1
 
 #if USE_SPOOFED_ADDR
 /* Real controller address (from seek logs). */
