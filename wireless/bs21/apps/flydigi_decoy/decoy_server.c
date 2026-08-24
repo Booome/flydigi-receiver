@@ -308,7 +308,9 @@ void decoy_services_add(void) {
     if (ret != ERRCODE_SUCC) {
         return;
     }
-    ret = ssaps_add_service_sync(g_server_id, &pad_uuid, 1, &h_pad);
+    /* Secondary service: occupies handles 0x02-0x0F without showing up in
+     * primary-service discovery (the real table has nothing there). */
+    ret = ssaps_add_service_sync(g_server_id, &pad_uuid, false, &h_pad);
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s add pad service fail 0x%x\r\n", DECOY_LOG, ret);
         return;
@@ -396,11 +398,12 @@ void decoy_services_add(void) {
     ret = ssaps_start_service(g_server_id, h_svc0);
     osal_printk("%s start svc0: 0x%x\r\n", DECOY_LOG, ret);
 
-    /* Service 1: device information. Distinct UUID — the HiSilicon stack
-     * rejects a second service reusing svc0's UUID with STATUS_ERR
-     * (the Flydigi custom stack allows duplicates, ours does not). */
+    /* Service 1: device information. Reuses UUID 37BE like the real
+     * controller — the STATUS_ERR previously blamed on duplicate UUIDs
+     * was actually caused by svc0 sitting in state 1 (added, never
+     * started); ssaps_start_service moves it to state 2. */
     uint16_t h_svc1 = 0;
-    ret = decoy_add_uuid2(&svc_uuid, 0xBF);
+    ret = decoy_add_uuid2(&svc_uuid, 0xBE);
     if (ret != ERRCODE_SUCC) {
         return;
     }
