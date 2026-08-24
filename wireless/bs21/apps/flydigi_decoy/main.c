@@ -200,8 +200,10 @@ void axk_main(void) {
     g_conn_cbk.auth_complete_cb = auth_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
 
-    /* Official flow: SSAP callbacks registered BEFORE enable_sle(). */
+    /* Official flow: SSAP + low-latency callbacks registered BEFORE
+     * enable_sle(). */
     decoy_server_early_init();
+    decoy_low_latency_init();
 
     enable_sle();
 }

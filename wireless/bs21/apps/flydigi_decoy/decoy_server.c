@@ -2,6 +2,7 @@
 #include "securec.h"
 #include "sle_common.h"
 #include "sle_errcode.h"
+#include "sle_low_latency.h"
 #include "sle_ssap_server.h"
 #include "soc_osal.h"
 
@@ -47,6 +48,7 @@ static attr_entry_t g_attrs[MAX_ATTRS];
 static uint8_t g_attr_cnt = 0;
 
 static uint8_t g_server_id = 0;
+static uint16_t g_notify_hdl = 0;
 
 /* *****************************************************************************
  * Helpers
@@ -214,6 +216,41 @@ static void decoy_write_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_write_
 }
 
 /* *****************************************************************************
+ * Low-latency server callbacks — the dongle switches the link into
+ * low-latency EM mode right after pairing; without these handlers the
+ * stack aborts the link (disc 0x7). Mirrors the official air-mouse flow.
+ * *****************************************************************************/
+
+static uint8_t *decoy_hid_data_cb(uint8_t *length, uint16_t *ssap_handle, uint8_t *data_type,
+                                  uint16_t co_handle) {
+    static uint8_t ll_buf[VAL11_LEN];
+    memset_s(ll_buf, sizeof(ll_buf), 0, sizeof(ll_buf));
+    if (length != NULL) {
+        *length = sizeof(ll_buf);
+    }
+    if (ssap_handle != NULL) {
+        *ssap_handle = g_notify_hdl;
+    }
+    if (data_type != NULL) {
+        *data_type = SSAP_PROPERTY_TYPE_VALUE;
+    }
+    osal_printk("%s LL hid_data_cb: co=%u len=8\r\n", DECOY_LOG, co_handle);
+    return ll_buf;
+}
+
+static void decoy_set_em_data_cb(uint16_t co_handle, uint8_t status) {
+    osal_printk("%s *** LL em_data switch: co=%u status=%u\r\n", DECOY_LOG, co_handle, status);
+}
+
+void decoy_low_latency_init(void) {
+    sle_low_latency_callbacks_t cbks = {0};
+    cbks.hid_data_cb = decoy_hid_data_cb;
+    cbks.sle_set_em_data_cb = decoy_set_em_data_cb;
+    errcode_t ret = sle_low_latency_register_callbacks(&cbks);
+    osal_printk("%s low_latency_register_callbacks: 0x%x\r\n", DECOY_LOG, ret);
+}
+
+/* *****************************************************************************
  * Service registration — mirrors the controller attribute table
  * *****************************************************************************/
 
@@ -277,6 +314,7 @@ void decoy_services_add(void) {
     if (ret != ERRCODE_SUCC) {
         return;
     }
+    g_notify_hdl = h_11;
 
     ssaps_desc_info_t desc = {0};
     ret = decoy_add_uuid2(&desc.uuid);
