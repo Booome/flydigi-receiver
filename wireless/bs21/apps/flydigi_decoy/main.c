@@ -2,6 +2,7 @@
 #include "chip_io.h"
 #include "decoy_server.h"
 #include "errcode.h"
+#include "nv.h"
 #include "securec.h"
 #include "sle_connection_manager.h"
 #include "sle_device_discovery.h"
@@ -135,7 +136,6 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("%s *** dongle connected ***\r\n", DECOY_LOG);
     } else if (conn_state == SLE_ACB_STATE_DISCONNECTED) {
-        decoy_on_disconnected();
         if (disc_reason != SLE_DISCONNECT_BY_LOCAL) {
             osal_task *t =
                 osal_kthread_create((osal_kthread_handler)re_announce_task, 0, "reann", 0x1000);
@@ -173,15 +173,20 @@ static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
     if (sle_get_local_addr(&own_addr) != ERRCODE_SUCC) {
         return;
     }
-    if (sle_set_nv_smp_keys((sle_auth_info_evt_t *)evt, &own_addr, (sle_addr_t *)addr, 0) !=
-        ERRCODE_SUCC) {
-        osal_printk("%s save smp keys fail\r\n", DECOY_LOG);
+    errcode_t nv_ret =
+        sle_set_nv_smp_keys((sle_auth_info_evt_t *)evt, &own_addr, (sle_addr_t *)addr, 0);
+    if (nv_ret != ERRCODE_SUCC) {
+        osal_printk("%s save smp keys fail: 0x%x\r\n", DECOY_LOG, nv_ret);
     }
 }
 
 void axk_main(void) {
     bs21_rst();
     osal_printk("app: flydigi_decoy\r\n");
+
+    /* NV must be initialised before pairing keys can be stored; without it
+     * the dongle's encrypted link fails right after MTU exchange (disc 0x7). */
+    uapi_nv_init();
 
     g_dev_cbk.sle_power_on_cb = sle_power_on_cb;
     g_dev_cbk.sle_enable_cb = sle_enable_cb;
