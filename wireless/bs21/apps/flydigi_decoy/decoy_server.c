@@ -304,13 +304,15 @@ void decoy_services_add(void) {
     }
     osal_printk("%s svc0 @0x%02x\r\n", DECOY_LOG, h_svc0);
 
-    /* 0x11: notify channel with CCC descriptor. */
+    /* 0x11: notify channel with CCC descriptor. Note: no DESCRITOR_WRITE
+     * bit here — the fbb reference never sets it on the property and the
+     * stack rejects the combination with PARAM_ERR. */
     uint16_t h_11 = 0;
-    ret = decoy_add_property(
-        h_svc0,
-        SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
-            SSAP_OPERATE_INDICATION_BIT_NOTIFY | SSAP_OPERATE_INDICATION_BIT_DESCRITOR_WRITE,
-        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11, VAL11_LEN, &h_11);
+    ret = decoy_add_property(h_svc0,
+                             SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
+                                 SSAP_OPERATE_INDICATION_BIT_NOTIFY,
+                             SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11, VAL11_LEN,
+                             &h_11);
     if (ret != ERRCODE_SUCC) {
         return;
     }
