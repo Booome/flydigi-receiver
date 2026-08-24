@@ -8,6 +8,22 @@
 #include "soc_osal.h"
 
 /* *****************************************************************************
+ * Macros
+ * *****************************************************************************/
+
+#define DECOY_LOG "[decoy]"
+#define VAL11_LEN 4
+#define VAL12_LEN 8
+#define MAP13_LEN 69
+#define VAL14_LEN 2
+#define MAX_ATTRS 8
+
+/* Handle padding (A/B experiment): occupies 0x02-0x0F so the mirrored table
+ * lands on the real controller's handles — needed IF the dongle hardcodes
+ * handles. Cost: 14 extra handle+type pairs not on the real controller. */
+#define DECOY_ENABLE_PAD 0
+
+/* *****************************************************************************
  * Patched-stack support
  *
  * libbth_gle.a (decoy copy) has check_property_info renamed to
@@ -16,8 +32,6 @@
  * controller's 0x30d. This replacement keeps the pointer/uuid-len guards
  * but drops the cap, matching the Flydigi OEM stack behaviour.
  * *****************************************************************************/
-
-errcode_t decoy_check_property_info_orig(ssaps_property_info_t *prop);
 
 errcode_t decoy_check_property_info_orig(ssaps_property_info_t *prop) {
     if (prop == NULL) {
@@ -29,18 +43,11 @@ errcode_t decoy_check_property_info_orig(ssaps_property_info_t *prop) {
     return ERRCODE_SUCC;
 }
 
-#define DECOY_LOG "[decoy]"
-
 /* *****************************************************************************
  * Attribute storage — mirrors the real controller layout (experiment N)
  * *****************************************************************************/
 
 /* Default values captured from the real controller (experiment N). */
-#define VAL11_LEN 4
-#define VAL12_LEN 8
-#define MAP13_LEN 69
-#define VAL14_LEN 2
-
 static uint8_t g_val_11[VAL11_LEN];
 static uint8_t g_cccd_11[2] = {0x02, 0x00}; /* controller preset: indication mode */
 static uint8_t g_val_12[VAL12_LEN] = {0x01, 0x01, 0x11, 0x00,
@@ -68,7 +75,6 @@ typedef struct {
     uint16_t len;
 } attr_entry_t;
 
-#define MAX_ATTRS 8
 static attr_entry_t g_attrs[MAX_ATTRS];
 static uint8_t g_attr_cnt = 0;
 
@@ -324,7 +330,6 @@ void decoy_services_add(void) {
      * table lands on the real controller's handles (0x10-0x18) — needed IF
      * the dongle hardcodes handles. Cost: 14 extra handle+type pairs that
      * do not exist on the real controller. Toggle to isolate. */
-#define DECOY_ENABLE_PAD 0
 #if DECOY_ENABLE_PAD
     sle_uuid_t pad_uuid = {0};
     static uint8_t g_pad_vals[14];
