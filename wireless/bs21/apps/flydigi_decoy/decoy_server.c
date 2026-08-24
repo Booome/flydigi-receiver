@@ -4,7 +4,30 @@
 #include "sle_errcode.h"
 #include "sle_low_latency.h"
 #include "sle_ssap_server.h"
+#include "sle_ssap_stru.h"
 #include "soc_osal.h"
+
+/* *****************************************************************************
+ * Patched-stack support
+ *
+ * libbth_gle.a (decoy copy) has check_property_info renamed to
+ * decoy_check_property_info_orig via objcopy --redefine-sym. The stock
+ * implementation rejects operate_indication > 0x100, which blocks the real
+ * controller's 0x30d. This replacement keeps the pointer/uuid-len guards
+ * but drops the cap, matching the Flydigi OEM stack behaviour.
+ * *****************************************************************************/
+
+errcode_t decoy_check_property_info_orig(ssaps_property_info_t *prop);
+
+errcode_t decoy_check_property_info_orig(ssaps_property_info_t *prop) {
+    if (prop == NULL) {
+        return 0x80006008; /* POINTER_NULL */
+    }
+    if ((uint8_t)prop->uuid.len >= 17) {
+        return 0x80006003; /* PARAM_ERR */
+    }
+    return ERRCODE_SUCC;
+}
 
 #define DECOY_LOG "[decoy]"
 
@@ -339,15 +362,12 @@ void decoy_services_add(void) {
     }
     osal_printk("%s svc0 @0x%02x\r\n", DECOY_LOG, h_svc0);
     /* 0x11: notify channel with CCC descriptor. Real controller oper =
-     * 0x30d, but the HiSilicon stack hard-limits operate_indication to
-     * <= 0x100 (check_property_info rejects anything larger with
-     * PARAM_ERR). Register the closest legal subset R|W|NOTIFY. */
+     * 0x30d (781). The stack's check_property_info caps it at 0x100, but
+     * the patched libbth_gle.a routes that check to
+     * decoy_check_property_info_orig below, which drops the cap. */
     uint16_t h_11 = 0;
-    ret = decoy_add_property(h_svc0,
-                             SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
-                                 SSAP_OPERATE_INDICATION_BIT_NOTIFY,
-                             SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11, VAL11_LEN,
-                             &h_11);
+    ret = decoy_add_property(h_svc0, 0x30D, SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11,
+                             VAL11_LEN, &h_11);
     if (ret != ERRCODE_SUCC) {
         return;
     }
