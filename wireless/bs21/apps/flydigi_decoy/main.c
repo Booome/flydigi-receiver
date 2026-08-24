@@ -134,11 +134,14 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
                 pair_state, disc_reason);
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("%s *** dongle connected ***\r\n", DECOY_LOG);
-    } else if (conn_state == SLE_ACB_STATE_DISCONNECTED && disc_reason != SLE_DISCONNECT_BY_LOCAL) {
-        osal_task *t =
-            osal_kthread_create((osal_kthread_handler)re_announce_task, 0, "reann", 0x1000);
-        if (t != NULL) {
-            osal_kfree(t);
+    } else if (conn_state == SLE_ACB_STATE_DISCONNECTED) {
+        decoy_on_disconnected();
+        if (disc_reason != SLE_DISCONNECT_BY_LOCAL) {
+            osal_task *t =
+                osal_kthread_create((osal_kthread_handler)re_announce_task, 0, "reann", 0x1000);
+            if (t != NULL) {
+                osal_kfree(t);
+            }
         }
     }
 }

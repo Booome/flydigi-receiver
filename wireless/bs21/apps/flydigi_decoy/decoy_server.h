@@ -8,4 +8,7 @@ void decoy_server_early_init(void);
  * Call from the SLE-enable callback. */
 void decoy_services_add(void);
 
+/* Stop the notify stream on disconnection. */
+void decoy_on_disconnected(void);
+
 #endif /* FLYDIGI_DECOY_SERVER_H */

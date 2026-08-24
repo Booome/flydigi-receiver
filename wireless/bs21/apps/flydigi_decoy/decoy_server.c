@@ -48,6 +48,13 @@ static uint8_t g_attr_cnt = 0;
 
 static uint8_t g_server_id = 0;
 
+/* Notify stream state: after MTU exchange we push periodic reports the way
+ * a real controller does; the dongle disconnects if it never sees data. */
+static volatile int g_streaming = 0;
+static volatile uint16_t g_active_conn = 0;
+static uint16_t g_notify_hdl = 0;
+static osal_task *g_stream_task = NULL;
+
 /* *****************************************************************************
  * Helpers
  * *****************************************************************************/
@@ -108,6 +115,8 @@ static errcode_t decoy_add_property(uint16_t svc_hdl, uint32_t oper, uint16_t pe
     return ERRCODE_SUCC;
 }
 
+static int decoy_stream_task(void *arg);
+
 /* *****************************************************************************
  * SSAP callbacks — full behavior logging
  * *****************************************************************************/
@@ -116,6 +125,41 @@ static void decoy_mtu_changed_cb(uint8_t server_id, uint16_t conn_id, ssap_excha
                                  errcode_t status) {
     osal_printk("%s mtu changed: sid=%u conn=%u mtu=%u status=0x%x\r\n", DECOY_LOG, server_id,
                 conn_id, info->mtu_size, status);
+    /* Start pushing reports as soon as the MTU is agreed — a real
+     * controller streams right after pairing, and the dongle hangs up
+     * if no data ever arrives. */
+    if (status == ERRCODE_SUCC && !g_streaming) {
+        g_streaming = 1;
+        g_active_conn = conn_id;
+        g_stream_task =
+            osal_kthread_create((osal_kthread_handler)decoy_stream_task, NULL, "decoy_tx", 0x1000);
+        if (g_stream_task != NULL) {
+            osal_kthread_set_priority(g_stream_task, 25);
+        }
+    }
+}
+
+static int decoy_stream_task(void *arg) {
+    uint8_t rpt[VAL11_LEN] = {0};
+    while (g_streaming) {
+        ssaps_ntf_ind_t ntf = {0};
+        ntf.handle = g_notify_hdl;
+        ntf.type = SSAP_PROPERTY_TYPE_VALUE;
+        ntf.value = rpt;
+        ntf.value_len = sizeof(rpt);
+        errcode_t ret = ssaps_notify_indicate(g_server_id, g_active_conn, &ntf);
+        osal_printk("%s notify -> conn=%u hdl=0x%x ret=0x%x\r\n", DECOY_LOG, g_active_conn,
+                    g_notify_hdl, ret);
+        for (int i = 0; i < 5 && g_streaming; i++) {
+            osal_msleep(100);
+        }
+    }
+    osal_printk("%s stream task exit\r\n", DECOY_LOG);
+    return 0;
+}
+
+void decoy_on_disconnected(void) {
+    g_streaming = 0;
 }
 
 static void decoy_read_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_read_cb_t *read_para,
@@ -231,6 +275,7 @@ void decoy_services_add(void) {
 
     /* 0x11: notify channel with CCC descriptor. */
     uint16_t h_11 = 0;
+    g_notify_hdl = 0;
     ret = decoy_add_property(
         h_svc0,
         SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
@@ -239,6 +284,7 @@ void decoy_services_add(void) {
     if (ret != ERRCODE_SUCC) {
         return;
     }
+    g_notify_hdl = h_11;
 
     ssaps_desc_info_t desc = {0};
     ret = decoy_add_uuid2(&desc.uuid);
