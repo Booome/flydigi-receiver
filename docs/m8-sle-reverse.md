@@ -151,6 +151,45 @@ A1 00        Collection (Physical)
   (校准进度/输入流/命令响应)
 - 若仍零数据,转向"地址/绑定门控"或固件提取
 
+## 技术债：二进制 patch 方案的优雅化（待重构）
+
+当前 decoy 通过 `patch_gle_decoy.py` 对 `libbth_gle.a` 做 4 处二进制补丁
+（oper 上限解除、镜像层游标、cs 层游标、check_property_info redefine）。
+方案**只求功能正确，不够优雅**：
+
+- 补丁以 magic bytes 定位，SDK 升级即失效（虽有 expected_count 断言，
+  失效时会响亮报错而非静默出错）
+- 改动语义靠注释维系，无结构性保证
+
+**有时间应重构为更优雅的方案**，候选方向：
+1. 符号级定位 + 指令模式匹配替代 magic bytes（pyelftools 解析 obj、
+   按"指令序列语义"搜索,如 `c.li a5,-1` + `c.srli a5,15` + `sw a5,28(s0)`）
+2. 运行时补丁：固件启动早期在 RAM 中改写协议栈代码段（免维护 .a 副本）
+3. 从源头替换：提取完整属性表定义,用 SDK 提供的注册接口绕过限制
+   （需确认 oper=0x30d 是否有官方豁免路径）
+
+## 双层 handle 分配器（decoy handle 对齐的关键发现）
+
+BS21 SLE 协议栈存在**两套独立 handle 分配器**,必须同时补丁才能让
+"应用可见 handle"与"线上发现响应 handle"一致：
+
+| 层 | 所在位置 | 初值行为 | patch 点 |
+|----|---------|---------|----------|
+| SSAP 镜像层 | `sle_srv_ssap_server.c.obj` 的 `ssaps_add_service_core` | register_server 用 `srli(-1,15)=0x0001FFFF` 初始化 server node: state(+28)=0xFFFF、handle 游标(+30)=1 → 首服务 @0x01 | register_server 尾部 `c.srli a5,15` → `c.li a5,1`（word 变 1: state=1 走正常路径,cursor=0 触发 core 里已 patch 的 `cursor==0→16` 分支） |
+| ATT/cs 树层 | `cs_ui.c.obj` 的 `cs_range_allocate` | 首候选 handle 硬编码 `c.li s2,1` → 发现响应从 1 编号 | `c.li s2,1` → `c.li s2,16` |
+
+两层不同步的症状：应用日志显示 svc@0x10,但 probe 读回整体平移 -0x0F
+（svc0=[0x01,0x05]）。
+
+其他关键事实：
+- **SSAP descriptor 不占独立 handle**——CCCD 内嵌于 property 条目
+  （`desc_cnt=1`）,find type=3 枚举时无独立条目
+- cs 层枚举 find type=3 时**不区分 primary/secondary 服务**,
+  secondary 服务的属性会泄漏进结果（真机不会——它是手工 GATT db 布局,
+  无此概念）。因此 pad 服务方案废弃。
+- `ssaps_add_service_sync` 直调镜像层 core,**不经** uapi/sapi/FSM 链;
+  但发现响应数据来自 cs 层树（由 FSM 链经 `cs_reg_service` 注册）
+
 ## OS 抽象层备注
 
 BS21 SDK 存在两套 OS 抽象接口，风格不统一：
