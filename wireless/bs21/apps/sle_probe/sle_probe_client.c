@@ -73,11 +73,6 @@ static uint8_t g_sub_idx = 0;
  * find_structure_cb to decide whether to record service entries). */
 static uint8_t g_cur_find_type = 0xFF;
 
-/* Experiment phase synchronization. */
-static volatile int g_discovery_done = 0;
-static volatile int g_disconnected = 0;
-static osal_task *g_exp_task = NULL;
-
 /* Validate client_id and conn_id in SSAP callbacks. */
 #define CB_CHK()                                                                                   \
     do {                                                                                           \
@@ -212,8 +207,6 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
     if (state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("%s connected, conn_id=%u\r\n", PROBE_LOG, conn_id);
         /* Reset per-round state for the new connection. */
-        g_disconnected = 0;
-        g_discovery_done = 0;
         g_client_id = 0;
         g_find_idx = 0;
         g_service_idx = 0;
@@ -245,7 +238,6 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
         }
     } else if (state == SLE_ACB_STATE_DISCONNECTED) {
         osal_printk("%s disconnected, rescan\r\n", PROBE_LOG);
-        g_disconnected = 1;
         scan_table_reset();
         probe_start_scan();
     }
@@ -425,134 +417,6 @@ static void low_latency_rx_cb(uint16_t len, uint8_t *value) {
 }
 
 /* *****************************************************************************
- * Experiment task — resident, waits for discovery_done each round
- * *****************************************************************************/
-
-static int exp_task_entry(void *arg) {
-    uint8_t w[17];
-    ssapc_write_param_t wp;
-    errcode_t ret;
-
-    while (1) {
-        /* Wait for this round's discovery to complete. */
-        while (!g_discovery_done) {
-            osal_msleep(100);
-        }
-        osal_printk("%s EXP: start, conn_id=%u\r\n", PROBE_LOG, g_conn_id);
-
-        /* 0. Enable the low-latency RX channel AFTER the whole SSAP layer
-         * is up (pair + MTU + discovery + param update done). Issuing it
-         * earlier (right after pairing) made the controller disconnect
-         * with reason 0x7. */
-        errcode_t ll_ret = sle_low_latency_rx_enable();
-        osal_printk("%s low_latency_rx_enable: 0x%x\r\n", PROBE_LOG, ll_ret);
-        ll_ret = sle_low_latency_set(g_conn_id, SLE_LOW_LATENCY_ENABLE, SLE_LOW_LATENCY_2K);
-        osal_printk("%s low_latency_set(2K): 0x%x\r\n", PROBE_LOG, ll_ret);
-
-        /* 1. Read 0x13 value (baseline). */
-        ret = ssapc_read_req(g_client_id, g_conn_id, 0x13, SSAP_PROPERTY_TYPE_VALUE);
-        if (ret != ERRCODE_SUCC) {
-            osal_printk("%s EXP: read 0x13 failed 0x%x\r\n", PROBE_LOG, ret);
-        }
-        for (int i = 0; i < 10 && !g_disconnected; i++) {
-            osal_msleep(100);
-        }
-
-        /* 2. Subscribe notifications on 0x11 (write CCC 0x0001). */
-        memset(&wp, 0, sizeof(wp));
-        wp.handle = 0x11;
-        wp.type = SSAP_DESCRIPTOR_CLIENT_CONFIGURATION;
-        w[0] = 0x01;
-        w[1] = 0x00;
-        wp.data = w;
-        wp.data_len = 2;
-        ret = ssapc_write_req(g_client_id, g_conn_id, &wp);
-        if (ret != ERRCODE_SUCC) {
-            osal_printk("%s EXP: write CCC failed 0x%x\r\n", PROBE_LOG, ret);
-        }
-        for (int i = 0; i < 10 && !g_disconnected; i++) {
-            osal_msleep(100);
-        }
-
-        /* 2b. Vader5 V2 protocol replay on 0x12 (8-byte command channel).
-         * Frame format: 5a a5 <cmd> <len> <data...>. The rumble frame is
-         * exactly 8 bytes; if the controller vibrates, the SLE command
-         * protocol matches the Vader5 one. Then replay the known init
-         * sequence from openflydigi. */
-        static const uint8_t v2_frames[][8] = {
-            {0x5A, 0xA5, 0x12, 0x06, 0xFF, 0xFF, 0x00, 0x00}, /* rumble max */
-            {0x5A, 0xA5, 0x01, 0x02, 0x03, 0x00, 0x00, 0x00}, /* device info */
-            {0x5A, 0xA5, 0xA1, 0x02, 0xA3, 0x00, 0x00, 0x00}, /* mac/serial */
-            {0x5A, 0xA5, 0x02, 0x02, 0x04, 0x00, 0x00, 0x00}, /* config read */
-            {0x5A, 0xA5, 0x04, 0x02, 0x06, 0x00, 0x00, 0x00}, /* config data */
-        };
-        const uint8_t v2_lens[] = {8, 5, 5, 5, 5};
-        const char *v2_names[] = {"rumble", "dev-info", "mac", "cfg-read", "cfg-data"};
-        for (uint8_t f = 0; f < 5 && !g_disconnected; f++) {
-            osal_printk("%s EXP: V2 %s -> 0x12\r\n", PROBE_LOG, v2_names[f]);
-            memset(&wp, 0, sizeof(wp));
-            wp.handle = 0x12;
-            wp.type = SSAP_PROPERTY_TYPE_VALUE;
-            memcpy(w, v2_frames[f], 8);
-            wp.data = w;
-            wp.data_len = v2_lens[f];
-            ret = ssapc_write_cmd(g_client_id, g_conn_id, &wp);
-            if (ret != ERRCODE_SUCC) {
-                osal_printk("%s EXP: V2 %s write failed 0x%x\r\n", PROBE_LOG, v2_names[f], ret);
-            }
-            for (int i = 0; i < 10 && !g_disconnected; i++) {
-                uint8_t rxbuf[64];
-                uint16_t rxlen = 0;
-                if (sle_low_latency_rx_get_data(rxbuf, sizeof(rxbuf), &rxlen) == ERRCODE_SUCC &&
-                    rxlen > 0) {
-                    osal_printk("%s LLRX: len=%u ", PROBE_LOG, rxlen);
-                    probe_print_hex(rxbuf, rxlen);
-                }
-                osal_msleep(100);
-            }
-        }
-
-        /* 3. Listen 8s, polling the low-latency RX buffer (the official
-         * dongle sample also uses timer polling via rx_get_data). */
-        osal_printk("%s EXP: listening 8s\r\n", PROBE_LOG);
-        for (int i = 0; i < 80 && !g_disconnected; i++) {
-            uint8_t rxbuf[64];
-            uint16_t rxlen = 0;
-            if (sle_low_latency_rx_get_data(rxbuf, sizeof(rxbuf), &rxlen) == ERRCODE_SUCC &&
-                rxlen > 0) {
-                osal_printk("%s LLRX: len=%u ", PROBE_LOG, rxlen);
-                probe_print_hex(rxbuf, rxlen);
-            }
-            osal_msleep(100);
-        }
-        osal_printk("%s EXP: done%s\r\n", PROBE_LOG,
-                    g_disconnected ? " (aborted: disconnected)" : "");
-
-        /* Consume the flag; wait for the next round. */
-        g_discovery_done = 0;
-    }
-    return 0;
-}
-
-static void probe_start_exp_task(void) {
-    osal_task *task = NULL;
-    if (g_exp_task != NULL)
-        return;
-    osal_kthread_lock();
-    task = osal_kthread_create(exp_task_entry, NULL, "exp_task", 4096);
-    if (task != NULL) {
-        osal_kthread_set_priority(task, 24);
-    }
-    osal_kthread_unlock();
-    g_exp_task = task;
-    if (task == NULL) {
-        osal_printk("%s exp task create fail\r\n", PROBE_LOG);
-    } else {
-        osal_printk("%s exp task started\r\n", PROBE_LOG);
-    }
-}
-
-/* *****************************************************************************
  * Chain drivers — each step initiates the next
  * *****************************************************************************/
 
@@ -628,7 +492,6 @@ static void start_next_find(void) {
                             PROBE_LOG);
             }
             osal_printk("%s discovery complete\r\n", PROBE_LOG);
-            g_discovery_done = 1;
             return;
         }
         if (g_sub_idx >= SUB_TYPE_COUNT) {
@@ -688,6 +551,4 @@ void probe_init(void) {
     ll_cbk.low_latency_rx_cb = low_latency_rx_cb;
     sle_low_latency_rx_register_callbacks(&ll_cbk);
 
-    /* Resident experiment task; polls g_discovery_done each round. */
-    probe_start_exp_task();
 }
