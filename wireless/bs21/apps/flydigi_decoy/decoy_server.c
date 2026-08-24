@@ -297,6 +297,34 @@ void decoy_services_add(void) {
         return;
     }
 
+    /* Handle padding: the stack allocates handles sequentially from 0x01,
+     * but the real controller's table starts at 0x10. A Flydigi dongle may
+     * reference properties by hardcoded handle, so pad 0x01-0x0F with a
+     * filler service to land the mirrored table exactly on 0x10-0x18. */
+    sle_uuid_t pad_uuid = {0};
+    static uint8_t g_pad_vals[14];
+    uint16_t h_pad = 0;
+    ret = decoy_add_uuid2(&pad_uuid, 0xBF);
+    if (ret != ERRCODE_SUCC) {
+        return;
+    }
+    ret = ssaps_add_service_sync(g_server_id, &pad_uuid, 1, &h_pad);
+    if (ret != ERRCODE_SUCC) {
+        osal_printk("%s add pad service fail 0x%x\r\n", DECOY_LOG, ret);
+        return;
+    }
+    for (uint8_t i = 0; i < sizeof(g_pad_vals); i++) {
+        ret = decoy_add_property(h_pad, SSAP_OPERATE_INDICATION_BIT_READ,
+                                 SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, &g_pad_vals[i], 1,
+                                 NULL);
+        if (ret != ERRCODE_SUCC) {
+            osal_printk("%s add pad property %u fail 0x%x\r\n", DECOY_LOG, i, ret);
+            return;
+        }
+    }
+    ret = ssaps_start_service(g_server_id, h_pad);
+    osal_printk("%s pad svc @0x%02x (14 props), start: 0x%x\r\n", DECOY_LOG, h_pad, ret);
+
     /* Service 0: command/report channel. */
     uint16_t h_svc0 = 0;
     ret = ssaps_add_service_sync(g_server_id, &svc_uuid, 1, &h_svc0);
