@@ -146,6 +146,23 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
     }
 }
 
+static void decoy_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status) {
+    osal_printk("%s pair complete: conn=%u status=0x%x\r\n", DECOY_LOG, conn_id, status);
+}
+
+static void decoy_param_update_req_cb(uint16_t conn_id, errcode_t status,
+                                      const sle_connection_param_update_req_t *param) {
+    osal_printk("%s param update REQ: conn=%u status=0x%x min=%u max=%u lat=%u to=%u\r\n",
+                DECOY_LOG, conn_id, status, param->interval_min, param->interval_max,
+                param->max_latency, param->supervision_timeout);
+}
+
+static void decoy_param_update_cb(uint16_t conn_id, errcode_t status,
+                                  const sle_connection_param_update_evt_t *param) {
+    osal_printk("%s param update: conn=%u status=0x%x interval=%u\r\n", DECOY_LOG, conn_id, status,
+                param->interval);
+}
+
 static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
                              const sle_auth_info_evt_t *evt) {
     osal_printk("%s auth complete id:%u status:0x%x\r\n", DECOY_LOG, conn_id, status);
@@ -172,6 +189,9 @@ void axk_main(void) {
 
     g_seek_cbk.announce_enable_cb = announce_enable_cb;
     g_conn_cbk.connect_state_changed_cb = conn_state_changed_cb;
+    g_conn_cbk.connect_param_update_req_cb = decoy_param_update_req_cb;
+    g_conn_cbk.connect_param_update_cb = decoy_param_update_cb;
+    g_conn_cbk.pair_complete_cb = decoy_pair_complete_cb;
     g_conn_cbk.auth_complete_cb = auth_complete_cb;
     sle_connection_register_callbacks(&g_conn_cbk);
 

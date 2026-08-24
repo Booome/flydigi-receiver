@@ -121,8 +121,41 @@ static int decoy_stream_task(void *arg);
  * SSAP callbacks — full behavior logging
  * *****************************************************************************/
 
-static void decoy_mtu_changed_cb(uint8_t server_id, uint16_t conn_id, ssap_exchange_info_t *info,
+static void decoy_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle,
                                  errcode_t status) {
+    osal_printk("%s add_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id, handle,
+                status);
+}
+
+static void decoy_add_property_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
+                                  uint16_t property_handle, errcode_t status) {
+    osal_printk("%s add_property cb: sid=%u svc=0x%x prop=0x%x status=0x%x\r\n", DECOY_LOG,
+                server_id, service_handle, property_handle, status);
+}
+
+static void decoy_add_descriptor_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
+                                    uint16_t desc_handle, errcode_t status) {
+    osal_printk("%s add_desc cb: sid=%u svc=0x%x desc=0x%x status=0x%x\r\n", DECOY_LOG, server_id,
+                service_handle, desc_handle, status);
+}
+
+static void decoy_start_service_cb(uint8_t server_id, uint16_t handle, errcode_t status) {
+    osal_printk("%s start_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id,
+                handle, status);
+}
+
+static void decoy_indicate_cfm_cb(uint8_t server_id, uint16_t conn_id,
+                                  sle_indication_cfm_result_t cfm_result, errcode_t status) {
+    osal_printk("%s indicate cfm: sid=%u conn=%u cfm=%d status=0x%x\r\n", DECOY_LOG, server_id,
+                conn_id, cfm_result, status);
+}
+
+/* *****************************************************************************
+ * SSAP callbacks — full behavior logging
+ * *****************************************************************************/
+
+static void decoy_mtu_changed_cb(uint8_t server_id, uint16_t conn_id,
+                                 ssap_exchange_info_t *info, errcode_t status) {
     osal_printk("%s mtu changed: sid=%u conn=%u mtu=%u status=0x%x\r\n", DECOY_LOG, server_id,
                 conn_id, info->mtu_size, status);
     /* Start pushing reports as soon as the MTU is agreed — a real
@@ -231,8 +264,13 @@ static void decoy_write_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_write_
 /* Register SSAP callbacks. Must run BEFORE enable_sle() (official flow). */
 void decoy_server_early_init(void) {
     ssaps_callbacks_t cbks = {0};
+    cbks.add_service_cb = decoy_add_service_cb;
+    cbks.add_property_cb = decoy_add_property_cb;
+    cbks.add_descriptor_cb = decoy_add_descriptor_cb;
+    cbks.start_service_cb = decoy_start_service_cb;
     cbks.read_request_cb = decoy_read_cb;
     cbks.write_request_cb = decoy_write_cb;
+    cbks.indicate_cfm_cb = decoy_indicate_cfm_cb;
     cbks.mtu_changed_cb = decoy_mtu_changed_cb;
     errcode_t ret = ssaps_register_callbacks(&cbks);
     if (ret != ERRCODE_SUCC) {
