@@ -112,6 +112,18 @@ add_path_with_alias_if_exist(${SDK_ROOT}/vendor sdk/vendor)
 include(${SDK_ROOT}/build/cmake/open_source.cmake)
 include(${SDK_ROOT}/build/cmake/build_linker.cmake)
 
+# Apps linked against a patched stack-library profile (lib_profile ending
+# in "-decoy", see tools/patch_gle_decoy.py) refresh the patch on every
+# build so a plain configure+build always yields correct firmware.
+if(CONFIG_SLE_BLE_SUPPORT MATCHES "-decoy")
+    add_custom_target(bs21_patch_stack_libs
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/patch_gle_decoy.py
+        COMMENT "bs21: refreshing patched stack libs (sle-peripheral-decoy)"
+        VERBATIM)
+    add_dependencies(${TARGET_NAME} bs21_patch_stack_libs)
+endif()
+
 if (NOT DEFINED ROM_COMPONENT)
 add_custom_target(GENERAT_BIN ALL
     COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -R .fls_loader_ram -R .logstr -R .ARM -R .ARM ${BIN_NAME}.elf ${BIN_NAME}.bin
