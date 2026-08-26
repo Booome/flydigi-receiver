@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 """Patch libbth_gle.a for the Flydigi decoy (board_b).
 
-Two 2-byte instruction patches, both located by unique byte signatures:
+All patches bring the stock BS21 stack behaviour back to the SSAP protocol
+standard (the same behaviour the open-source NearLink stack implements):
 
-1. ssaps_add_service_core: c.li a5,1 -> c.li a5,16
-   First service handle becomes 0x10, matching the real controller table
-   layout (svc0@0x10, props@0x11-0x14, svc1@0x15, props@0x16-0x18).
+1. Handle base 0x10: the open-source stack starts service handles at
+   SSAP_INIT_HANDLE = 0x0010 (ssaps_service.c). The BS21 library initialises
+   the handle cursor to 1 in three places; each is patched to match:
+   - ssaps_add_service_core / ssaps_add_property_core: c.li a5,1 -> 16
+   - ssaps_register_server: stored word now gives cursor=0 so the
+     "cursor==0 -> 16" branch above fires for the first service
+   - cs_range_allocate: first candidate handle 1 -> 0x10 (ATT-layer cursor)
 
-2. check_property_info: addi a5,x0,256 -> addi a5,x0,-1
-   The oper_indication<=256 guard makes bgeu always true afterwards,
-   so the real controller's oper value 0x30d (781) is accepted.
+2. check_property_info oper cap: the stock check rejects
+   operate_indication > 0x100. operate_indication is a 32-bit field; the
+   real controller uses 0x30d. Patch li a5,256 -> li a5,-1 so the unsigned
+   compare always passes.
+
+NOTE: the older objcopy --redefine-sym scheme was REMOVED. check_property_info
+is a static symbol; renaming it never made the app-provided replacement link
+(verified: the app copy was gc-sections stripped). The byte patch above is the
+only effective mechanism.
 """
 
 import sys
 import os
 import shutil
-import subprocess
 
 SDK_GLE = ('/home/bodong/.local/Ai-BS21_SDK/protocol/bt/host/gle/'
            'bs21-n1100-sle-peripheral/libbth_gle.a')
-OBJCOPY = ('/home/bodong/.local/Ai-BS21_SDK/tools/bin/compiler/riscv/'
-           'cc_riscv32_musl_b010/cc_riscv32_musl_fp/bin/'
-           'riscv32-linux-musl-objcopy')
-
-# check_property_info is a static (local) symbol in the SDK library whose
-# stock body caps operate_indication at 0x100. Rename it inside the decoy
-# copy; the app provides decoy_check_property_info_orig as the replacement.
-REDEFINES = [
-    'check_property_info=decoy_check_property_info_orig',
-]
 
 PATCHES = [
     # (unique_context, expected_count, offset_within_context, original_bytes,
@@ -76,6 +76,47 @@ PATCHES = [
         bytes.fromhex('4149'),
         'cs_range_allocate: first db handle 1 -> 0x10',
     ),
+    # Shift the discovery-item encoding start from PDU+3 to PDU+2 so the
+    # leading count byte lands in PDU[2] (matches the client V10 find-rsp
+    # parse: count at PDU[2], items from PDU[3], uuid len 2).
+    (
+        bytes.fromhex('38a12920130a39007514'),
+        1,
+        4,
+        bytes.fromhex('130a39007514'),
+        bytes.fromhex('130a29007914'),
+        'find-rsp: encode items from PDU+2 (V10 count position)',
+    ),
+    # Encode property entries with a 2-byte UUID instead of 16-byte.
+    (
+        bytes.fromhex('8280c14b894d1d'),
+        1,
+        2,
+        bytes.fromhex('c14b'),
+        bytes.fromhex('894b'),
+        'find-rsp: property entry uuid 16 -> 2',
+    ),
+    # The 2-byte-uuid branch reads the uuid from node+4 (wrong: the 16-byte
+    # branch reads node+5, which is where uuid[0] lives). Fix node+4 -> node+5
+    # so the short uuid encodes as 37be instead of 0000.
+    (
+        bytes.fromhex('bb971b02130a4400'),
+        1,
+        4,
+        bytes.fromhex('130a4400'),
+        bytes.fromhex('130a5400'),
+        'find-rsp: property uuid2 source node+4 -> node+5',
+    ),
+    # Same offset bug in the service encoder: its short-uuid branch reads
+    # node+4 instead of node+5. Fix so service entries carry uuid 37be too.
+    (
+        bytes.fromhex('bb121b02138c4400'),
+        1,
+        4,
+        bytes.fromhex('138c4400'),
+        bytes.fromhex('138c5400'),
+        'find-rsp: service uuid2 source node+4 -> node+5',
+    ),
 ]
 
 
@@ -85,14 +126,6 @@ def main(path):
         print(f'[ERROR] SDK library not found: {SDK_GLE}')
         return 1
     shutil.copyfile(SDK_GLE, path)
-
-    for redef in REDEFINES:
-        ret = subprocess.run([OBJCOPY, f'--redefine-sym={redef}', path, path],
-                             capture_output=True, text=True)
-        if ret.returncode != 0:
-            print(f'[ERROR] objcopy --redefine-sym {redef}: {ret.stderr.strip()}')
-            return 1
-        print(f'[OK] redefined {redef}')
 
     with open(path, 'rb') as f:
         data = f.read()
@@ -118,7 +151,7 @@ def main(path):
 
     with open(path, 'wb') as f:
         f.write(data)
-    print(f'[DONE] {path} patched (fresh copy from SDK + redefine + bytes)')
+    print(f'[DONE] {path} patched (fresh copy from SDK + bytes)')
     return 0
 
 

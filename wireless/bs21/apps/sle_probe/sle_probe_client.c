@@ -550,5 +550,4 @@ void probe_init(void) {
     sle_low_latency_rx_callbacks_t ll_cbk = {0};
     ll_cbk.low_latency_rx_cb = low_latency_rx_cb;
     sle_low_latency_rx_register_callbacks(&ll_cbk);
-
 }

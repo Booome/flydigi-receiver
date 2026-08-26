@@ -24,26 +24,6 @@
 #define DECOY_ENABLE_PAD 0
 
 /* *****************************************************************************
- * Patched-stack support
- *
- * libbth_gle.a (decoy copy) has check_property_info renamed to
- * decoy_check_property_info_orig via objcopy --redefine-sym. The stock
- * implementation rejects operate_indication > 0x100, which blocks the real
- * controller's 0x30d. This replacement keeps the pointer/uuid-len guards
- * but drops the cap, matching the Flydigi OEM stack behaviour.
- * *****************************************************************************/
-
-errcode_t decoy_check_property_info_orig(ssaps_property_info_t *prop) {
-    if (prop == NULL) {
-        return 0x80006008; /* POINTER_NULL */
-    }
-    if ((uint8_t)prop->uuid.len >= 17) {
-        return 0x80006003; /* PARAM_ERR */
-    }
-    return ERRCODE_SUCC;
-}
-
-/* *****************************************************************************
  * Attribute storage — mirrors the real controller layout (experiment N)
  * *****************************************************************************/
 
@@ -367,9 +347,8 @@ void decoy_services_add(void) {
     }
     osal_printk("%s svc0 @0x%02x\r\n", DECOY_LOG, h_svc0);
     /* 0x11: notify channel with CCC descriptor. Real controller oper =
-     * 0x30d (781). The stack's check_property_info caps it at 0x100, but
-     * the patched libbth_gle.a routes that check to
-     * decoy_check_property_info_orig below, which drops the cap. */
+     * 0x30d (781); the stack's check_property_info cap at 0x100 is lifted
+     * by the byte patch in tools/patch_gle_decoy.py. */
     uint16_t h_11 = 0;
     ret = decoy_add_property(h_svc0, 0x30D, SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11,
                              VAL11_LEN, &h_11);
