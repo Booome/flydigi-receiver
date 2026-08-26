@@ -1,0 +1,20 @@
+[probe] find type=3 (top-level)
+[probe] find_property: c=0 conn=0 hdl=0x11 oper=0x30d desc_cnt=1 types=[02]
+[probe]   prop uuid: len=2 37BE
+[probe] find_property: c=0 conn=0 hdl=0x12 oper=0x5 desc_cnt=0 types=[]
+[probe]   prop uuid: len=2 37BE
+[probe] find_property: c=0 conn=0 hdl=0x13 oper=0xd desc_cnt=0 types=[]
+[probe]   prop uuid: len=2 37BE
+[probe] find_property: c=0 conn=0 hdl=0x14 oper=0x2 desc_cnt=0 types=[]
+[probe]   prop uuid: len=2 37BE
+[probe] find_property: c=0 conn=0 hdl=0x16 oper=0x1 desc_cnt=0 types=[]
+[probe]   prop uuid: len=2 37BE
+[probe] find_property: c=0 conn=0 hdl=0x17 oper=0x1 desc_cnt=0 types=[]
+[probe]   prop uuid: len=2 37BE
+[probe] find_cmp: c=0 conn=0 status=0x0 type=3
+[probe] find type=0 (top-level)
+[probe] find_cmp: c=0 conn=0 status=0x0 type=0
+[probe] find type=1 (top-level)
+[probe] find_structure_cb: c=0 conn=0 status=0x0 start=0x10 end=0x14 UUID=37BE
+[probe] find_structure_cb: c=0 conn=0 status=0x0 start=0x15 end=0x18 UUID=37BE
+[probe] find_cmp: c=0 conn=0 status=0x0 type=1
