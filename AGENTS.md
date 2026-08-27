@@ -46,13 +46,11 @@ ws63flash --flash <模块串口> wireless/bs21/build/<app>/bs21_all_in_one.fwpkg
 uart-gpio pulse <控制串口> A <引脚> 0 2000
 ```
 
-抓取从 reset 起的完整 log（模块无法靠拉低 reset 停止，会反复 reset 打印多轮）：
+抓取从 reset 起的完整 log（推荐用脚本，自动连串口+延迟复位+落盘+时间戳）：
 ```bash
-stty -F <模块串口> 115200 raw -echo
-cat <模块串口> > /tmp/reset.log &
-uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 2000   # 复位，触发一轮启动 log
-# 等几秒后 kill 掉 cat
+python3 wireless/bs21/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
 ```
+- board_a/board_b 可选，至少选一个；--rst-a/--rst-b 对已选板复位；Ctrl+C 优雅保存
 
 reset 轮特征（靠内容区分每轮）：
 - 每轮从 `boot.` → `Flashboot Init!` 开始
