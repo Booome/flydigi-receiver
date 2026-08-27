@@ -3,6 +3,7 @@ set(COMPONENT_NAME "flydigi_decoy")
 set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/decoy_server.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/decoy_send_hook.c
     ${CMAKE_SOURCE_DIR}/src/bs21_util.c
 )
 

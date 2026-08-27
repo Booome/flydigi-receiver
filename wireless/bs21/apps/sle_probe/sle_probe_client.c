@@ -117,6 +117,16 @@ static void probe_log_frame(const char *tag, const ssapc_handle_value_t *data) {
     }
 }
 
+/* TEMP DEBUG: full raw find-rsp capture, paired with sle-central lib hook.
+ * Remove with the lib redefine after capture. */
+extern void ssapc_discovery_services_cfm(void *ctx, uint8_t *pdu, uint32_t len);
+
+void probe_dump_discovery_cfm(void *ctx, uint8_t *pdu, uint32_t len) {
+    osal_printk("%s RX len=%u: ", PROBE_LOG, len);
+    probe_print_hex(pdu, len);
+    ssapc_discovery_services_cfm(ctx, pdu, len);
+}
+
 /* *****************************************************************************
  * Scan / discovery callbacks — drive the chain forward
  * *****************************************************************************/
@@ -229,7 +239,7 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
             /* Already paired, proceed to exchange info */
             ssap_exchange_info_t info = {0};
             info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
-            info.version = 1;
+            info.version = 3;
             errcode_t ret = ssapc_exchange_info_req(g_client_id, g_conn_id, &info);
             if (ret != ERRCODE_SUCC) {
                 osal_printk("%s exchange_info req failed 0x%x\r\n", PROBE_LOG, ret);
@@ -254,7 +264,7 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
     }
     ssap_exchange_info_t info = {0};
     info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
-    info.version = 1;
+    info.version = 3;
     errcode_t ret = ssapc_exchange_info_req(g_client_id, g_conn_id, &info);
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s exchange_info req failed 0x%x\r\n", PROBE_LOG, ret);

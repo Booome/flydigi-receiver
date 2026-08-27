@@ -62,9 +62,60 @@ uuid_setu2(out, value):
 5. **回归必须覆盖线上字节**：`regress_find.py` 验证 probe 显示通过 ≠ 线上
    字节一致。需要时补充原始字节对比断言。
 
-## 当前待办
+## 根因与正确修复（已验证，2026-08-27）
 
-- 获取真机 find type=3 完整原始响应（0x17/0x18 的 value 未观测）
-- 让 decoy 每个属性注册与真机一致的完整 UUID（value = 103c 等）
-- 验证 encode 如何从注册 UUID 产生 value 字段（实验：注册 16B UUID 看 xx）
-- dongle 实测判断其用 UUID 还是 handle 访问属性
+机制（反汇编 `ssaps_find_items_by_uuid` + 实验确认）：
+
+- SSAP 条目节点结构：`handle@0(2B)` + `uuid@4(17B: len+16)`。
+- **encode 读取 uuid 字段的最后 2 字节（u14,u15）作为 find 响应条目的 `xx` 值**
+  （GATT 约定：16-bit UUID value 嵌在 128-bit UUID 末尾 2 字节）。
+- 注册 **2-byte uuid** `{len=2, b0, b1, 0…0}` 时，u14,u15 = 0 → `xx=0000`
+  （之前实验"注册每属性 uuid 仍 0000"正是此因）。
+- 真机注册 **full 16-byte uuid**，value 放在末尾 2 字节 → `xx≠0`。
+
+**正确修复（改真实数据，非显示）**：
+
+1. `decoy_add_property` 改为注册 **full 16-byte uuid**（`decoy_add_uuid16`），
+   value 写入 `uuid[14],uuid[15]`（LE：uuid[14]=low, uuid[15]=high）。
+   7 个属性分别注册 `103c/103b/1039/103a/103f/1040/102e`。
+2. `patch_gle_decoy.py` **移除**之前那串掩耳盗铃 patch：
+   - `uuid 16 -> 2`（强制 2B 条目，与"显示 len=2"强相关）
+   - `node+4 -> node+5`（把 xx 硬读成固定偏移的 37be，与真实注册值无关）
+   - 对应的 service 变体
+   - `C9 find-rsp PDU+2`（V10 计数位置 hack）
+   仅保留机制正确的 4 个 patch（handle 基址 0x10、oper 上限、register_server
+   cursor、cs_range 基址）。
+3. 重新加回 **`uuid 16 -> 2` 的"宽度切换"**（条目发 2 字节而非 16 字节，
+   以匹配真机 9 字节条目布局），但 **不改读偏移**——2-byte 分支本来就从
+   u14,u15 读 value，配合 full-16 注册即得到正确 xx。
+
+验证（抓 decoy 原始 RX 字节，对比 `real-controller-find-type3.hex`）：
+
+```
+DEC : 05 0b 00 87 11 00 10 3c 0d 03 00 00 01 02 12 00 10 3b 05 00 00 00 00 ...
+REAL: 05 03       11 00 10 3c 0d 03 00 00 01 02 12 00 10 3b 05 00 00 00 00 ...
+```
+
+从首个 `11 00` 起，**每个条目（handle + xx + oper + desc）逐字节完全一致**，
+`xx` = `103c/103b/1039/103a/103f/1040/102e` 与真机一致。基线见
+`docs/reference/decoy-find-type3-after-xxfix.hex`。
+
+**剩余差异（独立于本次 uuid 修复，属格式问题）**：
+
+- 头部：`05 0b 00 87`（V10 格式：0b=03|0x08 标志，87=带标志的 count）
+  vs 真机 `05 03`（主路径，无 count 字节）。
+- 条目数据已完全一致；仅响应**外层格式**（V10 计数式 vs 主路径）不同。
+- 该格式由 ATT/SSAP 响应编码层决定（BS21 SDK 默认 V10，真机用主路径），
+  需另做一层逆向定位后才能 patch。见下"待办"。
+
+## 待办
+
+- [x] 获取真机 find type=3 完整原始响应（已抓 `real-controller-find-type3.hex`）
+- [x] 让 decoy 注册 full-16 uuid，value=末尾 2 字节（103c 等）
+- [x] 验证 encode 读 u14/u15 作为 xx（实验 + 反汇编确认）
+- [x] decoy 条目字节与真机逐字节一致（基线 `decoy-find-type3-after-xxfix.hex`）
+- [ ] 响应外层格式对齐：V10(`05 0b 00 87`) → 主路径(`05 03`)，需定位 ATT/SSAP
+      响应编码层的格式/计数选择并 patch（独立于 uuid 修复）
+- [ ] 清理 probe 的 TEMP DEBUG RX dump hook（`probe_dump_discovery_cfm` 经
+      objcopy 重定义 `ssapc_discovery_services_cfm`，仅用于本次抓包验证）
+- [ ] dongle 实测：插官方 dongle 端到端确认

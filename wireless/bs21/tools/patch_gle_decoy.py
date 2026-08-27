@@ -76,46 +76,20 @@ PATCHES = [
         bytes.fromhex('4149'),
         'cs_range_allocate: first db handle 1 -> 0x10',
     ),
-    # Shift the discovery-item encoding start from PDU+3 to PDU+2 so the
-    # leading count byte lands in PDU[2] (matches the client V10 find-rsp
-    # parse: count at PDU[2], items from PDU[3], uuid len 2).
-    (
-        bytes.fromhex('38a12920130a39007514'),
-        1,
-        4,
-        bytes.fromhex('130a39007514'),
-        bytes.fromhex('130a29007914'),
-        'find-rsp: encode items from PDU+2 (V10 count position)',
-    ),
-    # Encode property entries with a 2-byte UUID instead of 16-byte.
+    # Emit a 2-byte uuid in each find-rsp item (matches the real controller's
+    # 9-byte item layout: hdl + xx + oper + desc_cnt) instead of the full
+    # 16-byte uuid. The 2-byte value is read from the LAST two bytes of the
+    # registered uuid (u14,u15), which is where decoy_add_uuid16 places it.
+    # NOTE: the older node+4 -> node+5 offset patch was a sham (it read a
+    # fixed offset so the value showed 37be regardless of registration); it is
+    # intentionally NOT re-added. See docs/ssap-uuid-false-fix.md.
     (
         bytes.fromhex('8280c14b894d1d'),
         1,
         2,
         bytes.fromhex('c14b'),
         bytes.fromhex('894b'),
-        'find-rsp: property entry uuid 16 -> 2',
-    ),
-    # The 2-byte-uuid branch reads the uuid from node+4 (wrong: the 16-byte
-    # branch reads node+5, which is where uuid[0] lives). Fix node+4 -> node+5
-    # so the short uuid encodes as 37be instead of 0000.
-    (
-        bytes.fromhex('bb971b02130a4400'),
-        1,
-        4,
-        bytes.fromhex('130a4400'),
-        bytes.fromhex('130a5400'),
-        'find-rsp: property uuid2 source node+4 -> node+5',
-    ),
-    # Same offset bug in the service encoder: its short-uuid branch reads
-    # node+4 instead of node+5. Fix so service entries carry uuid 37be too.
-    (
-        bytes.fromhex('bb121b02138c4400'),
-        1,
-        4,
-        bytes.fromhex('138c4400'),
-        bytes.fromhex('138c5400'),
-        'find-rsp: service uuid2 source node+4 -> node+5',
+        'find-rsp: property entry uuid 16 -> 2 (value read from u14/u15)',
     ),
 ]
 
