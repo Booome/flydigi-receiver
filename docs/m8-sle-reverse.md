@@ -332,3 +332,57 @@ start_scan() → seek_disable_cb → connect()
 | `ssapc_write_req()` | errcode_t | 失败打印 |
 | `enable_sle()` | errcode_t | 失败打印 |
 | `sle_remove_paired_remote_device()` | errcode_t | 失败打印（低风险） |
+
+## find 响应格式修复（decoy 镜像真机）
+
+### 目标
+让 decoy 发出的 SSAP find 响应与真机**逐字节一致**，使官方 dongle 能走完 discovery
+（之前 dongle 连上后约 3 秒断开）。
+
+### 真机与 decoy 的差异
+真机 find 响应头为 `05 03` + items；SDK decoy 发出 `05 0b 00 8x` + items
+（`0b`=format 字节，`00 8x`=sub-type 两字节，真机根本没有这 4 字节里的后 3 字节）。
+- type=3 (PROPERTY): 真机 `05 03 11 00 ...`（66B） vs decoy `05 0b 00 87 ...`（68B）
+- type=1 (PRIMARY_SERVICE): 真机 `05 03 10 00 ...`（16B） vs decoy `05 0b 00 82 ...`（18B）
+基线见 `docs/reference/real-controller-find-type1.hex` / `real-controller-find-type3.hex`。
+
+### 实现（运行时 hook，不改 SDK 二进制）
+- 文件 `wireless/bs21/apps/flydigi_decoy/decoy_send_hook.c`
+- 链接器 `--wrap=cs_pdu_tl_send`（写入 `build-decoy/rom_cb_flag.srp`），
+  在 SDK 真正发送 ATT PDU 前插桩
+- 匹配 `05 0b 00` + sub-type 高半字节 0x8（覆盖 `00 82`/`00 87` 等），命中后：
+  - `pb[p+1] = 0x03`（`0b` → `03`）
+  - `memmove(pb+p+2, pb+p+4, move_len)` 左移 2 字节删掉 `00 8x`
+  - `move_len` 按 sub-type 区分（type=1→14，type=3→64），**不可固定 64**——
+    type=1 响应缓冲较小，固定 64 会越界写崩（见下方坑）
+- 提交：`e206260` 已 merge 并 push 到 `origin/main`
+
+### 已验证
+- probe（board_a）侧 discovery complete；type=1 与 type=3 均收到 `05 03`，items 逐字节一致
+
+### ⚠️ 待办：帧长度仍多 2 字节
+发出的帧长度尚未修正：
+- type=1：发 18B（真机 16B）
+- type=3：发 68B（真机 66B）
+
+probe 解析宽松，接受带 2 字节残留的响应；**官方 dongle 仍需实测**确认是否接受。
+若 dongle 仍因长度断开，需补长度字段修正（见下方风险）。
+
+### 下一步
+1. 用官方 dongle 实测：断开 board_a、插 dongle，采集 board_b 看 discovery 是否完成
+2. 若失败 → 补长度修正：把长度 68→66 / 18→16
+
+### 技术风险与已踩的坑（anti-sham 实证）
+1. **只修 type=3 是掩耳盗铃式局部修复**：最初 hook 只匹配 `05 0b 00 87`（type=3），
+   type=1 仍发 `05 0b 00 82`。dontle 先做 primary-service discovery（type=1），
+   收到 `0b` 格式即在 type=1 阶段断开——根本走不到 type=3。已改为通用匹配
+   `05 0b 00 8x`，覆盖所有 find 响应。
+2. **memmove 长度越界崩**：固定 `memmove(...,64)` 对 type=1（缓冲小）越界写，
+   引发 hardfault / `exception:5`。必须按 sub-type 用精确长度（14/64）。
+3. **盲目搜长度字段会越界崩**：`find_len_field` 在 a0 前 4096 字节扫值 68，
+   命中远处一个**巧合等于 68** 的字并写入 66，越界踩坏内存崩溃。长度字段不在
+   a0/a1 直接可达范围（应为 SDK 内部动态计算，或位于二级指针指向的缓冲）。
+   若补长度修正，必须**限定搜索范围**（仅 pattern 附近、或二级指针且限制在
+   RAM 0x20000000–0x20030000 且不越界），绝不可整缓冲盲扫后直接写。
+4. `05`/`0b`/`87`/`82` **均非 SDK 字面立即数**，是运行时由结构体字段拼出，
+   故无法在 `.a` 里做常量 patch，只能运行时 hook。
