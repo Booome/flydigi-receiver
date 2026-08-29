@@ -17,7 +17,7 @@
 
 #define PROBE_LOG "[probe]"
 #define PROBE_SCAN_MS 5000
-#define PROBE_MTU_SIZE_DEFAULT 520
+#define PROBE_MTU_SIZE_DEFAULT 300
 
 /* *****************************************************************************
  * Global state
@@ -47,14 +47,12 @@ static uint8_t g_desc_cnt[8];
 
 /* SSAP find sequence: top-level types first, then per-service sub-elements. */
 static const uint8_t g_find_types[] = {
-    SSAP_FIND_TYPE_PROPERTY,
     SSAP_FIND_TYPE_SERVICE_STRUCTURE,
-    SSAP_FIND_TYPE_PRIMARY_SERVICE,
 };
 #define FIND_TYPE_COUNT (sizeof(g_find_types) / sizeof(g_find_types[0]))
 static uint8_t g_find_idx = 0;
 
-/* Sub-element types queried per primary service (require UUID context). */
+/* Sub-element types queried per primary service (unused in single-shot mode) */
 static const uint8_t g_sub_types[] = {
     SSAP_FIND_TYPE_REFERENCE_SERVICE,
     SSAP_FIND_TYPE_METHOD,
@@ -69,9 +67,36 @@ static uint8_t g_primary_cnt = 0;
 static uint8_t g_service_idx = 0;
 static uint8_t g_sub_idx = 0;
 
+/* Phase 3: read all discovered property values. */
+static uint8_t g_read_idx = 0;
+static void start_next_read(void);
+
 /* The find query currently in flight (logged by callbacks, used by
  * find_structure_cb to decide whether to record service entries). */
 static uint8_t g_cur_find_type = 0xFF;
+
+/* Raw UUIDs parsed from the discovery PDU (indexed by start_hdl). The SDK's
+ * ssapc_find_structure_cb mis-reads the UUID offset for PRIMARY_SERVICE
+ * (returns 37BE = descriptor UUID instead of the real service UUID), so we
+ * parse the correct UUID from the raw PDU and look it up by handle. */
+#define RAW_UUID_MAX 16
+static struct {
+    uint16_t start_hdl;
+    uint16_t end_hdl;
+    uint8_t uuid[2];
+} g_raw_uuids[RAW_UUID_MAX];
+static uint8_t g_raw_uuid_cnt = 0;
+
+static const uint8_t *raw_uuid_lookup(uint16_t start_hdl, uint16_t *out_len) {
+    for (uint8_t i = 0; i < g_raw_uuid_cnt; i++) {
+        if (g_raw_uuids[i].start_hdl == start_hdl) {
+            *out_len = 2;
+            return g_raw_uuids[i].uuid;
+        }
+    }
+    *out_len = 0;
+    return NULL;
+}
 
 /* Validate client_id and conn_id in SSAP callbacks. */
 #define CB_CHK()                                                                                   \
@@ -124,6 +149,20 @@ extern void ssapc_discovery_services_cfm(void *ctx, uint8_t *pdu, uint32_t len);
 void probe_dump_discovery_cfm(void *ctx, uint8_t *pdu, uint32_t len) {
     osal_printk("%s RX len=%u: ", PROBE_LOG, len);
     probe_print_hex(pdu, len);
+    g_raw_uuid_cnt = 0;
+    if (pdu != NULL && len >= 8 && pdu[0] == 0x05 && pdu[1] == 0x03) {
+        uint32_t off = 2;
+        while (off + 6 <= len && g_raw_uuid_cnt < RAW_UUID_MAX) {
+            uint16_t sh = (uint16_t)(pdu[off] | (pdu[off + 1] << 8));
+            uint16_t eh = (uint16_t)(pdu[off + 2] | (pdu[off + 3] << 8));
+            g_raw_uuids[g_raw_uuid_cnt].start_hdl = sh;
+            g_raw_uuids[g_raw_uuid_cnt].end_hdl = eh;
+            g_raw_uuids[g_raw_uuid_cnt].uuid[0] = pdu[off + 4];
+            g_raw_uuids[g_raw_uuid_cnt].uuid[1] = pdu[off + 5];
+            g_raw_uuid_cnt++;
+            off += 7;
+        }
+    }
     ssapc_discovery_services_cfm(ctx, pdu, len);
 }
 
@@ -239,7 +278,7 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
             /* Already paired, proceed to exchange info */
             ssap_exchange_info_t info = {0};
             info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
-            info.version = 3;
+            info.version = 0x0101;
             errcode_t ret = ssapc_exchange_info_req(g_client_id, g_conn_id, &info);
             if (ret != ERRCODE_SUCC) {
                 osal_printk("%s exchange_info req failed 0x%x\r\n", PROBE_LOG, ret);
@@ -264,7 +303,7 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
     }
     ssap_exchange_info_t info = {0};
     info.mtu_size = PROBE_MTU_SIZE_DEFAULT;
-    info.version = 3;
+    info.version = 0x0101;
     errcode_t ret = ssapc_exchange_info_req(g_client_id, g_conn_id, &info);
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s exchange_info req failed 0x%x\r\n", PROBE_LOG, ret);
@@ -302,9 +341,10 @@ static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
     CB_CHK();
     if (status != ERRCODE_SUCC || service == NULL)
         return;
-    osal_printk("%s find_structure_cb: c=%u conn=%u status=0x%x start=0x%x "
+    osal_printk("%s find_structure_cb: c=%u conn=%u status=0x%x cur_type=%u start=0x%x "
                 "end=0x%x",
-                PROBE_LOG, client_id, conn_id, status, service->start_hdl, service->end_hdl);
+                PROBE_LOG, client_id, conn_id, status, g_cur_find_type, service->start_hdl,
+                service->end_hdl);
     if (service->uuid.len > 0) {
         osal_printk(" UUID=");
         for (uint8_t i = 0; i < service->uuid.len && i < SLE_UUID_LEN; i++) {
@@ -312,15 +352,30 @@ static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
         }
     }
     osal_printk("\r\n");
-    if (g_cur_find_type == SSAP_FIND_TYPE_PRIMARY_SERVICE && g_primary_cnt < MAX_SERVICES &&
-        service->uuid.len > 0) {
+    if (g_cur_find_type == SSAP_FIND_TYPE_PRIMARY_SERVICE && g_primary_cnt < MAX_SERVICES) {
+        uint16_t raw_len = 0;
+        const uint8_t *raw_uuid = raw_uuid_lookup(service->start_hdl, &raw_len);
         ssapc_find_service_result_t *dst = &g_primary_services[g_primary_cnt];
         dst->start_hdl = service->start_hdl;
         dst->end_hdl = service->end_hdl;
-        dst->uuid.len = service->uuid.len;
-        for (uint8_t i = 0; i < service->uuid.len && i < SLE_UUID_LEN; i++) {
-            dst->uuid.uuid[i] = service->uuid.uuid[i];
+        osal_printk("%s   raw_uuid lookup sh=0x%x cnt=%u found=%u len=%u\r\n", PROBE_LOG,
+                    service->start_hdl, g_raw_uuid_cnt, (unsigned)(raw_uuid != NULL), raw_len);
+        if (raw_uuid != NULL && raw_len > 0) {
+            dst->uuid.len = raw_len;
+            for (uint8_t i = 0; i < raw_len && i < SLE_UUID_LEN; i++) {
+                dst->uuid.uuid[i] = raw_uuid[i];
+            }
+        } else {
+            dst->uuid.len = service->uuid.len;
+            for (uint8_t i = 0; i < service->uuid.len && i < SLE_UUID_LEN; i++) {
+                dst->uuid.uuid[i] = service->uuid.uuid[i];
+            }
         }
+        osal_printk("%s   recorded UUID=", PROBE_LOG);
+        for (uint8_t i = 0; i < dst->uuid.len && i < SLE_UUID_LEN; i++) {
+            osal_printk("%02X", dst->uuid.uuid[i]);
+        }
+        osal_printk("\r\n");
         g_primary_cnt++;
     }
 }
@@ -393,11 +448,24 @@ static void ssapc_read_cfm_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_
     if (status != ERRCODE_SUCC || read_data == NULL) {
         osal_printk("%s read_cfm: c=%u conn=%u fail status=0x%x\r\n", PROBE_LOG, client_id, conn_id,
                     status);
+        g_read_idx++;
+        start_next_read();
         return;
     }
-    osal_printk("%s read_cfm: c=%u conn=%u handle=0x%x type=0x%02x len=%u ", PROBE_LOG, client_id,
-                conn_id, read_data->handle, read_data->type, read_data->data_len);
-    probe_print_hex(read_data->data, read_data->data_len);
+    osal_printk("%s read hdl=0x%x len=%u: ", PROBE_LOG, read_data->handle, read_data->data_len);
+    if (read_data->data_len > 3 && read_data->data[0] == 0x5a && read_data->data[1] == 0xa5) {
+        if (read_data->data[2] == 0xef) {
+            osal_printk("INPUT_STREAM ");
+            probe_print_hex(read_data->data, read_data->data_len);
+        } else {
+            osal_printk("ACK cmd=0x%02x ", read_data->data[2]);
+            probe_print_hex(read_data->data, read_data->data_len);
+        }
+    } else {
+        probe_print_hex(read_data->data, read_data->data_len);
+    }
+    g_read_idx++;
+    start_next_read();
 }
 
 static void ssapc_notification_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data,
@@ -464,68 +532,48 @@ static void start_next_find(void) {
     ssapc_find_structure_param_t fp = {0};
     errcode_t ret;
 
-    /* Phase 1: top-level types. Record the type and advance the index
-     * atomically BEFORE issuing the request: on success the index already
-     * points at the next type (the real cmp_cb re-enters this function),
-     * on rejection the loop simply tries the next one. */
-    while (g_find_idx < FIND_TYPE_COUNT) {
-        g_cur_find_type = g_find_types[g_find_idx];
-        g_find_idx++;
-        fp.type = g_cur_find_type;
-        fp.start_hdl = 1;
-        fp.end_hdl = 0xFFFF;
-        ret = ssapc_find_structure(g_client_id, g_conn_id, &fp);
-        if (ret == ERRCODE_SUCC) {
-            osal_printk("%s find type=%u (top-level)\r\n", PROBE_LOG, fp.type);
-            return; /* In flight, wait for the real cmp_cb */
-        }
-        osal_printk("%s find type=%u REJECTED err=0x%x (SDK)\r\n", PROBE_LOG, fp.type, ret);
+    /* MODIFIED: Send only ONE FIND_STRUCTURE_REQ (PROPERTY type) after pair complete.
+       Do NOT continue to other find types or read phase. */
+    if (g_find_idx > 0) {
+        osal_printk("%s find phase complete (single-shot mode)\r\n", PROBE_LOG);
+        return;
     }
+    g_cur_find_type = g_find_types[g_find_idx];
+    g_find_idx++;
+    fp.type = g_cur_find_type;
+    fp.start_hdl = 0;
+    fp.end_hdl = 0;
+    ret = ssapc_find_structure(g_client_id, g_conn_id, &fp);
+    if (ret == ERRCODE_SUCC) {
+        osal_printk("%s find type=%u (single-shot, will stop after response)\r\n", PROBE_LOG,
+                    fp.type);
+        return;
+    }
+    osal_printk("%s find type=%u REJECTED err=0x%x (SDK)\r\n", PROBE_LOG, fp.type, ret);
+}
 
-    /* Phase 2: per-service sub-element queries with UUID context. */
-    while (1) {
-        if (g_service_idx >= g_primary_cnt) {
-            /* Mirror the official dongle: right after discovery completes,
-             * switch the link to the high-rate profile. The controller may
-             * stay idle until this happens. */
-            sle_connection_param_update_t params = {0};
-            params.conn_id = g_conn_id;
-            params.interval_min = 0x64;
-            params.interval_max = 0x64;
-            params.max_latency = 0x3;
-            params.supervision_timeout = 0x1F4;
-            ret = sle_update_connect_param(&params);
-            if (ret != ERRCODE_SUCC) {
-                osal_printk("%s update_connect_param failed 0x%x\r\n", PROBE_LOG, ret);
-            } else {
-                osal_printk("%s update_connect_param: interval=0x64 latency=3 timeout=0x1F4\r\n",
-                            PROBE_LOG);
-            }
-            osal_printk("%s discovery complete\r\n", PROBE_LOG);
-            return;
+static void start_next_read(void) {
+    if (g_read_idx >= g_all_cnt) {
+        sle_connection_param_update_t params = {0};
+        params.conn_id = g_conn_id;
+        params.interval_min = 0x64;
+        params.interval_max = 0x64;
+        params.max_latency = 0x3;
+        params.supervision_timeout = 0x1F4;
+        errcode_t ret = sle_update_connect_param(&params);
+        if (ret != ERRCODE_SUCC) {
+            osal_printk("%s update_connect_param failed 0x%x\r\n", PROBE_LOG, ret);
         }
-        if (g_sub_idx >= SUB_TYPE_COUNT) {
-            g_service_idx++;
-            g_sub_idx = 0;
-            continue;
-        }
-        ssapc_find_service_result_t *svc = &g_primary_services[g_service_idx];
-        g_cur_find_type = g_sub_types[g_sub_idx];
-        g_sub_idx++;
-        fp.type = g_cur_find_type;
-        fp.start_hdl = svc->start_hdl;
-        fp.end_hdl = svc->end_hdl;
-        fp.uuid = svc->uuid;
-        ret = ssapc_find_structure(g_client_id, g_conn_id, &fp);
-        if (ret == ERRCODE_SUCC) {
-            osal_printk("%s find type=%u for svc[%u] uuid=", PROBE_LOG, fp.type, g_service_idx);
-            for (uint8_t i = 0; i < svc->uuid.len && i < SLE_UUID_LEN; i++) {
-                osal_printk("%02X", svc->uuid.uuid[i]);
-            }
-            osal_printk("\r\n");
-            return; /* In flight, wait for the real cmp_cb */
-        }
-        osal_printk("%s find type=%u REJECTED err=0x%x (SDK)\r\n", PROBE_LOG, fp.type, ret);
+        osal_printk("%s discovery complete (%u attrs)\r\n", PROBE_LOG, g_all_cnt);
+        return;
+    }
+    uint16_t hdl = g_all_hdls[g_read_idx];
+    errcode_t ret = ssapc_read_req(g_client_id, g_conn_id, hdl, 0);
+    if (ret != ERRCODE_SUCC) {
+        osal_printk("%s read hdl=0x%x REJECTED 0x%x\r\n", PROBE_LOG, hdl, ret);
+        g_read_idx++;
+        start_next_read();
+        return;
     }
 }
 

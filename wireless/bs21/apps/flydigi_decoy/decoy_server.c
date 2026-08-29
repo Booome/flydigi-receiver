@@ -93,6 +93,11 @@ static attr_entry_t *decoy_find_attr(uint16_t handle) {
  * uuid_val is little-endian (e.g. 0x3c10 -> uuid[14]=0x10, uuid[15]=0x3c). */
 static errcode_t decoy_add_uuid16(sle_uuid_t *uuid, uint16_t uuid_val) {
     uuid->len = 16;
+    static const uint8_t base[14] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+                                     0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B};
+    for (uint8_t i = 0; i < 14; i++) {
+        uuid->uuid[i] = base[i];
+    }
     uuid->uuid[14] = uuid_val & 0xFF;
     uuid->uuid[15] = (uuid_val >> 8) & 0xFF;
     return ERRCODE_SUCC;
@@ -430,8 +435,7 @@ void decoy_services_add(void) {
 
     /* Service 1: device information. Real controller primary-service uuids
      * are 0x0b06 (svc0) and 0x0906 (svc1); register them as 16-byte so the
-     * find-rsp framer emits the correct 2-byte value from uuid[14]/[15].
-     * The earlier 0x37BE guess emitted 0x0000 for primary-service discovery. */
+     * find-rsp framer emits the correct 2-byte value from uuid[14]/[15]. */
     uint16_t h_svc1 = 0;
     ret = decoy_add_uuid16(&svc_uuid, 0x0906);
     if (ret != ERRCODE_SUCC) {

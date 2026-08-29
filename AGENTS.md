@@ -9,9 +9,20 @@
 
 详细分析见：
 - `docs/sle-analysis.md` - SLE 协议分析与逆向可行性评估
+- `docs/sle-ssap-protocol-findings.md` - SLE/SSAP 协议分析发现（0x16 帧、PDU 格式、Hook 点）
 - `docs/bs21-development.md` - BS21 开发板、SDK 与开发路线图
 - `docs/controller-modes.md` - 手柄模式与协议详解
 - `docs/history.md` - 项目历史与技术演进记录
+
+### 参考开源仓库
+
+- **OpenHarmony Nearlink Service**（星闪开源协议栈）
+  - 主仓库: https://gitcode.com/openharmony/communication_nearlink_service
+  - 镜像: https://github.com/openharmony/communication_nearlink_service
+  - 本地路径: `~/workspace/communication_nearlink_service`
+  - 内容: SSAP 协议、SLE 广播/扫描/连接管理、属性读写、通知机制
+  - 架构: 应用层 → 框架层 → 系统服务层 → 驱动层(DLI)
+  - 用途: 作为 SLE 协议实现的参考，理解 SSAP 协议细节和状态机
 
 ## 平台
 
@@ -76,6 +87,20 @@ bash wireless/bs21/tools/notify.sh
 # 然后打印："请连接手柄并进入 2.4GHz SLE 配对模式"
 ```
 
+#### 硬件连接切换规则（重要）
+
+当需要**切换硬件连接配置**时（例如从"board_a + board_b 互测"切换到"插真机
+dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播放提示音，然后等待
+用户完成操作并确认，再继续执行命令**。
+
+不要假设硬件还在之前的配置状态。每次涉及物理连接变更，都要：
+1. 播放提示音
+2. 明确说明需要用户做什么（哪块板、拔还是插、操作哪个接口）
+3. 等用户回复"好了"/"完成"后再跑命令
+
+反例（禁止）：在 board_a + board_b 互测进行中，突然要求用户插真机 dongle 抓包，
+却不说明切换原因和操作步骤。
+
 ## 手柄硬件信息
 
 - 型号：飞智八爪鱼5 (Flydigi Apex 5)
@@ -101,6 +126,17 @@ python3 wireless/bs21/tools/burn.py board_a wireless/bs21/build-probe/bs21_all_i
 
 用途：decoy 改动后先用 probe 本地读回属性表验证呈现效果（handle+type+值），
 无需消耗 dongle 测试轮次；最终再插官方 dongle 做端到端确认。
+
+#### 已知 SDK 陷阱（probe 侧）
+
+- `ssapc_find_structure_cb` / `ssapc_find_property_cbk` 返回的 UUID 是错的：
+  总是 37BE（=0xBE33，描述符 UUID），不是真实的 UUID。SDK 解析器读错了偏移。
+  绕过方法：在 `probe_dump_discovery_cfm` 里从原始 PDU 解析 UUID，查表替换。
+- `ssapc_read_req` 签名是 `(client_id, conn_id, handle, type)`，不是结构体指针。
+- SDK 拒绝 find type 2/4/5（REFERENCE_SERVICE/METHOD/EVENT）err=0x7，即使 UUID
+  正确也不支持。核心发现（type 0/1/3）+ 读取属性值不受影响。
+- 防掩耳铁律：probe 的 RX 原始 PDU（`RX len=N:` 行）= 数据真相；SDK 回调里的
+  UUID/start_hdl 等 = 观察者侧值，可能不等于真相。双侧 diff 以原始 PDU 为准。
 
 ## 开发规范
 

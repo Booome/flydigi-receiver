@@ -114,8 +114,170 @@ BS21 无任何 API/配置可改，只能字节补丁。
 | redefine + 应用实现 | 已删除 | 从未生效（local 符号陷阱） |
 | UUID 短格式 | 记录为已知差异 | V1.0 协议代差，不强求 |
 
-## 7. 后续
+## 7. 协议版本与 Flydigi 协议栈推断
+
+### 7.1 设备类型检测机制
+
+开源协议栈通过 `CM_SetDeviceLinkDeviceType` 检测设备类型：
+
+```c
+if ((hasVerBit) || (link->protocolVersion != CM_INVALID_VERSION)) {
+    link->devType = CM_DEVTYPE_NEW;  // 支持 version 交换
+    return;
+}
+link->devType = CM_DEVTYPE_OLD;  // 不支持 version 交换
+```
+
+- **CM_DEVTYPE_OLD**：不支持 version 交换的设备 → 使用 V10 格式 (`05 0b 00 87`)
+- **CM_DEVTYPE_NEW**：支持 version 交换的设备 → 使用主路径格式 (`05 03`)
+
+### 7.2 Flydigi 协议栈推断
+
+**观察到的现象**：
+- 真机响应格式：`05 03`（主路径，无 count 字节）
+- BS21 SDK 默认：`05 0b 00 87`（V10 格式）
+
+**推断**：
+Flydigi 可能使用以下协议栈之一：
+
+1. **旧版海思 SDK**：早期版本默认使用主路径格式（无 V10 变体）
+2. **定制协议栈**：基于 SSAP 早期规范，不支持 version 交换
+3. **设备类型被识别为 OLD**：即使使用新 SDK，如果设备不支持 version 交换，也会回退到 V10 格式
+
+### 7.3 协议栈版本对比
+
+| 协议栈 | Find 响应格式 | 设备类型检测 | 说明 |
+|--------|--------------|-------------|------|
+| 开源最新版 | 自动切换 | 支持 | 根据对端设备类型自动选择 V10/主路径 |
+| BS21 SDK | 仅 V10 | 不支持 | 精简版，固定 V10 格式 |
+| Flydigi（推断） | 仅主路径 | 不支持 | 可能使用旧版 SDK 或定制栈 |
+
+### 7.4 SDK 对比分析
+
+#### 7.4.1 星闪 SDK 全景
+
+| SDK | 芯片平台 | SLE 支持 | CM_DEVTYPE | 说明 |
+|-----|----------|----------|------------|------|
+| **fbb_bs2x** | BS21 (Hi2821) | ✅ | ❌ | 海思官方 BS2x SDK |
+| **fbb_ws53** | WS53 | ✅ | ❌ | 海思官方 WS53 SDK |
+| **fbb_ws63** | WS63 | ✅ | ❌ | 海思官方 WS63 SDK |
+| **hs-fbb** | 未知 | ✅ | ❌ | 海思内部 SDK |
+| **开源栈** | 通用 | ✅ | ✅ | OpenHarmony 开源实现 |
+| **Ai-BS21_SDK** | BS21 | ✅ | ❌ | 安信可基于 fbb_bs2x |
+
+**关键发现**：
+- **所有官方 SDK 都没有**设备类型检测（CM_DEVTYPE_OLD/NEW）
+- 只有开源栈有完整的设备类型检测和自动格式切换
+- 开源栈是**唯一**实现完整版 SSAP 协议的实现
+
+#### 7.4.2 版本处理函数对比
+
+| 功能 | BS21 SDK | 开源栈 |
+|------|----------|--------|
+| 读取本地版本 | `dm_gle_get_local_version` | ✅ |
+| 读取对端版本 | `gle_read_remote_version_cfm` | ✅ |
+| 版本解析 | `version_unpack` | ✅ |
+| **设备类型判定** | ❌ | `CM_SetDeviceLinkDeviceType` |
+| **设备类型获取** | ❌ | `CM_GetDeviceLinkDeviceType` |
+| **格式自动切换** | ❌ | ✅ |
+
+#### 7.4.3 关键差异：设备类型检测
+
+开源栈的设备类型检测逻辑：
+
+```c
+void CM_SetDeviceLinkDeviceType(uint16_t connId, bool hasVerBit)
+{
+    // ...
+    if ((hasVerBit) || (link->protocolVersion != CM_INVALID_VERSION)) {
+        /* 收到对端version响应 */
+        link->devType = CM_DEVTYPE_NEW;  // 使用主路径格式
+        return;
+    }
+    link->devType = CM_DEVTYPE_OLD;  // 使用 V10 格式
+}
+```
+
+**BS21 SDK 没有这个逻辑**：
+- 只能读取对端版本
+- 不能根据版本判定设备类型
+- 行为固定（始终 V10 格式）
+
+#### 7.4.4 Flydigi 协议栈推断
+
+基于 SDK 对比，Flydigi 可能使用：
+
+1. **定制版 HiSilicon SDK**：
+   - 基于 fbb_bs2x，但修改了默认行为
+   - 不使用 V10 格式，直接使用主路径
+   - 这是最可能的情况
+
+2. **旧版 HiSilicon SDK**：
+   - 早期版本可能没有 V10 格式
+   - 只有主路径格式（`05 03`）
+
+3. **完全定制协议栈**：
+   - 不使用海思 SDK
+   - 自行实现 SSAP 协议
+
+#### 7.4.5 为什么 BS21 SDK 默认 V10 格式？
+
+BS21 SDK 的默认行为是 V10 格式（`05 0b 00 87`），而真机使用主路径（`05 03`）。
+这可能是因为：
+- BS21 SDK 是**精简版**，只实现了 V10 格式
+- 完整版 SDK（如开源栈）有设备类型检测，可以自动切换
+- Flydigi 使用完整版 SDK 或定制版，所以使用主路径
+
+#### 7.4.6 WS63/WS65 可能性分析
+
+**SDK 对比**：
+
+| SDK | 设备类型检测 | 版本函数 | 说明 |
+|-----|-------------|----------|------|
+| fbb_bs2x | ❌ | `version_unpack`, `gle_read_remote_version_cfm` | BS21 平台 |
+| fbb_ws63 | ❌ | `version_unpack`, `gle_device_link_set_exchange_version` | WS63 平台 |
+| fbb_ws53 | ❌ | 类似 | WS53 平台 |
+| 开源栈 | ✅ | `CM_SetDeviceLinkDeviceType` | 通用 |
+
+**关键发现**：
+1. **WS63 SDK 也没有**设备类型检测（CM_DEVTYPE_OLD/NEW）
+2. WS63 有额外的版本函数：`gle_device_link_set_exchange_version`, `get_version_capability`
+3. **未找到 WS65** 相关 SDK 或代码
+4. 所有官方 SDK 都是精简版，行为固定
+
+**结论**：
+- **无法通过 SDK 行为区分 WS63/BS21**：两者都没有设备类型检测
+- **无法确定控制器芯片**：需要固件 binary 才能确认
+- **控制器行为**（主路径格式）无法通过标准 SDK 复现
+- 控制器可能使用：定制版 SDK、完整版协议栈、或完全不同的实现
+
+#### 7.4.7 反汇编分析结论
+
+**BS21 SDK 对象文件分析**（`libbth_gle.a`）：
+- 找到版本处理函数：`version_unpack`, `gle_read_remote_version_cfm`
+- **未找到**设备类型检测：`CM_DEVTYPE_OLD/NEW`, `CM_SetDeviceLinkDeviceType`
+- **结论**：BS21 SDK 缺少设备类型检测机制
+
+**WS63 SDK 对象文件分析**：
+- 找到版本处理函数：`version_unpack`, `gle_device_link_set_exchange_version`
+- **未找到**设备类型检测：`CM_DEVTYPE_OLD/NEW`
+- **结论**：WS63 SDK 也缺少设备类型检测机制
+
+**与真机行为对比**：
+- 真机使用主路径格式（`05 03`）→ 行为类似 `CM_DEVTYPE_NEW`
+- BS21/WS63 SDK 使用 V10 格式（`05 0b 00 87`）→ 行为类似 `CM_DEVTYPE_OLD`
+- **差异根源**：官方 SDK 都没有设备类型检测，无法切换到主路径
+
+### 7.5 验证方向
+
+1. **配对阶段抓包**：观察 version 交换过程，确认 Flydigi 是否发送 version 响应
+2. **SDK 版本指纹**：对比不同版本 HiSilicon SDK 的默认行为
+3. **开源栈行为**：用开源协议栈与 Flydigi 配对，观察格式选择
+4. **逆向真机固件**：如果可能，dump 真机固件分析协议栈实现
+
+## 8. 后续
 
 - 完善 patch_gle_decoy.py 健壮性（SDK 路径参数化、dry-run、版本指纹）
 - 如需 UUID 短格式：以开源 `SendFindPropertyRspV10` 布局为参照做精确复刻，
   单独评估后再动
+- **验证 Flydigi 协议栈版本**：通过配对阶段抓包确认设备类型检测行为
