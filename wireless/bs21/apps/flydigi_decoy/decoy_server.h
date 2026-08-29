@@ -14,4 +14,8 @@ void decoy_on_disconnected(void);
 /* Register low-latency EM callbacks. Call BEFORE enable_sle(). */
 void decoy_low_latency_init(void);
 
+/* Mark connection/pairing state for RX/TX logging. Called from conn callbacks. */
+void decoy_mark_connected(void);
+void decoy_mark_pair_complete(void);
+
 #endif /* FLYDIGI_DECOY_SERVER_H */

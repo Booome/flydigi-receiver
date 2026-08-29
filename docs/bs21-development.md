@@ -461,6 +461,19 @@ sle_pair_remote_device(&addr);     // 发起配对
 
 ## 五、参考资料
 
+### 5.1 开源参考实现
+
+- **OpenHarmony Nearlink Service**（星闪开源协议栈）
+  - 主仓库: https://gitcode.com/openharmony/communication_nearlink_service
+  - 镜像: https://github.com/openharmony/communication_nearlink_service
+  - 本地路径: `~/workspace/communication_nearlink_service`
+  - 内容: SSAP 协议实现、SLE 广播/扫描/连接管理、属性读写、通知机制
+  - 架构: 应用层 → 框架层 → 系统服务层 → 驱动层(DLI)
+  - 用途: 作为 SLE 协议实现的参考，理解 SSAP 协议细节和状态机
+  - 注意: 运行在 OpenHarmony 标准系统上，需适配到 BS21 裸机环境
+
+### 5.2 硬件与 SDK
+
 - [Ai-BS21-32S-Kit 规格书](https://aithinker-static.oss-cn-shenzhen.aliyuncs.com/docs/Specification/Ai-BS21-32S-Kit_V1.1.0_%20Specification_CN.pdf)
 - [Ai-BS21_SDK (安信可)](https://github.com/Ai-Thinker-Open/Ai-BS21_SDK)
 - [ws63flash (Linux 烧录工具)](https://github.com/goodspeed34/ws63flash)

@@ -53,8 +53,11 @@
 | BP1Y303-D4 | BT/BLE | 蓝牙 (BR/EDR) |
 | P352903N1 | 2.4G | **星闪 SLE 1.0** (NearLink) |
 
-> P352903N1 为飞智定制编号，无公开资料。但产品页明确标注 "NearLink Technology"，
-> 且 FCC 认证文件中频率范围 (2402-2480 MHz) 与星闪 SLE 一致。
+> P352903N1 为飞智定制编号，无公开资料。产品页标注 "NearLink Technology with 1000Hz Ultra-High Polling Rate"，
+> FCC 认证文件中频率范围 (2402-2480 MHz) 与星闪 SLE 一致。
+>
+> **注意**：P352903N1 的具体芯片型号无法从公开渠道验证。飞智可能使用海思 Hi2821 (BS21E)
+> 的定制 ROM 版本或其他海思 SLE 芯片。由于是定制 OEM 编号，无公开 datasheet。
 
 ### 连接方式
 - **2.4G无线**：通过飞智专用USB接收器

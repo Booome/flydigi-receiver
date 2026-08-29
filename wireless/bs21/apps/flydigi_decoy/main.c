@@ -135,6 +135,7 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
                 pair_state, disc_reason);
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("%s *** dongle connected ***\r\n", DECOY_LOG);
+        decoy_mark_connected();
     } else if (conn_state == SLE_ACB_STATE_DISCONNECTED) {
         if (disc_reason != SLE_DISCONNECT_BY_LOCAL) {
             osal_task *t =
@@ -148,6 +149,9 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
 
 static void decoy_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status) {
     osal_printk("%s pair complete: conn=%u status=0x%x\r\n", DECOY_LOG, conn_id, status);
+    if (status == ERRCODE_SUCC) {
+        decoy_mark_pair_complete();
+    }
 }
 
 static void decoy_param_update_req_cb(uint16_t conn_id, errcode_t status,
