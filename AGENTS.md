@@ -4,7 +4,7 @@
 
 手柄使用**星闪 SLE 1.0 (NearLink)** 进行 2.4GHz 无线通信，正在开发 SLE 接收器。
 当前两个开发板平台：
-- **Ai-BS21-32S-Kit**（BS21，2 块）— 现有 SLE 接收器固件与 M8 逆向实验平台
+- **Ai-BS21-32S-Kit**（BS21，2 块）— 因 SDK 限制已挂起，后期可能废弃
 - **BearPi-Pico H3863**（WS63）— **新主平台**（替代 BS21，性能更强：240MHz/606KB SRAM/Wi-Fi 6），
   开发环境已打通（Hello World 验证），SLE 接收器功能待迁移
 
@@ -30,53 +30,55 @@
 
 ## 平台
 
-### BS21 开发板（已到货）
+### BS21 开发板（已挂起）
 
-Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
-- SLE 1.0 + BLE 5.4 + USB 2.0
-- 双 Type-C：USB1 原生 USB 2.0（HID/CDC），USB2 CH340 串口（烧录/调试）
-- SDK: 安信可 **Ai-BS21_SDK**（`~/.local/Ai-BS21_SDK`），只读引用模式（SDK 不修改源码）
-- target: `bs21-n1100-rcu`（SLE-only，512KB flash）
-- 编译：`cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build && cmake --build wireless/ai-bs21-32s-kit/build -j`（一次性前置 `wireless/ai-bs21-32s-kit/scripts/setup-sdk.sh`）
-- 开发环境搭建和路线图见 `docs/bs21-development.md`
+详见 `wireless/ai-bs21-32S-Kit/README.md`（芯片规格、SDK、构建、烧录、双模块逆向实验、SDK 陷阱）。
 
-#### 烧录与调试（统一用共享工具，禁止裸跑 ws63flash / screen）
+### BearPi-Pico H3863 开发板（新主平台）
+
+详见 `wireless/bearpi-pico-h3863/README.md`（芯片规格、SDK、多 app 结构、构建、烧录）。
+
+## 烧录与调试（共享工具，两个平台通用）
+
+> **禁止裸跑 ws63flash / screen**，统一用共享工具。
 
 串口/复位配置记录在项目根 `.env`（不入库，模板见 `.env.example`），统一用
 `/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，勿硬编码）。复位 GPIO 由控制串口
-（STM32）提供。两个平台（BS21 / H3863）共用同一套 `BOARD_*` 定义，切换平台只需
-换 fwpkg，无需改端口。
+（STM32）提供。两个平台共用同一套 `BOARD_*` 定义，切换平台只需换 fwpkg，无需改端口。
 
-**共享工具**（`wireless/tools/`，两个平台通用）：
+**共享工具**（`wireless/tools/`）：
 - `burn.py` — 自动烧录（跑 ws63flash + 驱动复位，多状态机判定）
 - `capture_uart.py` — 串口抓取（自动连串口 + 可选延迟复位 + 落盘 + 时间戳）
 
-**烧录（统一用 burn.py，禁止直接 ws63flash + uart-gpio 两条命令手动烧）**：
 ```bash
-# BS21：fwpkg 自动定位到 wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg
-python3 wireless/tools/burn.py board_a                 # default app
-python3 wireless/tools/burn.py board_a -a sle_probe    # 指定 app
-# H3863：显式传 fwpkg（SDK output），自动用 BOARD_A_RST 的 uart-gpio 复位
-python3 wireless/tools/burn.py board_a <h3863_all.fwpkg>
-```
-- 状态机：跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
-  等 1s 判定正常态；仍无 = 卡死态（复位无效，只能手动拔插模块 USB 电源恢复）。
-- 底层仍走 `ws63flash`，但复位/重试/端口释放由脚本管理，不要手动分步操作。
+# 烧录
+python3 wireless/tools/burn.py board_a                 # BS21 default app
+python3 wireless/tools/burn.py board_a -a sle_probe    # BS21 指定 app
+python3 wireless/tools/burn.py board_a <h3863.fwpkg>  # H3863 显式传 fwpkg
 
-**读串口/抓 log（统一用 capture_uart.py，禁止 screen/picocom 裸连）**：
-```bash
+# 抓 log
 python3 wireless/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
 ```
-- board_a/board_b 可选，至少选一个；--rst-a/--rst-b 对已选板复位；Ctrl+C 优雅保存
-  （即使未到 duration，Ctrl+C 也会把已收字节落盘）。
-- 需要较长监听时增大 `--duration`（如 `--duration 600`），中途 Ctrl+C 即可优雅保存。
+
+- burn.py 状态机：跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
+  等 1s 判定正常态；仍无 = 卡死态（复位无效，只能手动拔插模块 USB 电源恢复）。
+- capture_uart.py：board_a/board_b 可选，至少选一个；Ctrl+C 优雅保存（即使未到 duration
+  也会把已收字节落盘）；需要较长监听时增大 `--duration`（如 `--duration 600`）。
 
 reset 轮特征（靠内容区分每轮）：
 - 每轮从 `boot.` → `Flashboot Init!` 开始
 - 标志行：`Unkown Boot Type 0xDEAD000D`、`Jump to app! addr = 0x9010B300`、`Debug uart init succ:80000`
 - 应用起点：`app: <工程名>`（`default` 为 `flydigi-wireless`）
 
-### 用户协同操作提示音
+## 手柄硬件信息
+
+- 型号：飞智八爪鱼5 (Flydigi Apex 5)
+- FCC ID：2AORE-K5
+- 2.4GHz 芯片：P352903N1（星闪 SLE 1.0，飞智定制编号）
+- 蓝牙芯片：BP1Y303-D4（BR/EDR）
+- USB VID/PID：0x37D7 / 0x2501
+
+## 用户协同操作提示音
 
 当任务需要用户**联合操作**（如连接/断开手柄、拔插 USB 电源、按复位键等）时，
 **先播放提示音通知用户，再给出文字操作说明**。不要静默等待用户自己发现需要操作。
@@ -95,7 +97,7 @@ bash tools/notify.sh
 # 然后打印："请连接手柄并进入 2.4GHz SLE 配对模式"
 ```
 
-#### 硬件连接切换规则（重要）
+### 硬件连接切换规则（重要）
 
 当需要**切换硬件连接配置**时（例如从"board_a + board_b 互测"切换到"插真机
 dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播放提示音，然后等待
@@ -108,62 +110,6 @@ dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播
 
 反例（禁止）：在 board_a + board_b 互测进行中，突然要求用户插真机 dongle 抓包，
 却不说明切换原因和操作步骤。
-
-### BearPi-Pico H3863 开发板（已到货）
-
-BearPi-Pico H3863，基于 WS63 (H3863) 芯片：
-- SLE 1.0 + BLE 5.4 + Wi-Fi 6
-- SDK: 海思 **fbb_ws63**（`~/workspace/fbb_ws63`），只读引用模式（SDK 不修改源码）
-- target: `ws63-liteos-app`（LiteOS, acore, 应用处理器）
-- 构建：`FBB_APP=default bash wireless/bearpi-pico-h3863/scripts/build.sh`（多 app，`FBB_APP` 选择 `apps/<app>/`）
-- 产物：`$FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
-- 烧录（用共享 burn.py，自动 uart-gpio 复位）：`python3 wireless/tools/burn.py board_a $FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
-- 抓 log：`python3 wireless/tools/capture_uart.py --board-a --duration 60 --odir /tmp --ts`
-- 开发环境搭建见 `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md`
-
-> **注意**：SDK 的 out-of-tree 构建硬编码查找工程根 `main/CMakeLists.txt` 并把 `main`
-> 注册进 RAM_COMPONENT。因此 `main/CMakeLists.txt` 是转发器，通过 `FBB_APP` 环境变量
-> 选择 `apps/<app>/`；各 app 的 CMakeLists 必须 `set(COMPONENT_NAME "main")` 才能被链接。
-
-## 手柄硬件信息
-
-- 型号：飞智八爪鱼5 (Flydigi Apex 5)
-- FCC ID：2AORE-K5
-- 2.4GHz 芯片：P352903N1（星闪 SLE 1.0，飞智定制编号）
-- 蓝牙芯片：BP1Y303-D4（BR/EDR）
-- USB VID/PID：0x37D7 / 0x2501
-
-## 双模块调试分工（M8 逆向阶段，BS21 平台）
-
-> 以下 probe/decoy 双模块实验分工针对 **BS21 平台**（Ai-BS21-32S-Kit）。
-> H3863 平台启用后按需迁移到 `wireless/bearpi-pico-h3863/apps/`。
-
-固定角色，避免混淆：
-- **board_a = 接收器侧**：烧 `sle_probe`（client，扫描/连接/发现/读写实验）
-- **board_b = 手柄侧**：烧 `flydigi_decoy`（server，镜像手柄属性表，记录 dongle 行为）
-
-双 build 目录（协议栈库随 sle_role 不同，不能共用）：
-```bash
-cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-decoy -DBS21_APP=flydigi_decoy
-cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-probe -DBS21_APP=sle_probe
-# 烧录（显式指定 fwpkg）：
-python3 wireless/tools/burn.py board_b wireless/ai-bs21-32s-kit/build-decoy/bs21_all_in_one.fwpkg
-python3 wireless/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21_all_in_one.fwpkg
-```
-
-用途：decoy 改动后先用 probe 本地读回属性表验证呈现效果（handle+type+值），
-无需消耗 dongle 测试轮次；最终再插官方 dongle 做端到端确认。
-
-#### 已知 SDK 陷阱（probe 侧）
-
-- `ssapc_find_structure_cb` / `ssapc_find_property_cbk` 返回的 UUID 是错的：
-  总是 37BE（=0xBE33，描述符 UUID），不是真实的 UUID。SDK 解析器读错了偏移。
-  绕过方法：在 `probe_dump_discovery_cfm` 里从原始 PDU 解析 UUID，查表替换。
-- `ssapc_read_req` 签名是 `(client_id, conn_id, handle, type)`，不是结构体指针。
-- SDK 拒绝 find type 2/4/5（REFERENCE_SERVICE/METHOD/EVENT）err=0x7，即使 UUID
-  正确也不支持。核心发现（type 0/1/3）+ 读取属性值不受影响。
-- 防掩耳铁律：probe 的 RX 原始 PDU（`RX len=N:` 行）= 数据真相；SDK 回调里的
-  UUID/start_hdl 等 = 观察者侧值，可能不等于真相。双侧 diff 以原始 PDU 为准。
 
 ## 开发规范
 
