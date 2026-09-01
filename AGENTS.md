@@ -188,3 +188,8 @@ clang-format -i <修改的文件>
 
 项目根目录已配置 `.clang-format`（LLVM 风格，4 空格缩进，100 列宽）。
 格式化后再提交，确保代码风格一致。
+
+### 禁止 `(void)arg` 抑制 unused-parameter 警告
+
+项目 CMakeLists 已启用 `-Wno-unused-parameter`，**不需要** `unused(arg)` /
+`(void)arg;` 来消除 unused-parameter 警告。禁止写此类语句——保持未使用参数裸写即可。
