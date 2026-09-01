@@ -6,9 +6,7 @@ set(SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/sle_server_adv.c
 )
 
-set(PUBLIC_HEADER
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+set(PUBLIC_HEADER ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(PRIVATE_HEADER)
 
@@ -20,16 +18,10 @@ set(COMPONENT_CCFLAGS)
 
 set(WHOLE_LINK true)
 
-set(APP_TARGETS
-"ws63-liteos-app"
-)
+set(APP_TARGETS "ws63-liteos-app")
 
-set(BUILD_AS_OBJ
-false
-)
+set(BUILD_AS_OBJ false)
 
-set(MAIN_COMPONENT
-true
-)
+set(MAIN_COMPONENT true)
 
 build_component()

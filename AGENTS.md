@@ -162,3 +162,21 @@ set(WHOLE_LINK
     true
 )
 ```
+
+### CMake 格式检查
+
+修改任何 `CMakeLists.txt` 后，**必须**使用 `cmake-format` 格式化：
+
+```bash
+cmake-format -c .cmake-format.yaml -i <修改的文件>
+```
+
+项目根目录已配置 `.cmake-format.yaml`（`max_pargs_hwrap: 1` + `dangle_parens: true`）：
+- 单值变量单行：`set(WHOLE_LINK true)`
+- 多值变量每项一行，`)` 单独一行：
+```cmake
+set(SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/sle_server.c
+)
+```

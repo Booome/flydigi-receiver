@@ -1,8 +1,6 @@
 set(COMPONENT_NAME "sdk_compat")
 
-set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/ble_stub.c
-)
+set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ble_stub.c)
 
 set(PUBLIC_HEADER)
 

@@ -1,0 +1,6 @@
+parse:
+  additional_commands:
+    build_component: {}
+format:
+  max_pargs_hwrap: 1
+  dangle_parens: true
