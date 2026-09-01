@@ -101,4 +101,4 @@ python3 wireless/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21
 
 ## 开发环境搭建
 
-详见 `docs/bs21-development.md`
+详见 `wireless/ai-bs21-32s-kit/docs/development.md`

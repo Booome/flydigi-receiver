@@ -13,10 +13,10 @@
 详细分析见：
 - `docs/sle-analysis.md` - SLE 协议分析与逆向可行性评估
 - `docs/sle-ssap-protocol-findings.md` - SLE/SSAP 协议分析发现（0x16 帧、PDU 格式、Hook 点）
-- `docs/bs21-development.md` - BS21 开发板、SDK 与开发路线图
+- `wireless/ai-bs21-32s-kit/docs/development.md` - BS21 开发板、SDK 与开发路线图
 - `docs/controller-modes.md` - 手柄模式与协议详解
 - `docs/history.md` - 项目历史与技术演进记录
-- `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md` - H3863 开发环境设计文档
+- `wireless/bearpi-pico-h3863/docs/design.md` - H3863 开发环境设计文档
 
 ### 参考开源仓库
 

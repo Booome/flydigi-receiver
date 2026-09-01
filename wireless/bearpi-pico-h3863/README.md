@@ -64,4 +64,4 @@ SDK 的 out-of-tree 构建硬编码查找工程根 `main/CMakeLists.txt` 并把 
 
 ## 开发环境搭建
 
-详见 `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md`
+详见 `wireless/bearpi-pico-h3863/docs/design.md`

@@ -309,7 +309,7 @@ Expected: 看到 "Hello from BearPi-Pico H3863!" 输出
 
 **Files:**
 - Modify: `AGENTS.md`
-- Modify: `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md`
+- Modify: `wireless/bearpi-pico-h3863/docs/design.md`
 
 **Interfaces:**
 - Consumes: Task 1-5 成果

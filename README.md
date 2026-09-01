@@ -9,63 +9,65 @@
 | 设备 | 型号 | 用途 |
 |------|------|------|
 | 手柄 | 飞智八爪鱼5 (Flydigi Apex 5) | 被逆向的目标设备 |
-| BS21 开发板 | Ai-BS21-32S-Kit ×2 | **星闪 SLE 接收器开发** |
-| 电脑 | Arch Linux (KDE Plasma Wayland) | 开发和调试 |
+| H3863 开发板 | BearPi-Pico H3863 | **星闪 SLE 接收器开发（主平台）** |
+| 电脑 | Arch Linux | 开发和调试 |
 
 ## 关键发现
 
 手柄 2.4GHz 无线模式使用**星闪 SLE 1.0 (NearLink)**，非 Nordic ESB：
 
 - FCC ID: 2AORE-K5，内部 SLE 芯片 P352903N1
-- BS21 芯片（Hi2821/BS21E）原生支持 SLE 1.0 + USB 2.0，适合做接收器
-
-详细分析见 [SLE 协议分析](docs/sle-analysis.md)。历史尝试见 [项目历史](docs/history.md)。
+- WS63 (H3863) 芯片原生支持 SLE 1.0 + Wi-Fi 6，适合做接收器
 
 ## 项目结构
 
 ```
 flydigi-receiver/
-├── docs/           # 全局文档
-│   ├── sle-analysis.md        # SLE 协议分析与可行性评估
-│   ├── bs21-development.md    # BS21 开发板、SDK 与开发路线图
-│   ├── controller-modes.md    # 手柄模式与协议详解
-│   └── history.md             # 项目历史与尝试记录
-├── wireless/       # 无线接收器
-│   └── bs21/       # BS21 SLE 接收器代码
-└── AGENTS.md
+├── docs/                          # 通用文档
+│   ├── sle-analysis.md            # SLE 协议分析与可行性评估
+│   ├── controller-modes.md        # 手柄模式与协议详解
+│   ├── history.md                 # 项目历史与尝试记录
+│   ├── ssap-uuid-false-fix.md     # 防掩耳修复案例
+│   ├── reference/                 # 官方文档存档
+│   └── superpowers/               # 历史计划/设计（按日期）
+├── wireless/                      # 无线接收器
+│   ├── ai-bs21-32s-kit/           # BS21 平台（已挂起）
+│   │   ├── README.md              # 平台概览
+│   │   └── docs/                  # 平台专属文档
+│   ├── bearpi-pico-h3863/         # H3863 平台（主平台）
+│   │   ├── README.md              # 平台概览
+│   │   └── docs/                  # 平台专属文档
+│   └── tools/                     # 共享工具（burn.py, capture_uart.py）
+├── tools/                         # 项目工具（notify.sh）
+└── AGENTS.md                      # 工程记忆
 ```
 
 ## 开发状态
 
-星闪 SLE 接收器开发中，基于安信可 **Ai-BS21_SDK**（overlay 模式，SLE-only `bs21-n1100-rcu` target，512KB flash）。
+- **H3863（主平台）**：开发环境打通（Hello World 验证），SLE 接收器功能待迁移
+- **BS21（已挂起）**：因 SDK 限制后期可能废弃
 
-- 开发路线图详见 [BS21 开发文档](docs/bs21-development.md)
-
-## 烧录与调试
-
-两块 BS21 开发板的复位 GPIO 由控制串口 `/dev/ttyUSB5`（STM32）提供，串口映射见项目根 `.env`（不入库），默认：
-
-| 模块 | 串口 | 复位命令 |
-|------|------|---------|
-| board_a | `/dev/ttyUSB4` | `uart-gpio pulse /dev/ttyUSB5 A 8 0 3000` |
-| board_b | `/dev/ttyUSB2` | `uart-gpio pulse /dev/ttyUSB5 A 11 0 3000` |
-
-烧录（先发命令，等 "Waiting for device reset..." 后复位触发）：
+## 快速上手
 
 ```bash
-ws63flash --flash <模块串口> wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg -b460800
-uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000   # 另一终端，复位模块
+# 构建 H3863
+FBB_APP=default bash wireless/bearpi-pico-h3863/scripts/build.sh
+
+# 烧录（共享工具）
+python3 wireless/tools/burn.py board_a <fwpkg>
+
+# 抓 log
+python3 wireless/tools/capture_uart.py --board-a --duration 60 --odir /tmp --ts
 ```
 
-抓取从 reset 起的完整 log：
+串口/复位配置见项目根 `.env`（不入库，模板见 `.env.example`）。
 
-```bash
-stty -F <模块串口> 115200 raw -echo
-cat <模块串口> > /tmp/reset.log &
-uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000   # 复位触发启动 log
-```
+## 详细文档
 
-模块无法靠拉低 reset 停止，会反复 reset 打印多轮，区分每轮靠内容：每轮从 `boot.` → `Flashboot Init!` 开始，应用起点为 `app: <工程名>`。
+- `AGENTS.md` — 工程记忆与开发规范
+- `wireless/bearpi-pico-h3863/README.md` — H3863 平台指南
+- `wireless/bearpi-pico-h3863/docs/design.md` — H3863 开发环境设计
+- `wireless/ai-bs21-32s-kit/README.md` — BS21 平台归档
 
 ## 相关开源项目
 
@@ -74,3 +76,4 @@ uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000   # 复位触发启动 log
 - [openflydigi](https://github.com/mkaliaha/openflydigi) - HID 命令协议逆向
 - [Ai-BS21_SDK](https://gitee.com/Ai-Thinker-Open/Ai-BS21_SDK) - 安信可星闪 SDK
 - [ws63flash](https://github.com/goodspeed34/ws63flash) - Linux 烧录工具
+- [communication_nearlink_service](https://github.com/openharmony/communication_nearlink_service) - OpenHarmony 星闪协议栈
