@@ -27,7 +27,7 @@ flydigi-receiver/
 │   ├── sle-analysis.md            # SLE 协议分析与可行性评估
 │   ├── controller-modes.md        # 手柄模式与协议详解
 │   ├── history.md                 # 项目历史与尝试记录
-│   ├── ssap-uuid-false-fix.md     # 防掩耳修复案例
+│   ├── sle-chip-comparison.md     # 芯片规格对比
 │   ├── reference/                 # 官方文档存档
 │   └── superpowers/               # 历史计划/设计（按日期）
 ├── wireless/                      # 无线接收器

@@ -130,7 +130,7 @@ git worktree move <old> .worktrees/<branch>   # 移动已有 worktree 到 .workt
 观察者的解析/显示/返回值**不等于数据真相**——可能由观察者侧机制产生
 （base UUID 组装、回填、缓存、固定长度等）。禁止"只让观察者显示变对"
 的修复。本项目的惨痛案例（uuid len=2 假象掩盖 value=0000）见
-`docs/ssap-uuid-false-fix.md`。
+`wireless/ai-bs21-32s-kit/docs/ssap-uuid-false-fix.md`。
 
 **铁律**（适用一切代码修改，不只协议/逆向）：
 1. **修改前先验证"真实数据"**：任何让显示/返回值"对齐"的修改，必须先拿到
