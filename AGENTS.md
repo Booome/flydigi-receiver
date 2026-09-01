@@ -160,6 +160,18 @@ python3 wireless/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21
 
 ## 开发规范
 
+### Git worktree（项目修改一律在 worktree 中进行）
+
+任何项目修改（代码/文档/配置）都必须在隔离 worktree 中进行，主工作区保持干净。
+worktree 统一建立在**工程根 `.worktrees/` 目录内**（已被 `.gitignore` 忽略），
+不要建在工程目录外。命名建议用分支名：`.worktrees/<branch>`。
+
+```bash
+git worktree add .worktrees/<branch> -b <branch>
+git worktree list            # 查看所有 worktree
+git worktree move <old> .worktrees/<branch>   # 移动已有 worktree 到 .worktrees/
+```
+
 ### 防"掩耳盗铃"式修复（重要，适用所有代码修改）
 
 观察者的解析/显示/返回值**不等于数据真相**——可能由观察者侧机制产生
