@@ -148,3 +148,17 @@ clang-format -i <修改的文件>
 
 项目 CMakeLists 已启用 `-Wno-unused-parameter`，**不需要** `unused(arg)` /
 `(void)arg;` 来消除 unused-parameter 警告。禁止写此类语句——保持未使用参数裸写即可。
+
+### CMake 格式
+
+`set(VAR value)` 单行写法优先。禁止将单值变量拆成多行：
+
+```cmake
+# 正确
+set(WHOLE_LINK true)
+
+# 禁止
+set(WHOLE_LINK
+    true
+)
+```
