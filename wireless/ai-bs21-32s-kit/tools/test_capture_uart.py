@@ -10,12 +10,12 @@ import serial
 import capture_uart as cu
 
 ENV_FULL = {
-    "BS21_BOARD_A_PORT": "/dev/ttyA",
-    "BS21_BOARD_A_RST_PORT": "/dev/ttyA_rst",
-    "BS21_BOARD_A_RST_PIN": "8",
-    "BS21_BOARD_B_PORT": "/dev/ttyB",
-    "BS21_BOARD_B_RST_PORT": "/dev/ttyB_rst",
-    "BS21_BOARD_B_RST_PIN": "11",
+    "BOARD_A_PORT": "/dev/ttyA",
+    "BOARD_A_RST_PORT": "/dev/ttyA_rst",
+    "BOARD_A_RST_PIN": "8",
+    "BOARD_B_PORT": "/dev/ttyB",
+    "BOARD_B_RST_PORT": "/dev/ttyB_rst",
+    "BOARD_B_RST_PIN": "11",
 }
 
 
@@ -214,9 +214,9 @@ def test_pulse_reset_cmd(monkeypatch):
 
 def test_load_env_reads_pairs(tmp_path):
     (tmp_path / ".env").write_text(
-        "# comment\nBS21_BOARD_A_PORT=/dev/ttyA\nEMPTY=\n\nUNUSED=x\n")
+        "# comment\nBOARD_A_PORT=/dev/ttyA\nEMPTY=\n\nUNUSED=x\n")
     env = cu.load_env(str(tmp_path / ".env"))
-    assert env["BS21_BOARD_A_PORT"] == "/dev/ttyA"
+    assert env["BOARD_A_PORT"] == "/dev/ttyA"
     assert env.get("EMPTY") == ""
     assert env.get("UNUSED") == "x"
 
@@ -231,7 +231,7 @@ def test_main_end_to_end(tmp_path, capsys):
     a, b, proc = _make_socat_pair(tmp_path)
     try:
         env = dict(ENV_FULL)
-        env["BS21_BOARD_A_PORT"] = a
+        env["BOARD_A_PORT"] = a
         rc = cu.main(["--board-a", "--duration", "1", "--odir", str(tmp_path),
                       "--no-echo"], env=env)
         assert rc == 0
@@ -245,4 +245,4 @@ def test_main_end_to_end(tmp_path, capsys):
 def test_main_missing_env_var(tmp_path, capsys):
     rc = cu.main(["--board-a", "--odir", str(tmp_path)], env={})
     assert rc == 1
-    assert "BS21_BOARD_A_PORT" in capsys.readouterr().out
+    assert "BOARD_A_PORT" in capsys.readouterr().out

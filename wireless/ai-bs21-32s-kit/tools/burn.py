@@ -6,8 +6,8 @@ Usage:
     python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a -a <app>   # e.g. t_broadcaster
 
 Board/serial mapping is read from the project .env file (wireless/ai-bs21-32s-kit/../../.env):
-    BS21_BOARD_A_PORT / BS21_BOARD_A_RST_PORT / BS21_BOARD_A_RST_PIN
-    BS21_BOARD_B_PORT / BS21_BOARD_B_RST_PORT / BS21_BOARD_B_RST_PIN
+    BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN
+    BOARD_B_PORT / BOARD_B_RST_PORT / BOARD_B_RST_PIN
 FwPkg defaults to build/<app>/bs21_all_in_one.fwpkg (app=default -> build/).
 
 Flow (one ws63flash run decides the chip state):
@@ -71,18 +71,18 @@ ENV = load_env()
 def get_board(env, name):
     """Return (module_port, reset_cmd) for board_a / board_b from .env vars."""
     if name == "board_a":
-        port = env.get("BS21_BOARD_A_PORT")
-        rst_port = env.get("BS21_BOARD_A_RST_PORT")
-        pin = env.get("BS21_BOARD_A_RST_PIN")
+        port = env.get("BOARD_A_PORT")
+        rst_port = env.get("BOARD_A_RST_PORT")
+        pin = env.get("BOARD_A_RST_PIN")
     elif name == "board_b":
-        port = env.get("BS21_BOARD_B_PORT")
-        rst_port = env.get("BS21_BOARD_B_RST_PORT")
-        pin = env.get("BS21_BOARD_B_RST_PIN")
+        port = env.get("BOARD_B_PORT")
+        rst_port = env.get("BOARD_B_RST_PORT")
+        pin = env.get("BOARD_B_RST_PIN")
     else:
         sys.exit(f"[ERROR] unknown board: {name} (board_a / board_b only)")
     if not (port and rst_port and pin):
         sys.exit(f"[ERROR] incomplete .env config for {name} "
-                 f"(need BS21_BOARD_{name.upper()}_PORT/RST_PORT/RST_PIN)")
+                 f"(need BOARD_{name.upper()}_PORT/RST_PORT/RST_PIN)")
     reset_cmd = f"uart-gpio config {rst_port} A {pin} open-drain && " \
                 f"uart-gpio pulse {rst_port} A {pin} 0 2000"
     return port, reset_cmd

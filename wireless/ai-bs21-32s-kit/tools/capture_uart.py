@@ -5,8 +5,8 @@ Usage:
     python3 wireless/ai-bs21-32s-kit/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
 
 Board/serial mapping is read from the project .env file:
-    BS21_BOARD_A_PORT / BS21_BOARD_A_RST_PORT / BS21_BOARD_A_RST_PIN
-    BS21_BOARD_B_PORT / BS21_BOARD_B_RST_PORT / BS21_BOARD_B_RST_PIN
+    BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN
+    BOARD_B_PORT / BOARD_B_RST_PORT / BOARD_B_RST_PIN
 """
 
 import argparse
@@ -148,10 +148,10 @@ def board_key(board):
 
 def pulse_reset(board, env):
     key = board_key(board)
-    port = env.get("BS21_BOARD_%s_RST_PORT" % key)
-    pin = env.get("BS21_BOARD_%s_RST_PIN" % key)
+    port = env.get("BOARD_%s_RST_PORT" % key)
+    pin = env.get("BOARD_%s_RST_PIN" % key)
     if not (port and pin):
-        raise RuntimeError("missing BS21_BOARD_%s_RST_PORT/PIN in .env" % key)
+        raise RuntimeError("missing BOARD_%s_RST_PORT/PIN in .env" % key)
     subprocess.run(["uart-gpio", "pulse", port, "A", pin, "0", str(RESET_PULSE_MS)],
                    check=True)
 
@@ -193,9 +193,9 @@ def main(argv=None, env=None):
     ports = {}
     for b in boards:
         key = board_key(b)
-        port = env.get("BS21_BOARD_%s_PORT" % key)
+        port = env.get("BOARD_%s_PORT" % key)
         if not port:
-            print("[ERROR] missing BS21_BOARD_%s_PORT in .env" % key)
+            print("[ERROR] missing BOARD_%s_PORT in .env" % key)
             return 1
         ports[b] = port
     streams = open_streams(ports)

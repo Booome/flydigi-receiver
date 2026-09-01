@@ -32,16 +32,16 @@ def load_env():
 
 ENV = load_env()
 
-CTRL_A = ENV.get("BS21_BOARD_A_RST_PORT")
-CTRL_B = ENV.get("BS21_BOARD_B_RST_PORT")
-APATH = ENV.get("BS21_BOARD_A_PORT")
-BPATH = ENV.get("BS21_BOARD_B_PORT")
-PIN_A = ENV.get("BS21_BOARD_A_RST_PIN", "8")
-PIN_B = ENV.get("BS21_BOARD_B_RST_PIN", "11")
+CTRL_A = ENV.get("BOARD_A_RST_PORT")
+CTRL_B = ENV.get("BOARD_B_RST_PORT")
+APATH = ENV.get("BOARD_A_PORT")
+BPATH = ENV.get("BOARD_B_PORT")
+PIN_A = ENV.get("BOARD_A_RST_PIN", "8")
+PIN_B = ENV.get("BOARD_B_RST_PIN", "11")
 ALARM = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 
-for var, name in ((CTRL_A, "BS21_BOARD_A_RST_PORT"), (CTRL_B, "BS21_BOARD_B_RST_PORT"),
-                  (APATH, "BS21_BOARD_A_PORT"), (BPATH, "BS21_BOARD_B_PORT")):
+for var, name in ((CTRL_A, "BOARD_A_RST_PORT"), (CTRL_B, "BOARD_B_RST_PORT"),
+                  (APATH, "BOARD_A_PORT"), (BPATH, "BOARD_B_PORT")):
     if not var:
         sys.exit(f"[ERROR] missing env: {name}")
 
