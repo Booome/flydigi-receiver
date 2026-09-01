@@ -16,12 +16,8 @@ set(COMPONENT_PUBLIC_CCFLAGS)
 
 set(COMPONENT_CCFLAGS)
 
-set(WHOLE_LINK
-true
-)
+set(WHOLE_LINK true)
 
-set(MAIN_COMPONENT
-false
-)
+set(MAIN_COMPONENT false)
 
 build_component()

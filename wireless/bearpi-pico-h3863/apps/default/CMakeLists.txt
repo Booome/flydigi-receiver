@@ -19,20 +19,15 @@ set(PUBLIC_DEFINES)
 
 set(COMPONENT_CCFLAGS)
 
-set(WHOLE_LINK
-true
-)
+set(WHOLE_LINK true)
 
 set(APP_TARGETS
 "ws63-liteos-app"
 )
 
-set(BUILD_AS_OBJ
-false
-)
+set(BUILD_AS_OBJ false)
 
-set(MAIN_COMPONENT
+set(MAIN_COMPONENT false)
 true
-)
 
 build_component()
