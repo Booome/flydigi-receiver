@@ -59,7 +59,7 @@ uart-gpio pulse <控制串口> A <引脚> 0 2000
 
 抓取从 reset 起的完整 log（推荐用脚本，自动连串口+延迟复位+落盘+时间戳）：
 ```bash
-python3 wireless/ai-bs21-32s-kit/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
+python3 wireless/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
 ```
 - board_a/board_b 可选，至少选一个；--rst-a/--rst-b 对已选板复位；Ctrl+C 优雅保存
 

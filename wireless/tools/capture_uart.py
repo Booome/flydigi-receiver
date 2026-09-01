@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""capture_uart: capture BS21 board serial output with optional delayed reset.
+"""capture_uart: capture board serial output with optional delayed reset.
 
 Usage:
-    python3 wireless/ai-bs21-32s-kit/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
+    python3 wireless/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
 
 Board/serial mapping is read from the project .env file:
     BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN
@@ -177,8 +177,8 @@ def open_streams(ports):
 
 
 def project_root():
-    return os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__)))))
+    return os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))
 
 
 def main(argv=None, env=None):
