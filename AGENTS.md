@@ -36,32 +36,36 @@ Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
 - 编译：`cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build && cmake --build wireless/ai-bs21-32s-kit/build -j`（一次性前置 `wireless/ai-bs21-32s-kit/scripts/setup-sdk.sh`）
 - 开发环境搭建和路线图见 `docs/bs21-development.md`
 
-#### 烧录与调试
+#### 烧录与调试（统一用共享工具，禁止裸跑 ws63flash / screen）
 
 串口/复位配置记录在项目根 `.env`（不入库，模板见 `.env.example`），统一用
 `/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，勿硬编码）。复位 GPIO 由控制串口
-（STM32）提供。相关脚本（`burn.py`、`bs21_connect.py`、`bs21_disconnect_test.py`）
-自动从 `.env` 读取。
+（STM32）提供。两个平台（BS21 / H3863）共用同一套 `BOARD_*` 定义，切换平台只需
+换 fwpkg，无需改端口。
 
-**自动烧录（推荐）**：
+**共享工具**（`wireless/tools/`，两个平台通用）：
+- `burn.py` — 自动烧录（跑 ws63flash + 驱动复位，多状态机判定）
+- `capture_uart.py` — 串口抓取（自动连串口 + 可选延迟复位 + 落盘 + 时间戳）
+
+**烧录（统一用 burn.py，禁止直接 ws63flash + uart-gpio 两条命令手动烧）**：
 ```bash
-python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a   # 或 board_b
+# BS21：fwpkg 自动定位到 wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg
+python3 wireless/tools/burn.py board_a                 # default app
+python3 wireless/tools/burn.py board_a -a sle_probe    # 指定 app
+# H3863：显式传 fwpkg（SDK output），自动用 BOARD_A_RST 的 uart-gpio 复位
+python3 wireless/tools/burn.py board_a <h3863_all.fwpkg>
 ```
-- 状态机：直接跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
+- 状态机：跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
   等 1s 判定正常态；仍无 = 卡死态（复位无效，只能手动拔插模块 USB 电源恢复）。
+- 底层仍走 `ws63flash`，但复位/重试/端口释放由脚本管理，不要手动分步操作。
 
-手动烧录（先发命令，等 "Waiting for device reset..." 后复位触发）：
-```bash
-ws63flash --flash <模块串口> wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg -b460800
-# 另一终端，复位模块（<控制串口> 与 <引脚> 见 .env 的 *RST_PORT / *RST_PIN）：
-uart-gpio pulse <控制串口> A <引脚> 0 2000
-```
-
-抓取从 reset 起的完整 log（推荐用脚本，自动连串口+延迟复位+落盘+时间戳）：
+**读串口/抓 log（统一用 capture_uart.py，禁止 screen/picocom 裸连）**：
 ```bash
 python3 wireless/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
 ```
 - board_a/board_b 可选，至少选一个；--rst-a/--rst-b 对已选板复位；Ctrl+C 优雅保存
+  （即使未到 duration，Ctrl+C 也会把已收字节落盘）。
+- 需要较长监听时增大 `--duration`（如 `--duration 600`），中途 Ctrl+C 即可优雅保存。
 
 reset 轮特征（靠内容区分每轮）：
 - 每轮从 `boot.` → `Flashboot Init!` 开始
@@ -109,7 +113,8 @@ BearPi-Pico H3863，基于 WS63 (H3863) 芯片：
 - target: `ws63-liteos-app`（LiteOS, acore, 应用处理器）
 - 构建：`FBB_APP=default bash wireless/bearpi-pico-h3863/scripts/build.sh`（多 app，`FBB_APP` 选择 `apps/<app>/`）
 - 产物：`$FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
-- 烧录：`ws63flash --flash <串口> <fwpkg> -b460800`
+- 烧录（用共享 burn.py，自动 uart-gpio 复位）：`python3 wireless/tools/burn.py board_a $FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
+- 抓 log：`python3 wireless/tools/capture_uart.py --board-a --duration 60 --odir /tmp --ts`
 - 开发环境搭建见 `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md`
 
 > **注意**：SDK 的 out-of-tree 构建硬编码查找工程根 `main/CMakeLists.txt` 并把 `main`
@@ -135,8 +140,8 @@ BearPi-Pico H3863，基于 WS63 (H3863) 芯片：
 cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-decoy -DBS21_APP=flydigi_decoy
 cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-probe -DBS21_APP=sle_probe
 # 烧录（显式指定 fwpkg）：
-python3 wireless/ai-bs21-32s-kit/tools/burn.py board_b wireless/ai-bs21-32s-kit/build-decoy/bs21_all_in_one.fwpkg
-python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21_all_in_one.fwpkg
+python3 wireless/tools/burn.py board_b wireless/ai-bs21-32s-kit/build-decoy/bs21_all_in_one.fwpkg
+python3 wireless/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21_all_in_one.fwpkg
 ```
 
 用途：decoy 改动后先用 probe 本地读回属性表验证呈现效果（handle+type+值），
