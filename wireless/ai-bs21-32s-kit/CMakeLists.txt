@@ -1,28 +1,17 @@
 cmake_minimum_required(VERSION 3.14.1)
 set(CMAKE_SYSTEM_NAME "Generic")
 
-if(NOT
-   DEFINED
-   SDK_ROOT
-)
-  if(DEFINED
-     ENV{AI_BS21_SDK_PATH}
-  )
+if(NOT DEFINED SDK_ROOT)
+  if(DEFINED ENV{AI_BS21_SDK_PATH})
     set(SDK_ROOT "$ENV{AI_BS21_SDK_PATH}")
   else()
     set(SDK_ROOT "$ENV{HOME}/.local/Ai-BS21_SDK")
   endif()
 endif()
-if(NOT
-   DEFINED
-   BS21_TARGET
-)
+if(NOT DEFINED BS21_TARGET)
   set(BS21_TARGET "bs21-n1100-rcu")
 endif()
-if(NOT
-   DEFINED
-   BS21_APP
-)
+if(NOT DEFINED BS21_APP)
   set(BS21_APP "default")
 endif()
 find_package(
@@ -72,9 +61,7 @@ if(NOT
 )
   set(CCFLAGS
       "${CCFLAGS};-Wno-unused-parameter"
-      CACHE INTERNAL
-            ""
-            FORCE
+      CACHE INTERNAL "" FORCE
   )
 endif()
 if(NOT
@@ -84,9 +71,7 @@ if(NOT
 )
   set(CCFLAGS
       "${CCFLAGS};-Wno-unused-variable"
-      CACHE INTERNAL
-            ""
-            FORCE
+      CACHE INTERNAL "" FORCE
   )
 endif()
 if(NOT
@@ -96,9 +81,7 @@ if(NOT
 )
   set(CCFLAGS
       "${CCFLAGS};-Wno-unused-const-variable"
-      CACHE INTERNAL
-            ""
-            FORCE
+      CACHE INTERNAL "" FORCE
   )
 endif()
 
@@ -113,16 +96,8 @@ string(
           BUILD_TARGET_NAME
           ${BS21_TARGET}
 )
-list(
-  APPEND
-  RAM_COMPONENT
-  rom_callback
-)
-list(
-  APPEND
-  DEFINES
-  _PRE_FEATURE_VENEER_ROM
-)
+list(APPEND RAM_COMPONENT rom_callback)
+list(APPEND DEFINES _PRE_FEATURE_VENEER_ROM)
 set(BUILD_ROM_CALLBACK False)
 
 include(${SDK_ROOT}/build/cmake/build_function.cmake)
@@ -143,26 +118,16 @@ set(MODULE_NAME "pf")
 set(AUTO_DEF_FILE_ID TRUE)
 set(AUTO_DEF_MODULE_ID TRUE)
 set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "")
-file(
-  REMOVE
-  ${CMAKE_BINARY_DIR}/auto_gen_libfunc.lds
-)
+file(REMOVE ${CMAKE_BINARY_DIR}/auto_gen_libfunc.lds)
 
-set(TARGET_COMPONENT
-    "${RAM_COMPONENT}"
-    "${ROM_COMPONENT}"
-)
+set(TARGET_COMPONENT "${RAM_COMPONENT}" "${ROM_COMPONENT}")
 set(TARGET_NAME ${BIN_NAME})
-file(
-  WRITE
-  ${PROJECT_BINARY_DIR}/temp/__null___.c
-  "int __null___(void) {return 0;}"
+file(WRITE ${PROJECT_BINARY_DIR}/temp/__null___.c
+     "int __null___(void) {return 0;}"
 )
 add_executable(${BIN_NAME} ${PROJECT_BINARY_DIR}/temp/__null___.c)
 set_target_properties(
-  ${BIN_NAME}
-  PROPERTIES RUNTIME_OUTPUT_NAME
-             ${BIN_NAME}.elf
+  ${BIN_NAME} PROPERTIES RUNTIME_OUTPUT_NAME ${BIN_NAME}.elf
 )
 target_compile_options(${BIN_NAME} PRIVATE "${CCFLAGS}")
 
@@ -196,63 +161,30 @@ endif()
 set(KCONFIG_PATH
     "${SDK_ROOT}/build/config/target_config/${CHIP}/menuconfig/${CORE}/${BS21_TARGET_CFG}.config"
 )
-if(EXISTS
-   ${KCONFIG_PATH}
-)
+if(EXISTS ${KCONFIG_PATH})
   kconfig_get_params(${KCONFIG_PATH})
   set(USE_KCONFIG True)
   # bs2x_sample_config.cmake normally appends these, but its Kconfig-derived
   # variables are not visible here; ensure the log region is reserved.
-  if(DEFINED
-     CONFIG_SUPPORT_LOG_THREAD
-  )
-    list(
-      APPEND
-      DEFINES
-      CONFIG_SUPPORT_LOG_THREAD
-    )
+  if(DEFINED CONFIG_SUPPORT_LOG_THREAD)
+    list(APPEND DEFINES CONFIG_SUPPORT_LOG_THREAD)
   endif()
 endif()
 
 add_subdirectory(
-  ${SDK_ROOT}/application/bs21/standard
-  ${CMAKE_BINARY_DIR}/sdk/standard
+  ${SDK_ROOT}/application/bs21/standard ${CMAKE_BINARY_DIR}/sdk/standard
 )
-add_subdirectory(
-  ${SDK_ROOT}/kernel
-  ${CMAKE_BINARY_DIR}/sdk/kernel
-)
-add_subdirectory(
-  ${SDK_ROOT}/drivers
-  ${CMAKE_BINARY_DIR}/sdk/drivers
-)
-add_subdirectory(
-  ${SDK_ROOT}/middleware
-  ${CMAKE_BINARY_DIR}/sdk/middleware
-)
-add_subdirectory(
-  ${SDK_ROOT}/open_source
-  ${CMAKE_BINARY_DIR}/sdk/open_source
-)
+add_subdirectory(${SDK_ROOT}/kernel ${CMAKE_BINARY_DIR}/sdk/kernel)
+add_subdirectory(${SDK_ROOT}/drivers ${CMAKE_BINARY_DIR}/sdk/drivers)
+add_subdirectory(${SDK_ROOT}/middleware ${CMAKE_BINARY_DIR}/sdk/middleware)
+add_subdirectory(${SDK_ROOT}/open_source ${CMAKE_BINARY_DIR}/sdk/open_source)
 add_subdirectory(apps/${BS21_APP})
 add_subdirectory(sdk-compat)
 
-add_path_with_alias_if_exist(
-  ${SDK_ROOT}/protocol
-  sdk/protocol
-)
-add_path_with_alias_if_exist(
-  ${SDK_ROOT}/test
-  sdk/test
-)
-add_path_with_alias_if_exist(
-  ${SDK_ROOT}/include
-  sdk/include
-)
-add_path_with_alias_if_exist(
-  ${SDK_ROOT}/vendor
-  sdk/vendor
-)
+add_path_with_alias_if_exist(${SDK_ROOT}/protocol sdk/protocol)
+add_path_with_alias_if_exist(${SDK_ROOT}/test sdk/test)
+add_path_with_alias_if_exist(${SDK_ROOT}/include sdk/include)
+add_path_with_alias_if_exist(${SDK_ROOT}/vendor sdk/vendor)
 
 include(${SDK_ROOT}/build/cmake/open_source.cmake)
 include(${SDK_ROOT}/build/cmake/build_linker.cmake)
@@ -260,10 +192,7 @@ include(${SDK_ROOT}/build/cmake/build_linker.cmake)
 # Apps linked against a patched stack-library profile (lib_profile ending in
 # "-decoy", see tools/patch_gle_decoy.py) refresh the patch on every build so a
 # plain configure+build always yields correct firmware.
-if(CONFIG_SLE_BLE_SUPPORT
-   MATCHES
-   "-decoy"
-)
+if(CONFIG_SLE_BLE_SUPPORT MATCHES "-decoy")
   add_custom_target(
     bs21_patch_stack_libs
     COMMAND ${Python3_EXECUTABLE}
@@ -271,19 +200,12 @@ if(CONFIG_SLE_BLE_SUPPORT
     COMMENT "bs21: refreshing patched stack libs (sle-peripheral-decoy)"
     VERBATIM
   )
-  add_dependencies(
-    ${TARGET_NAME}
-    bs21_patch_stack_libs
-  )
+  add_dependencies(${TARGET_NAME} bs21_patch_stack_libs)
 endif()
 
-if(NOT
-   DEFINED
-   ROM_COMPONENT
-)
+if(NOT DEFINED ROM_COMPONENT)
   add_custom_target(
-    GENERAT_BIN
-    ALL
+    GENERAT_BIN ALL
     COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -R .fls_loader_ram -R
             .logstr -R .ARM -R .ARM ${BIN_NAME}.elf ${BIN_NAME}.bin
     COMMENT "post_build:gen bin file"
@@ -292,8 +214,7 @@ if(NOT
   )
 else()
   add_custom_target(
-    GENERAT_BIN
-    ALL
+    GENERAT_BIN ALL
     COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -R .logstr -R .ARM.exidx
             -R .ARM.extab -R .*_romtext ${TARGET_NAME}.elf ${TARGET_NAME}.bin
     COMMAND ${CMAKE_OBJCOPY} --gap-fill 0xFF -O binary -j .*_romtext
@@ -317,19 +238,13 @@ if(EXISTS
    ${SDK_ROOT}/build/config/target_config/${CHIP}/sign_config/${BUILD_TARGET_NAME}.cfg
 )
   set(BS21_SIGN_DIR "${SDK_ROOT}/output/${CHIP}/${CORE}/${PKG_TARGET_NAME}")
-  if(TARGET
-     GENERAT_ROM_PATCH
-  )
-    set(SIGNBIN_DEPS
-        GENERAT_BIN
-        GENERAT_ROM_PATCH
-    )
+  if(TARGET GENERAT_ROM_PATCH)
+    set(SIGNBIN_DEPS GENERAT_BIN GENERAT_ROM_PATCH)
   else()
     set(SIGNBIN_DEPS GENERAT_BIN)
   endif()
   add_custom_target(
-    GENERAT_SIGNBIN
-    ALL
+    GENERAT_SIGNBIN ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory ${BS21_SIGN_DIR}
     COMMAND
       ${CMAKE_COMMAND} -E copy_if_different
@@ -341,18 +256,9 @@ if(EXISTS
     WORKING_DIRECTORY ${BS21_SIGN_DIR}
     DEPENDS ${SIGNBIN_DEPS}
   )
-  list(
-    APPEND
-    PACKAGE_DEPENDS
-    GENERAT_SIGNBIN
-  )
-  if(${GEN_SEC_BIN}
-     STREQUAL
-     "True"
-  )
-    if(EXISTS
-       ${COMPILER_ROOT}/lib/sec/${IMAGE_VERSION}/libsec_image.so
-    )
+  list(APPEND PACKAGE_DEPENDS GENERAT_SIGNBIN)
+  if(${GEN_SEC_BIN} STREQUAL "True")
+    if(EXISTS ${COMPILER_ROOT}/lib/sec/${IMAGE_VERSION}/libsec_image.so)
       execute_process(
         COMMAND
           ${CMAKE_COMMAND} -E copy
@@ -361,19 +267,14 @@ if(EXISTS
       )
     endif()
     add_custom_target(
-      GENERAT_SEC_IMAGE
-      ALL
+      GENERAT_SEC_IMAGE ALL
       COMMAND ${CMAKE_OBJCOPY} --enable_sec
               ${BS21_SIGN_DIR}/${BIN_NAME}_sign.bin
       COMMENT "enable sec image"
       WORKING_DIRECTORY ${COMPILER_ROOT}/bin
       DEPENDS GENERAT_SIGNBIN
     )
-    list(
-      APPEND
-      PACKAGE_DEPENDS
-      GENERAT_SEC_IMAGE
-    )
+    list(APPEND PACKAGE_DEPENDS GENERAT_SEC_IMAGE)
   endif()
 endif()
 include(${SDK_ROOT}/build/cmake/build_nv_bin.cmake)
@@ -384,8 +285,7 @@ create_hso_db()
 generate_project_file()
 
 add_custom_target(
-  package
-  ALL
+  package ALL
   COMMAND ${Python3_EXECUTABLE} ${SDK_ROOT}/tools/pkg/packet.py ${CHIP}
           ${BS21_TARGET} NO_BOOT_BACKUP ${SECTOR_CFG}
   COMMAND ${CMAKE_COMMAND} -E copy_directory

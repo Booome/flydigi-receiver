@@ -2,5 +2,5 @@ parse:
   additional_commands:
     build_component: {}
 format:
-  max_pargs_hwrap: 1
+  max_pargs_hwrap: 3
   dangle_parens: true

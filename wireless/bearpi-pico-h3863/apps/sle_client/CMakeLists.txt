@@ -1,8 +1,7 @@
 set(COMPONENT_NAME "main")
 
-set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/sle_client.c
+set(SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/main.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/sle_client.c
 )
 
 set(PUBLIC_HEADER ${CMAKE_CURRENT_SOURCE_DIR})

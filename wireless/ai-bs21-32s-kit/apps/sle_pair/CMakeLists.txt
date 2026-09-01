@@ -1,15 +1,11 @@
 set(COMPONENT_NAME "sle_pair")
 
 set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.c
-    ${CMAKE_SOURCE_DIR}/src/bs21_util.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/main.c ${CMAKE_SOURCE_DIR}/src/bs21_util.c
     ${CMAKE_SOURCE_DIR}/src/scan_table.c
 )
 
-set(PUBLIC_HEADER
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/src
-)
+set(PUBLIC_HEADER ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/src)
 
 set(PRIVATE_HEADER)
 

@@ -1,13 +1,8 @@
 cmake_minimum_required(VERSION 3.14.1)
 
 # SDK 路径：由 setup-sdk.sh 写入环境变量或 .env
-if(NOT
-   DEFINED
-   FBB_SDK_DIR
-)
-  if(DEFINED
-     ENV{FBB_SDK_DIR}
-  )
+if(NOT DEFINED FBB_SDK_DIR)
+  if(DEFINED ENV{FBB_SDK_DIR})
     set(FBB_SDK_DIR "$ENV{FBB_SDK_DIR}")
   else()
     set(FBB_SDK_DIR "$ENV{HOME}/workspace/fbb_ws63/src")
@@ -29,9 +24,7 @@ set(APPLICATION "application")
 
 # SDK 默认 ccflags 含 -Werror 及 -DBOARD_ASIC 等关键选项，只能追加不能整体覆盖， 否则 wifi
 # 组件（romrepo/basic.cmake 检查 `-DBOARD_ASIC IN_LIST CCFLAGS`）会选错 ASIC/FPGA 头文件路径。
-if(DEFINED
-   CCFLAGS
-)
+if(DEFINED CCFLAGS)
   list(
     APPEND
     CCFLAGS
@@ -43,23 +36,12 @@ endif()
 
 # ws63 ASIC：SDK config.py 把 BOARD_ASIC 放在 ccflags，但 wifi 组件 master/basic.cmake 用
 # `BOARD_ASIC IN_LIST DEFINES` 判断，需同步进 DEFINES。
-if(CHIP
-   STREQUAL
-   "ws63"
-)
-  list(
-    APPEND
-    DEFINES
-    "BOARD_ASIC"
-  )
+if(CHIP STREQUAL "ws63")
+  list(APPEND DEFINES "BOARD_ASIC")
 endif()
 
 # 引入 SDK 的 out-of-tree 入口
 include("${FBB_SDK_DIR}/build/cmake/project.cmake")
 
 # 声明项目
-project(
-  ${CHIP}_CFBB
-  C
-  ASM
-)
+project(${CHIP}_CFBB C ASM)
