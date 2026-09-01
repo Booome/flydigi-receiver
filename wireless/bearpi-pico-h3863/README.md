@@ -62,6 +62,26 @@ SDK 的 out-of-tree 构建硬编码查找工程根 `main/CMakeLists.txt` 并把 
 1. 创建 `apps/<name>/CMakeLists.txt`（`set(COMPONENT_NAME "main")`）
 2. `FBB_APP=<name> bash scripts/build.sh`
 
+## 已知问题
+
+### Bootloader Flash Init Fail（ benign ）
+
+上电 log 首行会显示：
+```
+Flash Init Fail! ret = 0x80001341
+```
+
+**根因**：SDK SFC 驱动在 bootloader 阶段返回 `ERRCODE_SFC_FLASH_NOT_SUPPORT`
+（0x80001341）。板载 flash 为 GD25Q32（ID=0x1640C8），SDK 支持列表已有该芯片，
+但 bootloader 的 SFC 驱动编译配置（`BUILD_APPLICATION_ROM` +
+`FLASH_REGION_CFG_FLASHBOOT`，无 `CONFIG_SFC_ALREADY_INIT`）与 application 不同，
+导致 `build_flash_ctrl()` 中 quad-mode 命令检查失败，回退到 unknown flash 路径。
+
+**影响**：flash 用标准 SPI 命令正常工作，不影响 boot 和应用运行。仅失去 quad-mode
+读写优化。待 OTA/升级功能需要时，再通过 sdk-compat 覆盖修复。
+
+**状态**：已知，待后续处理。
+
 ## 开发环境搭建
 
 详见 `wireless/bearpi-pico-h3863/docs/design.md`
