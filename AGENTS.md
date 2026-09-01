@@ -18,16 +18,6 @@
 - `docs/history.md` - 项目历史与技术演进记录
 - `wireless/bearpi-pico-h3863/docs/design.md` - H3863 开发环境设计文档
 
-### 参考开源仓库
-
-- **OpenHarmony Nearlink Service**（星闪开源协议栈）
-  - 主仓库: https://gitcode.com/openharmony/communication_nearlink_service
-  - 镜像: https://github.com/openharmony/communication_nearlink_service
-  - 本地路径: `~/workspace/communication_nearlink_service`
-  - 内容: SSAP 协议、SLE 广播/扫描/连接管理、属性读写、通知机制
-  - 架构: 应用层 → 框架层 → 系统服务层 → 驱动层(DLI)
-  - 用途: 作为 SLE 协议实现的参考，理解 SSAP 协议细节和状态机
-
 ## 平台
 
 ### BS21 开发板（已挂起）
