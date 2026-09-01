@@ -2,10 +2,10 @@
 """BS21 auto-flasher: run ws63flash under a pty and drive the chip reset.
 
 Usage:
-    python3 wireless/bs21/tools/burn.py board_a [fwpkg]
-    python3 wireless/bs21/tools/burn.py board_a -a <app>   # e.g. t_broadcaster
+    python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a [fwpkg]
+    python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a -a <app>   # e.g. t_broadcaster
 
-Board/serial mapping is read from the project .env file (wireless/bs21/../../.env):
+Board/serial mapping is read from the project .env file (wireless/ai-bs21-32s-kit/../../.env):
     BS21_BOARD_A_PORT / BS21_BOARD_A_RST_PORT / BS21_BOARD_A_RST_PIN
     BS21_BOARD_B_PORT / BS21_BOARD_B_RST_PORT / BS21_BOARD_B_RST_PIN
 FwPkg defaults to build/<app>/bs21_all_in_one.fwpkg (app=default -> build/).
@@ -40,7 +40,7 @@ DOWNLOAD_MARKERS = (b"Xfer ", b"Establishing ymodem")
 
 
 def repo_root():
-    """Build output root (wireless/bs21), where build/<app>/ fwpkg live."""
+    """Build output root (wireless/ai-bs21-32s-kit), where build/<app>/ fwpkg live."""
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -68,7 +68,7 @@ nRF52840 阶段（2025 初）的代码虽已清理，但其设计成果被 BS21 
 
 | 成果 | 去向 |
 |------|------|
-| `controller_state.h` 数据结构定义 | 迁移至 `wireless/bs21/src/controller_state.h`（去掉 Zephyr 依赖） |
+| `controller_state.h` 数据结构定义 | 迁移至 `wireless/ai-bs21-32s-kit/src/controller_state.h`（去掉 Zephyr 依赖） |
 | formatter 文本/二进制格式化设计思路 | BS21 侧重新实现（见实施计划 P3） |
 | USB CDC 输出管道设计 | BS21 USB 2.0 CDC 重新实现 |
 | 串口接口字符串识别方案（sysfs） | 后续 BS21 USB 输出阶段复用 |

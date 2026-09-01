@@ -53,7 +53,7 @@ flydigi-receiver/
 烧录（先发命令，等 "Waiting for device reset..." 后复位触发）：
 
 ```bash
-ws63flash --flash <模块串口> wireless/bs21/build/<app>/bs21_all_in_one.fwpkg -b460800
+ws63flash --flash <模块串口> wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg -b460800
 uart-gpio pulse /dev/ttyUSB5 A <引脚> 0 3000   # 另一终端，复位模块
 ```
 

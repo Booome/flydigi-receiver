@@ -2,7 +2,7 @@
 """capture_uart: capture BS21 board serial output with optional delayed reset.
 
 Usage:
-    python3 wireless/bs21/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
+    python3 wireless/ai-bs21-32s-kit/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
 
 Board/serial mapping is read from the project .env file:
     BS21_BOARD_A_PORT / BS21_BOARD_A_RST_PORT / BS21_BOARD_A_RST_PIN

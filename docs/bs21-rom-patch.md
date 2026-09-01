@@ -2,7 +2,7 @@
 
 > 主题：Hi2821 (BS21) 芯片的 ROM patch（表驱动补丁）机制，包括配置、生成、加载、
 > 初始化原理，以及本项目在构建/烧录链路上遇到的"patch 表缺失"问题与修复。
-> 适用构建：`t_broadcaster`（`-B wireless/bs21/build/t_broadcaster -DBS21_APP=t_broadcaster`）。
+> 适用构建：`t_broadcaster`（`-B wireless/ai-bs21-32s-kit/build/t_broadcaster -DBS21_APP=t_broadcaster`）。
 
 ## 一、为什么需要 ROM patch
 
@@ -121,7 +121,7 @@ application.elf 中：
 
 ```bash
 python3 - <<'EOF'
-d = open('wireless/bs21/build/t_broadcaster/bs21_all_in_one.fwpkg','rb').read()
+d = open('wireless/ai-bs21-32s-kit/build/t_broadcaster/bs21_all_in_one.fwpkg','rb').read()
 print("TBL:", bytes.fromhex('efa28239') in d)   # 第一条 JAL
 print("CMP:", bytes.fromhex('000000000000040024000000') in d)
 EOF
@@ -155,7 +155,7 @@ JAL，`0x500` 全零，整个 bin 搜不到 `patch_init` 的 `lui a4,0xe0000`（
    打包的是 **SDK output 目录**的 `application_sign.bin`
    （`${SDK_ROOT}/output/bs21/acore/bs21-n1100-rcu/`）。一旦该文件是被竞态复制
    的无表 bin，fwpkg 即无表。
-3. **烧录路径**：`burn.py` 默认烧 `wireless/bs21/build/t_broadcaster/bs21_all_in_one.fwpkg`
+3. **烧录路径**：`burn.py` 默认烧 `wireless/ai-bs21-32s-kit/build/t_broadcaster/bs21_all_in_one.fwpkg`
    （构建的 package 目标会把 SDK output 的 fwpkg 复制到 `PROJECT_BINARY_DIR`）。
 
 结果：整条链路最后得到的是**无 patch 表**的固件，`func_patch_init` 配置了硬件
@@ -163,7 +163,7 @@ JAL，`0x500` 全零，整个 bin 搜不到 `patch_init` 的 `lui a4,0xe0000`（
 
 ### 修复
 
-- `wireless/bs21/CMakeLists.txt`：`GENERAT_SIGNBIN` 的依赖改为
+- `wireless/ai-bs21-32s-kit/CMakeLists.txt`：`GENERAT_SIGNBIN` 的依赖改为
   `GENERAT_BIN GENERAT_ROM_PATCH`（`if(TARGET GENERAT_ROM_PATCH)` 保护），
   保证签名/打包一定发生在 patch 表嵌入之后。
 - 重新构建后，SDK output 的 `application.bin`、`application_sign.bin` 与
@@ -197,10 +197,10 @@ patch 表修复后，wrap 已多余。验证方法（**去掉 wrap 仍无 fail t
 ```bash
 # nm（工具链随 SDK 附带）
 NM=$HOME/.local/Ai-BS21_SDK/tools/bin/compiler/riscv/cc_riscv32_musl_b010/cc_riscv32_musl_fp/bin/riscv32-linux-musl-nm
-$NM wireless/bs21/build/t_broadcaster/application.elf | grep -iE "patch|evt_prog_finish|dts_free|LOS_MemFree"
+$NM wireless/ai-bs21-32s-kit/build/t_broadcaster/application.elf | grep -iE "patch|evt_prog_finish|dts_free|LOS_MemFree"
 
 # 烧录（-a 指定 app）
-python3 wireless/bs21/tools/burn.py board_a -a t_broadcaster
+python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a -a t_broadcaster
 ```
 
 ### 关键地址（`t_broadcaster` 构建）
@@ -226,7 +226,7 @@ python3 wireless/bs21/tools/burn.py board_a -a t_broadcaster
 | `${SDK_ROOT}/build/config/target_config/bs21/patch_config/acore.cfg` | patch 函数清单 |
 | `${SDK_ROOT}/build/script/patch/patch_riscv.py` | 生成 TBL/CMP/RW 并写入 bin |
 | `${SDK_ROOT}/build/cmake/build_elf_info.cmake` | `GENERAT_ROM_PATCH` 等 target |
-| `wireless/bs21/CMakeLists.txt` | `GENERAT_SIGNBIN` 依赖修复 |
-| `wireless/bs21/scripts/gen-config.py` | 注入/移除 `--wrap=LOS_MemFree` |
-| `wireless/bs21/sdk-compat/los_memfree_wrap.c` | 已停用的 wrap（可删除） |
-| `wireless/bs21/tools/burn.py` | 烧录（`-a/--app` 指定 app） |
+| `wireless/ai-bs21-32s-kit/CMakeLists.txt` | `GENERAT_SIGNBIN` 依赖修复 |
+| `wireless/ai-bs21-32s-kit/scripts/gen-config.py` | 注入/移除 `--wrap=LOS_MemFree` |
+| `wireless/ai-bs21-32s-kit/sdk-compat/los_memfree_wrap.c` | 已停用的 wrap（可删除） |
+| `wireless/ai-bs21-32s-kit/tools/burn.py` | 烧录（`-a/--app` 指定 app） |

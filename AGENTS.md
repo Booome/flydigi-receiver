@@ -33,7 +33,7 @@ Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
 - 双 Type-C：USB1 原生 USB 2.0（HID/CDC），USB2 CH340 串口（烧录/调试）
 - SDK: 安信可 **Ai-BS21_SDK**（`~/.local/Ai-BS21_SDK`），只读引用模式（SDK 不修改源码）
 - target: `bs21-n1100-rcu`（SLE-only，512KB flash）
-- 编译：`cmake -S wireless/bs21 -B wireless/bs21/build && cmake --build wireless/bs21/build -j`（一次性前置 `wireless/bs21/scripts/setup-sdk.sh`）
+- 编译：`cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build && cmake --build wireless/ai-bs21-32s-kit/build -j`（一次性前置 `wireless/ai-bs21-32s-kit/scripts/setup-sdk.sh`）
 - 开发环境搭建和路线图见 `docs/bs21-development.md`
 
 #### 烧录与调试
@@ -45,21 +45,21 @@ Ai-BS21-32S-Kit，基于 Hi2821 (BS21，海思型号名 BS21E) 芯片：
 
 **自动烧录（推荐）**：
 ```bash
-python3 wireless/bs21/tools/burn.py board_a   # 或 board_b
+python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a   # 或 board_b
 ```
 - 状态机：直接跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
   等 1s 判定正常态；仍无 = 卡死态（复位无效，只能手动拔插模块 USB 电源恢复）。
 
 手动烧录（先发命令，等 "Waiting for device reset..." 后复位触发）：
 ```bash
-ws63flash --flash <模块串口> wireless/bs21/build/<app>/bs21_all_in_one.fwpkg -b460800
+ws63flash --flash <模块串口> wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg -b460800
 # 另一终端，复位模块（<控制串口> 与 <引脚> 见 .env 的 *RST_PORT / *RST_PIN）：
 uart-gpio pulse <控制串口> A <引脚> 0 2000
 ```
 
 抓取从 reset 起的完整 log（推荐用脚本，自动连串口+延迟复位+落盘+时间戳）：
 ```bash
-python3 wireless/bs21/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
+python3 wireless/ai-bs21-32s-kit/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
 ```
 - board_a/board_b 可选，至少选一个；--rst-a/--rst-b 对已选板复位；Ctrl+C 优雅保存
 
@@ -77,13 +77,13 @@ reset 轮特征（靠内容区分每轮）：
 通知用户"我可以接收新任务了"，并更新本地记忆（如本文件 / 相关 docs）以反映
 当前进展。**不要静默卡在空闲态**。
 
-提示音脚本：`wireless/bs21/tools/notify.sh`（播放 `notify_alarm.wav`，一段明显的
+提示音脚本：`wireless/ai-bs21-32s-kit/tools/notify.sh`（播放 `notify_alarm.wav`，一段明显的
 三连蜂鸣 + 收尾高音，三角波 vol=0.70 + 10ms 淡入淡出包络，无破音）。重新生成用
 `notify_gen.py`。播放依赖 `paplay`（PulseAudio），无音频环境会报错退出。
 
 调用示例：
 ```bash
-bash wireless/bs21/tools/notify.sh
+bash wireless/ai-bs21-32s-kit/tools/notify.sh
 # 然后打印："请连接手柄并进入 2.4GHz SLE 配对模式"
 ```
 
@@ -101,6 +101,21 @@ dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播
 反例（禁止）：在 board_a + board_b 互测进行中，突然要求用户插真机 dongle 抓包，
 却不说明切换原因和操作步骤。
 
+### BearPi-Pico H3863 开发板（已到货）
+
+BearPi-Pico H3863，基于 WS63 (H3863) 芯片：
+- SLE 1.0 + BLE 5.4 + Wi-Fi 6
+- SDK: 海思 **fbb_ws63**（`~/workspace/fbb_ws63`），只读引用模式（SDK 不修改源码）
+- target: `ws63-liteos-app`（LiteOS, acore, 应用处理器）
+- 构建：`FBB_APP=default bash wireless/bearpi-pico-h3863/scripts/build.sh`（多 app，`FBB_APP` 选择 `apps/<app>/`）
+- 产物：`$FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
+- 烧录：`ws63flash --flash <串口> <fwpkg> -b460800`
+- 开发环境搭建见 `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md`
+
+> **注意**：SDK 的 out-of-tree 构建硬编码查找工程根 `main/CMakeLists.txt` 并把 `main`
+> 注册进 RAM_COMPONENT。因此 `main/CMakeLists.txt` 是转发器，通过 `FBB_APP` 环境变量
+> 选择 `apps/<app>/`；各 app 的 CMakeLists 必须 `set(COMPONENT_NAME "main")` 才能被链接。
+
 ## 手柄硬件信息
 
 - 型号：飞智八爪鱼5 (Flydigi Apex 5)
@@ -117,11 +132,11 @@ dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播
 
 双 build 目录（协议栈库随 sle_role 不同，不能共用）：
 ```bash
-cmake -S wireless/bs21 -B wireless/bs21/build-decoy -DBS21_APP=flydigi_decoy
-cmake -S wireless/bs21 -B wireless/bs21/build-probe -DBS21_APP=sle_probe
+cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-decoy -DBS21_APP=flydigi_decoy
+cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-probe -DBS21_APP=sle_probe
 # 烧录（显式指定 fwpkg）：
-python3 wireless/bs21/tools/burn.py board_b wireless/bs21/build-decoy/bs21_all_in_one.fwpkg
-python3 wireless/bs21/tools/burn.py board_a wireless/bs21/build-probe/bs21_all_in_one.fwpkg
+python3 wireless/ai-bs21-32s-kit/tools/burn.py board_b wireless/ai-bs21-32s-kit/build-decoy/bs21_all_in_one.fwpkg
+python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21_all_in_one.fwpkg
 ```
 
 用途：decoy 改动后先用 probe 本地读回属性表验证呈现效果（handle+type+值），

@@ -4,7 +4,7 @@
 Parses a probe serial capture and compares the discovery output against the
 real-controller baseline. Usage:
 
-    python3 wireless/bs21/tools/regress_find.py <probe_log.txt>
+    python3 wireless/ai-bs21-32s-kit/tools/regress_find.py <probe_log.txt>
 
 Baseline (experiment N, real controller, two rounds consistent):
   properties : hdl oper desc types uuid

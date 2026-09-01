@@ -17,6 +17,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 FBB_SDK_DIR="${FBB_SDK_DIR:-$HOME/workspace/fbb_ws63/src}"
 FBB_KCONFIG_CONFIG="${FBB_KCONFIG_CONFIG:-$PROJECT_DIR/build.config}"
 FBB_PROJECT_TARGET="${FBB_PROJECT_TARGET:-ws63-liteos-app}"
+FBB_APP="${FBB_APP:-default}"
 
 if [ ! -d "$FBB_SDK_DIR" ]; then
     echo "error: WS63 SDK not found at $FBB_SDK_DIR (set FBB_SDK_DIR)" >&2
@@ -26,6 +27,7 @@ fi
 export FBB_PROJECT_DIR="$PROJECT_DIR"
 export FBB_PROJECT_TARGET
 export FBB_KCONFIG_CONFIG
+export FBB_APP
 
 cd "$FBB_SDK_DIR"
 

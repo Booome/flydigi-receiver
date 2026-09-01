@@ -347,7 +347,7 @@ start_scan() → seek_disable_cb → connect()
 基线见 `docs/reference/real-controller-find-type1.hex` / `real-controller-find-type3.hex`。
 
 ### 实现（运行时 hook，不改 SDK 二进制）
-- 文件 `wireless/bs21/apps/flydigi_decoy/decoy_send_hook.c`
+- 文件 `wireless/ai-bs21-32s-kit/apps/flydigi_decoy/decoy_send_hook.c`
 - 链接器 `--wrap=cs_pdu_tl_send`（写入 `build-decoy/rom_cb_flag.srp`），
   在 SDK 真正发送 ATT PDU 前插桩
 - 匹配 `05 0b 00` + sub-type 高半字节 0x8（覆盖 `00 82`/`00 87` 等），命中后：

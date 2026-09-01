@@ -53,9 +53,9 @@
 | XFusion | Apache-2.0 | 社区工具，已停更，未采用 |
 | Docker (lualiliu/bs21_sdk) | 无 license | 几乎无人用，未采用 |
 
-**开发模式为只读引用**：SDK 只引用不修改，我们的代码在 `wireless/bs21/`（`apps/`、
+**开发模式为只读引用**：SDK 只引用不修改，我们的代码在 `wireless/ai-bs21-32s-kit/`（`apps/`、
 `sdk-compat/`、`CMakeLists.txt`、`toolchain.cmake`、`scripts/`），构建时由顶层
-`CMakeLists.txt` 直接引用 SDK 的构建脚本与源目录，构建产物收集到 `wireless/bs21/build/`，
+`CMakeLists.txt` 直接引用 SDK 的构建脚本与源目录，构建产物收集到 `wireless/ai-bs21-32s-kit/build/`，
 SDK 树不叠加源码。
 
 - `apps/`：多工程应用入口，由顶层 `-DBS21_APP=` 选择（默认 `default`）。各工程的
@@ -78,17 +78,17 @@ SDK 位置：`~/.local/Ai-BS21_SDK`（从 GitHub 克隆）。
 
 ```bash
 # 一次性前置（仅全新 SDK clone 后需要）：恢复工具链 exec 位 + 补 LiteOS .a symlink
-wireless/bs21/scripts/setup-sdk.sh
+wireless/ai-bs21-32s-kit/scripts/setup-sdk.sh
 
 # 构建（configure + build 两步）
-cmake -S wireless/bs21 -B wireless/bs21/build
-cmake --build wireless/bs21/build -j
+cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build
+cmake --build wireless/ai-bs21-32s-kit/build -j
 ```
 
 - 依赖：Python 3.8+（实测 3.14 需 `pip install setuptools` 提供 distutils）、RISC-V 工具链（SDK 自带）
 - `setup-sdk.sh`：一次性环境修复（git clone 会丢失工具链 `+x` 位；`bs21-n1100-rcu` 只含 libc/libm 预编译库，其余从 `standard-bs21-n1100` symlink），不改源码
 - `gen-config.py`：构建时生成 SDK target 配置（复用 SDK 的 `TargetEnvironment`），并注入 `NO_BOOT_BACKUP` 修复 flash 布局 bug（见 §2.4）
-- 产出 fwpkg：`wireless/bs21/build/`（`bs21_all_in_one.fwpkg` 等）
+- 产出 fwpkg：`wireless/ai-bs21-32s-kit/build/`（`bs21_all_in_one.fwpkg` 等）
 
 ### 2.2.1 SDK 只读的已知限制
 
@@ -101,7 +101,7 @@ SDK 自带的 sign/packet 工具把部分中间产物硬编码写回 SDK 树，�
 | `SDK/tools/pkg/fwpkg/bs21/bs21_all.fwpkg` | tracked，构建后变 `M` | packet.py 硬编码写入；构建脚本打包后自动 `git checkout` 恢复 |
 | `SDK/build/config/target_config/bs21/fota/__pycache__/*.pyc` | tracked，构建后变 `D` | `gen-config.py` 复用 SDK `TargetEnvironment`，其 import 时 `rm_pyc` 删目标目录 pycache；`package` 目标构建后自动 `git checkout` 恢复 |
 
-前三项内容稳定、不会让 `git status` 变脏；后两项由 `wireless/bs21/CMakeLists.txt` 的
+前三项内容稳定、不会让 `git status` 变脏；后两项由 `wireless/ai-bs21-32s-kit/CMakeLists.txt` 的
 `package` 目标在打包完成后自动 `git checkout --` 恢复。这是只读方案的已知局限——彻底
 隔离需给 sign/packet 工具增加输出重定向，超出当前范围。
 
@@ -166,13 +166,13 @@ ws63flash 已实现 fwpkg 解析（`src/fwpkg.h`）和 WS63 串口烧录协议�
 
 **已实测确认**：烧录协议兼容（握手 0xf0 + loaderboot ymodem），460800 稳定。
 
-#### 自动烧录脚本 `wireless/bs21/tools/burn.py`
+#### 自动烧录脚本 `wireless/ai-bs21-32s-kit/tools/burn.py`
 
 基于上面手动流程封装的状态机自动烧录工具（输出全英文，依赖 `pyyaml`，见工程根
 `requirements.txt`）：
 
 ```bash
-python3 wireless/bs21/tools/burn.py board_a   # 或 board_b；可选第 2 参指定 fwpkg
+python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a   # 或 board_b；可选第 2 参指定 fwpkg
 ```
 
 - 串口/复位配置全部在项目根 `.env`（by-path 稳定路径，不入库；模板见 `.env.example`）。
@@ -311,9 +311,9 @@ sle_pair_remote_device(&addr);     // 发起配对
   之前"手柄 3 分钟不感知"的结论作废，根因即接收器被 reset 灌电未断电。
 
 **测试脚本（已入库）**：
-- `wireless/bs21/tools/bs21_connect.py`：稳定建立 G↔T 连接（config open-drain →
+- `wireless/ai-bs21-32s-kit/tools/bs21_connect.py`：稳定建立 G↔T 连接（config open-drain →
   先复位 G 释放对端、再复位 T 重新广播 → 等 param update 确认）。
-- `wireless/bs21/tools/bs21_disconnect_test.py`：双向断链检测（`--dir t2g|g2t|both`），
+- `wireless/ai-bs21-32s-kit/tools/bs21_disconnect_test.py`：双向断链检测（`--dir t2g|g2t|both`），
   自动记录拔电时间与对端感知时间（gap 应为 superv 级别 ~2s）。
 
 **结论**：
@@ -352,7 +352,7 @@ sle_pair_remote_device(&addr);     // 发起配对
 **目标**：`default` app 从"全自动单次连接演示"升级为正式固件——完整的连接
 状态机、就近手柄选择、手动配对与 NV 记录持久化。
 
-实现文件（`wireless/bs21/apps/default/`）：
+实现文件（`wireless/ai-bs21-32s-kit/apps/default/`）：
 - `conn_mgr.c`：连接状态机与回调调度（核心逻辑）
 - `led.c`：LED 控制（红 IO11 / 蓝 IO13，高电平点亮）
 - `conn_nv.c`：NV 连接记录存储 / 擦除
@@ -360,7 +360,7 @@ sle_pair_remote_device(&addr);     // 发起配对
 - `rssi_pick.c`：RSSI 就近选择（滑动滤波 + 持续保持）
 - `main.c`：外设初始化、回调注册、任务创建
 
-公共层（`wireless/bs21/common/`）：
+公共层（`wireless/ai-bs21-32s-kit/common/`）：
 - `scan_table.c`：扫描结果聚合表（地址/RSSI/计数）
 - `bs21_util.c`：GPIO 复位、扫描启动、本地地址设置
 

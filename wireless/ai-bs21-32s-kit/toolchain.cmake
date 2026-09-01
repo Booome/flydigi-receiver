@@ -4,7 +4,7 @@
 #
 # The SDK's riscv32_musl_b010_fp.cmake resolves COMPILER_ROOT via
 # PROJECT_SOURCE_DIR, which is the SDK root in the SDK's own build. In this
-# overlay build PROJECT_SOURCE_DIR is wireless/bs21, so the toolchain file
+# overlay build PROJECT_SOURCE_DIR is wireless/ai-bs21-32s-kit, so the toolchain file
 # must be re-pointed at SDK_ROOT. Everything else is identical to the SDK.
 #===============================================================================
 
