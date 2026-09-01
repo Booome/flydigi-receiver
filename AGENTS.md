@@ -2,8 +2,11 @@
 
 ## 项目状态
 
-手柄使用**星闪 SLE 1.0 (NearLink)** 进行 2.4GHz 无线通信，基于
-**Ai-BS21-32S-Kit**（BS21 开发板，2 块）开发 SLE 接收器。
+手柄使用**星闪 SLE 1.0 (NearLink)** 进行 2.4GHz 无线通信，正在开发 SLE 接收器。
+当前两个开发板平台：
+- **Ai-BS21-32S-Kit**（BS21，2 块）— 现有 SLE 接收器固件与 M8 逆向实验平台
+- **BearPi-Pico H3863**（WS63）— **新主平台**（替代 BS21，性能更强：240MHz/606KB SRAM/Wi-Fi 6），
+  开发环境已打通（Hello World 验证），SLE 接收器功能待迁移
 
 历史尝试（nRF52840 BLE / 2.4GHz 无线）见 `docs/history.md`。
 
@@ -13,6 +16,7 @@
 - `docs/bs21-development.md` - BS21 开发板、SDK 与开发路线图
 - `docs/controller-modes.md` - 手柄模式与协议详解
 - `docs/history.md` - 项目历史与技术演进记录
+- `docs/superpowers/specs/2026-09-01-bearpi-pico-h3863-design.md` - H3863 开发环境设计文档
 
 ### 参考开源仓库
 
@@ -129,7 +133,10 @@ BearPi-Pico H3863，基于 WS63 (H3863) 芯片：
 - 蓝牙芯片：BP1Y303-D4（BR/EDR）
 - USB VID/PID：0x37D7 / 0x2501
 
-## 双模块调试分工（M8 逆向阶段）
+## 双模块调试分工（M8 逆向阶段，BS21 平台）
+
+> 以下 probe/decoy 双模块实验分工针对 **BS21 平台**（Ai-BS21-32S-Kit）。
+> H3863 平台启用后按需迁移到 `wireless/bearpi-pico-h3863/apps/`。
 
 固定角色，避免混淆：
 - **board_a = 接收器侧**：烧 `sle_probe`（client，扫描/连接/发现/读写实验）
