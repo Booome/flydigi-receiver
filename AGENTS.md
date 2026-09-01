@@ -77,13 +77,13 @@ reset 轮特征（靠内容区分每轮）：
 通知用户"我可以接收新任务了"，并更新本地记忆（如本文件 / 相关 docs）以反映
 当前进展。**不要静默卡在空闲态**。
 
-提示音脚本：`wireless/ai-bs21-32s-kit/tools/notify.sh`（播放 `notify_alarm.wav`，一段明显的
+提示音脚本：`tools/notify.sh`（播放 `notify_alarm.wav`，一段明显的
 三连蜂鸣 + 收尾高音，三角波 vol=0.70 + 10ms 淡入淡出包络，无破音）。重新生成用
-`notify_gen.py`。播放依赖 `paplay`（PulseAudio），无音频环境会报错退出。
+`tools/notify_gen.py`。播放依赖 `paplay`（PulseAudio），无音频环境会报错退出。
 
 调用示例：
 ```bash
-bash wireless/ai-bs21-32s-kit/tools/notify.sh
+bash tools/notify.sh
 # 然后打印："请连接手柄并进入 2.4GHz SLE 配对模式"
 ```
 

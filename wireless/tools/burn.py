@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""BS21 auto-flasher: run ws63flash under a pty and drive the chip reset.
+"""Auto-flasher: run ws63flash under a pty and drive the chip reset.
 
 Usage:
-    python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a [fwpkg]
-    python3 wireless/ai-bs21-32s-kit/tools/burn.py board_a -a <app>   # e.g. t_broadcaster
+    python3 wireless/tools/burn.py board_a [fwpkg]
+    python3 wireless/tools/burn.py board_a -a <app>          # BS21 multi-app
+    python3 wireless/tools/burn.py --port /dev/ttyUSB0 --fwpkg <fwpkg>  # direct
 
-Board/serial mapping is read from the project .env file (wireless/ai-bs21-32s-kit/../../.env):
+Board/serial mapping is read from the project .env file:
     BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN
     BOARD_B_PORT / BOARD_B_RST_PORT / BOARD_B_RST_PIN
-FwPkg defaults to build/<app>/bs21_all_in_one.fwpkg (app=default -> build/).
+
+For BS21: fwpkg defaults to wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg.
+For H3863: pass --fwpkg explicitly (SDK output), reset via physical button.
 
 Flow (one ws63flash run decides the chip state):
   1. wait for "Waiting for device reset" (instant when run on a pty),
   2. wait 2s: auto download -> boot-loop state, wait for finish,
-  3. else pulse reset, wait 1s: download -> normal state, wait for finish,
+  3. else pulse reset (if configured), wait 1s: download -> normal state,
   4. else chip stuck: retry up to DEAD_MAX_ATTEMPTS ws63flash runs.
 """
 
@@ -39,14 +42,19 @@ DEAD_RETRY_SLEEP = 5
 DOWNLOAD_MARKERS = (b"Xfer ", b"Establishing ymodem")
 
 
-def repo_root():
-    """Build output root (wireless/ai-bs21-32s-kit), where build/<app>/ fwpkg live."""
+def wireless_root():
+    """wireless/ directory (one level up from tools/)."""
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def repo_root():
+    """Build output root for BS21 (wireless/ai-bs21-32s-kit), where build/<app>/ fwpkg live."""
+    return os.path.join(wireless_root(), "ai-bs21-32s-kit")
 
 
 def project_root():
     """Repository root (contains .env and wireless/)."""
-    return os.path.dirname(os.path.dirname(repo_root()))
+    return os.path.dirname(wireless_root())
 
 
 def load_env():
@@ -69,7 +77,9 @@ ENV = load_env()
 
 
 def get_board(env, name):
-    """Return (module_port, reset_cmd) for board_a / board_b from .env vars."""
+    """Return (module_port, reset_cmd) for board_a / board_b from .env vars.
+    Reset cmd is None if RST_PORT/PIN not configured (e.g. H3863 with physical
+    reset button)."""
     if name == "board_a":
         port = env.get("BOARD_A_PORT")
         rst_port = env.get("BOARD_A_RST_PORT")
@@ -80,11 +90,14 @@ def get_board(env, name):
         pin = env.get("BOARD_B_RST_PIN")
     else:
         sys.exit(f"[ERROR] unknown board: {name} (board_a / board_b only)")
-    if not (port and rst_port and pin):
-        sys.exit(f"[ERROR] incomplete .env config for {name} "
-                 f"(need BOARD_{name.upper()}_PORT/RST_PORT/RST_PIN)")
-    reset_cmd = f"uart-gpio config {rst_port} A {pin} open-drain && " \
-                f"uart-gpio pulse {rst_port} A {pin} 0 2000"
+    if not port:
+        sys.exit(f"[ERROR] missing BOARD_{name.upper()}_PORT in .env")
+    if rst_port and pin:
+        reset_cmd = f"uart-gpio config {rst_port} A {pin} open-drain && " \
+                    f"uart-gpio pulse {rst_port} A {pin} 0 2000"
+    else:
+        reset_cmd = None
+        print(f"[board] {name}: no reset config, use physical button if needed")
     return port, reset_cmd
 
 
@@ -234,13 +247,17 @@ def flash_round(master, p, reset_cmd, buf):
     if has_download(buf):
         print("[flash] auto download started (boot-loop state)")
         return wait_finish(master, p)
-    print("[flash] no auto download, pulsing reset...")
-    pulse_reset(reset_cmd)
-    pty_read(buf, master, p, POST_RESET_WAIT)
-    if has_download(buf):
-        print("[flash] download started after reset (normal state)")
-        return wait_finish(master, p)
-    print("[flash] still no download after reset (chip stuck)")
+    if reset_cmd:
+        print("[flash] no auto download, pulsing reset...")
+        pulse_reset(reset_cmd)
+        pty_read(buf, master, p, POST_RESET_WAIT)
+        if has_download(buf):
+            print("[flash] download started after reset (normal state)")
+            return wait_finish(master, p)
+        print("[flash] still no download after reset (chip stuck)")
+    else:
+        print("[flash] no auto download and no reset config "
+              "(press physical reset button if available)")
     return False
 
 
@@ -277,26 +294,46 @@ def main():
     if not args:
         print(__doc__)
         sys.exit(1)
-    board = args[0]
+    board = None
     app = "default"
     fwpkg = None
-    i = 1
+    port_override = None
+    i = 0
     while i < len(args):
         if args[i] in ("-a", "--app"):
             i += 1
             if i >= len(args):
                 sys.exit("[ERROR] --app requires an app name")
             app = args[i]
+        elif args[i] == "--port":
+            i += 1
+            if i >= len(args):
+                sys.exit("[ERROR] --port requires a device path")
+            port_override = args[i]
+        elif args[i] == "--fwpkg":
+            i += 1
+            if i >= len(args):
+                sys.exit("[ERROR] --fwpkg requires a file path")
+            fwpkg = args[i]
+        elif board is None:
+            board = args[i]
         else:
             fwpkg = args[i]
         i += 1
+    if board is None and port_override is None:
+        sys.exit("[ERROR] need board_a/board_b or --port")
     fwpkg = os.path.abspath(fwpkg if fwpkg else default_fwpkg(app))
     if not os.path.isfile(fwpkg):
         print(f"[ERROR] fwpkg not found: {fwpkg}")
         sys.exit(1)
 
-    port, reset_cmd = get_board(ENV, board)
-    print(f"[board] {board} ({port})")
+    if port_override:
+        port = port_override
+        reset_cmd = None
+        print(f"[board] direct mode ({port})")
+    else:
+        port, reset_cmd = get_board(ENV, board)
+        print(f"[board] {board} ({port})")
     print(f"[firmware] {fwpkg}")
     print(f"[config] {os.path.join(project_root(), '.env')}")
 
@@ -304,7 +341,7 @@ def main():
 
     ok = flash_auto(port, fwpkg, reset_cmd)
     if ok:
-        print(f"[flash] {board} flashed successfully!")
+        print("[flash] flashed successfully!")
         sys.exit(0)
 
     print("[flash] FAILED: still no success after all attempts")
