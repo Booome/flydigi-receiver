@@ -33,8 +33,11 @@
 > **禁止裸跑 ws63flash / screen**，统一用共享工具。
 
 串口/复位配置记录在项目根 `.env`（不入库，模板见 `.env.example`），统一用
-`/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，勿硬编码）。复位 GPIO 由控制串口
-（STM32）提供。两个平台共用同一套 `BOARD_*` 定义，切换平台只需换 fwpkg，无需改端口。
+`/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，勿硬编码）。
+
+**复位控制**：WS63 reset 引脚通过控制板物理连接，由 `uart-gpio` 命令行工具控制
+（不是 STM32 USB-serial 的 DTR/RTS）。`burn.py` / `capture_uart.py` 通过调用
+`uart-gpio` 控制复位脉冲。
 
 **共享工具**（`wireless/tools/`）：
 - `burn.py` — 自动烧录（跑 ws63flash + 驱动复位，多状态机判定）
