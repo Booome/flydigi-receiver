@@ -18,12 +18,10 @@ wireless/bearpi-pico-h3863/
 │   ├── sle_client/          # M2 成果，保持不变
 │   ├── sle_decoy/           # M3 新建：SLE server 角色（对接 dongle）
 │   └── sle_probe/           # M3 后续：SLE client 角色（对接手柄）
-└── common/
-    ├── sle_uuid.c           # UUID 编解码（base UUID + 2-byte 短码）
-    └── sle_uuid.h
 ```
 
-Decoy 与 Probe 结构对称：Decoy 是 server 端，Probe 是 client 端。共享层仅包含已验证可复用的 UUID 工具，不强加抽象。
+Decoy 与 Probe 结构对称：Decoy 是 server 端，Probe 是 client 端。
+**按需提取共享代码，不预先设计共享层。**
 
 ## Decoy 设计
 
@@ -81,14 +79,7 @@ Decoy 与 Probe 同步推进，用 reset 切换（不损伤芯片，不断电不
 循环步骤 2-3，逐步推进
 ```
 
-## 共享层
 
-`sle_uuid.h/c` 提供 UUID 编解码：
-- `sle_set_uuid_base(sle_uuid_t *out)` — 写入标准 base UUID
-- `sle_set_uuid_u2(uint16_t u2, sle_uuid_t *out)` — 写入 2-byte 短码（little-endian 在 offset 14）
-
-SDK 已定义 `SSAP_FIND_TYPE_*`、`SSAP_PROPERTY_TYPE_*`、`SSAP_PERMISSION_*`、
-`SSAP_OPERATE_INDICATION_BIT_*` 等枚举，无需重复定义。
 
 ## 已知问题
 
