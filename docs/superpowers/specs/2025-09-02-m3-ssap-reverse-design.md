@@ -64,15 +64,16 @@ sle_decoy/
 Decoy 与 Probe 同步推进，用 reset 切换（不损伤芯片，不断电不拔固件）：
 
 ```
-步骤 1: Decoy 上电运行，dongle 插真机位
+步骤 1: Decoy 上电运行，同时拉低 Probe 的 reset 引脚（防止干扰）
+        dongle 插真机位
         → 日志记录 dongle 的命令序列
 
-步骤 2: Decoy 拉 reset（`uart-gpio` 控制）
+步骤 2: Decoy 拉 reset，释放 Probe 的 reset
         Probe 上电运行，连真实手柄
-        → Probe 模拟 dongle 的命令序列
+        → Probe 模拟步骤 1 中 dongle 的命令序列
         → 从手柄获取真实响应
 
-步骤 3: Probe 拉 reset
+步骤 3: Probe 拉 reset，释放 Decoy 的 reset
         Decoy 上电，加载步骤 2 的真实响应数据
         → dongle 收到与手柄一致的响应
         → 观察 dongle 下一步行为
