@@ -12,7 +12,7 @@
 
 #define SLE_CLIENT_LOG "[sle client]"
 
-#define SLE_TARGET_NAME "flydigi_m2"
+#define SLE_TARGET_NAME "fly_digig1"
 
 static uint16_t g_conn_id = 0;
 static uint16_t g_property_handle = 0;
@@ -44,15 +44,34 @@ static void sle_client_seek_enable_cbk(errcode_t status) {
     }
 }
 
+static bool sle_client_has_name(const uint8_t *data, uint16_t len, const char *name) {
+    uint16_t name_len = strlen(name);
+    for (uint16_t i = 0; i + name_len <= len; i++) {
+        if (memcmp(&data[i], name, name_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void sle_client_seek_result_cbk(sle_seek_result_info_t *seek_result_data) {
     if (seek_result_data == NULL) {
         osal_printk("%s seek result NULL\r\n", SLE_CLIENT_LOG);
         return;
     }
 
-    osal_printk("%s scan: %s\r\n", SLE_CLIENT_LOG, seek_result_data->data);
+    osal_printk("%s scan addr:%02x:%02x:%02x:%02x:%02x:%02x rssi:%d len:%d data:",
+                SLE_CLIENT_LOG, seek_result_data->addr.addr[0], seek_result_data->addr.addr[1],
+                seek_result_data->addr.addr[2], seek_result_data->addr.addr[3],
+                seek_result_data->addr.addr[4], seek_result_data->addr.addr[5],
+                seek_result_data->rssi, seek_result_data->data_length);
+    for (uint8_t i = 0; i < seek_result_data->data_length; i++) {
+        osal_printk("%02x ", seek_result_data->data[i]);
+    }
+    osal_printk("\r\n");
 
-    if (strstr((const char *)seek_result_data->data, SLE_TARGET_NAME) != NULL) {
+    if (sle_client_has_name(seek_result_data->data, seek_result_data->data_length,
+                            SLE_TARGET_NAME)) {
         osal_printk("%s found target, stopping scan...\r\n", SLE_CLIENT_LOG);
         memcpy_s(&g_remote_addr, sizeof(sle_addr_t), &seek_result_data->addr, sizeof(sle_addr_t));
         sle_stop_seek();
