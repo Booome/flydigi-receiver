@@ -310,11 +310,9 @@ sle_pair_remote_device(&addr);     // 发起配对
 - 结论：**协议栈 supervision 正常，手柄断连感知与官方 Dongle 场景一致**。
   之前"手柄 3 分钟不感知"的结论作废，根因即接收器被 reset 灌电未断电。
 
-**测试脚本（已入库）**：
+**辅助脚本（已入库）**：
 - `wireless/ai-bs21-32s-kit/tools/bs21_connect.py`：稳定建立 G↔T 连接（config open-drain →
   先复位 G 释放对端、再复位 T 重新广播 → 等 param update 确认）。
-- `wireless/ai-bs21-32s-kit/tools/bs21_disconnect_test.py`：双向断链检测（`--dir t2g|g2t|both`），
-  自动记录拔电时间与对端感知时间（gap 应为 superv 级别 ~2s）。
 
 **结论**：
 - SLE 对端断电可感知（`disc:0x7`，协议栈链路层超时；不在 `sle_disc_reason_t`

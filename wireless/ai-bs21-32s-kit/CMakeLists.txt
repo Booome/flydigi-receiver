@@ -33,9 +33,8 @@ set(Python3_EXECUTABLE
 
 set(CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/sdk-config.cmake")
 execute_process(
-  COMMAND
-    ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen-config.py
-    ${SDK_ROOT} ${BS21_TARGET} ${CONFIG_FILE} ${BS21_APP}
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen-config.py
+          ${SDK_ROOT} ${BS21_TARGET} ${CONFIG_FILE} ${BS21_APP}
   RESULT_VARIABLE gen_result
 )
 if(NOT

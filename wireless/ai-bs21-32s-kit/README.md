@@ -34,9 +34,6 @@ ai-bs21-32s-kit/
 │   ├── bs21_util.c/h       # 平台工具函数
 │   ├── scan_table.c/h      # 扫描表
 │   └── controller_state.h  # 手柄状态定义
-├── scripts/
-│   ├── setup-sdk.sh        # SDK 准备（恢复 exec 位、symlink 缺失 lib）
-│   └── gen-config.py       # 生成 sdk-config.cmake
 ├── sdk-compat/
 │   ├── ble_stub.c          # BLE stub
 │   └── los_memfree_wrap.c  # LiteOS memfree 包装
@@ -44,22 +41,24 @@ ai-bs21-32s-kit/
     ├── ble_probe.py        # BLE 探测
     ├── bs21_connect.py     # 连接工具
     ├── bs21_disconnect_test.py
+    ├── gen-config.py       # 生成 sdk-config.cmake
     ├── patch_gle_decoy.py  # 协议栈库 patch（decoy 用）
-    └── regress_find.py     # 回归测试
+    ├── regress_find.py     # 回归测试
+    └── setup-sdk.py        # SDK 准备（恢复 exec 位、symlink 缺失 lib）
 ```
 
 ## 构建
 
 ```bash
-# 一次性前置
-bash wireless/ai-bs21-32s-kit/scripts/setup-sdk.sh
+# 一次性前置（Python，内置 SDK 路径探测与修复）
+python3 wireless/ai-bs21-32s-kit/tools/setup-sdk.py
 
-# 配置 + 构建（BS21_APP 选择 app，默认 default）
-cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build -DBS21_APP=sle_probe
-cmake --build wireless/ai-bs21-32s-kit/build -j
+# 配置 + 构建（每 app 独立 build/<app> 输出根）
+cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build/sle_probe -DBS21_APP=sle_probe
+cmake --build wireless/ai-bs21-32s-kit/build/sle_probe -j
 ```
 
-产物：`wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg`
+产物：`wireless/ai-bs21-32s-kit/build/<app>/bs21_all_in_one.fwpkg`（每 app 独立输出根，互不串扰）
 
 ## 烧录与抓 log
 
@@ -79,13 +78,13 @@ python3 wireless/tools/capture_uart.py --board-a --duration 60 --odir /tmp --ts
 - **board_a = 接收器侧**：烧 `sle_probe`（client，扫描/连接/发现/读写实验）
 - **board_b = 手柄侧**：烧 `flydigi_decoy`（server，镜像手柄属性表，记录 dongle 行为）
 
-双 build 目录（协议栈库随 sle_role 不同，不能共用）：
+每 app 独立 build 根（协议栈库随 sle_role 不同，不能共用）：
 
 ```bash
-cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-decoy -DBS21_APP=flydigi_decoy
-cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build-probe -DBS21_APP=sle_probe
-python3 wireless/tools/burn.py board_b wireless/ai-bs21-32s-kit/build-decoy/bs21_all_in_one.fwpkg
-python3 wireless/tools/burn.py board_a wireless/ai-bs21-32s-kit/build-probe/bs21_all_in_one.fwpkg
+cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build/flydigi_decoy -DBS21_APP=flydigi_decoy
+cmake -S wireless/ai-bs21-32s-kit -B wireless/ai-bs21-32s-kit/build/sle_probe -DBS21_APP=sle_probe
+python3 wireless/tools/burn.py board_b wireless/ai-bs21-32s-kit/build/flydigi_decoy/bs21_all_in_one.fwpkg
+python3 wireless/tools/burn.py board_a wireless/ai-bs21-32s-kit/build/sle_probe/bs21_all_in_one.fwpkg
 ```
 
 ## 已知 SDK 陷阱（probe 侧）
