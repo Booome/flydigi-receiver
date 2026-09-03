@@ -58,8 +58,7 @@ wireless/
     │   └── default/
     │       ├── CMakeLists.txt
     │       └── main.c
-    ├── scripts/              # setup-sdk.sh / build.sh
-    ├── tools/                # 调试/抓包工具
+    ├── tools/build.py        # 构建入口（内置 SDK 准备）
     ├── CMakeLists.txt        # out-of-tree 入口
     ├── build.config          # Kconfig 配置
     └── sdk-compat/           # SDK 补丁/适配（如需要）
@@ -96,13 +95,21 @@ SDK 提供了官方支持的 out-of-tree 构建入口：`build/cmake/project.cma
 相同）。`build.py` 从 ws63 目标配置推导完整 `-D` 参数集，并通过环境变量
 `FBB_PROJECT_DIR` 把 cmake 源码目录翻转到本工程，实现 out-of-tree。
 
-**构建命令**（封装在 `scripts/build.sh`）：
+**构建命令**（封装在 `tools/build.py`，内置 SDK 准备与 per-app 输出隔离）：
 
 ```bash
-export FBB_PROJECT_DIR=<工程根>
+cd <平台根>
+python tools/build.py --app sle_decoy   # 默认 default
+```
+
+等价于手动设置 FBB_* 环境变量后驱动 SDK build.py：
+
+```bash
+export FBB_PROJECT_DIR=<平台根>
 export FBB_PROJECT_TARGET=ws63-liteos-app
-export FBB_KCONFIG_CONFIG=<工程根>/build.config
+export FBB_KCONFIG_CONFIG=<平台根>/build.config
 export FBB_APP=default          # 选择 apps/<app>/
+export FBB_BUILD_ROOT_PATH=<平台根>/build/default   # 每 app 独立输出根
 cd $FBB_SDK_DIR
 python3 build.py ws63-liteos-app
 ```
@@ -149,11 +156,12 @@ set(MAIN_COMPONENT true)
 build_component()
 ```
 
-### 3.3 setup-sdk.sh 脚本
+### 3.3 SDK 准备（内置于 build.py）
 
-功能：
+构建入口 `tools/build.py` 内置 SDK 准备，无需单独脚本：
 - 检查 `FBB_SDK_DIR` 环境变量或自动探测 `~/workspace/fbb_ws63`
 - 验证 SDK 内置工具链存在（`tools/bin/compiler/riscv/cc_riscv32_musl_105/...`）
+- 恢复 git clone 丢失的 exec 位（`tools/bin` 下文件）
 - 输出配置摘要
 
 ### 3.4 工具链

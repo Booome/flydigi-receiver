@@ -23,29 +23,32 @@ bearpi-pico-h3863/
 │   └── default/            # 默认 app（Hello World 验证通过）
 │       ├── CMakeLists.txt
 │       └── main.c
-├── scripts/
-│   ├── build.sh            # 构建入口（调用 SDK build.py）
-│   └── setup-sdk.sh        # SDK 准备（恢复 exec 位、检查工具链）
+├── tools/
+│   └── build.py            # 构建入口：python tools/build.py --app <app>（内置 SDK 准备）
 └── sdk-compat/             # SDK 兼容层（预留）
 ```
 
 ## 构建
 
 ```bash
-# 一次性前置（恢复 git clone 丢失的 exec 位）
-bash wireless/bearpi-pico-h3863/scripts/setup-sdk.sh
+cd wireless/bearpi-pico-h3863
 
-# 构建（FBB_APP 选择 app，默认 default）
-FBB_APP=default bash wireless/bearpi-pico-h3863/scripts/build.sh
+# 构建（build.py 内置 SDK 准备：恢复 exec 位、检查工具链）
+python tools/build.py --app sle_decoy
+python tools/build.py              # 等价 --app default
 ```
 
-产物：`$FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
+产物：`build/<app>/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg`
+
+每个 app 独立输出根（`build/<app>/`，已被 `.gitignore` 忽略），cmake 缓存互不
+串扰。自定义输出根可设 `FBB_BUILD_ROOT_PATH`。
 
 ## 烧录与抓 log
 
 ```bash
 # 烧录（共享 burn.py，自动 uart-gpio 复位）
-python3 wireless/tools/burn.py board_a $FBB_SDK_DIR/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg
+python3 wireless/tools/burn.py board_a \
+  wireless/bearpi-pico-h3863/build/sle_decoy/output/ws63/fwpkg/ws63-liteos-app/ws63-liteos-app_all.fwpkg
 
 # 抓 log
 python3 wireless/tools/capture_uart.py --board-a --duration 60 --odir /tmp --ts
@@ -60,7 +63,7 @@ SDK 的 out-of-tree 构建硬编码查找工程根 `main/CMakeLists.txt` 并把 
 
 添加新 app：
 1. 创建 `apps/<name>/CMakeLists.txt`（`set(COMPONENT_NAME "main")`）
-2. `FBB_APP=<name> bash scripts/build.sh`
+2. `python tools/build.py --app <name>`
 
 ## 已知问题
 

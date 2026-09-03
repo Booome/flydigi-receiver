@@ -50,8 +50,10 @@ flydigi-receiver/
 ## 快速上手
 
 ```bash
-# 构建 H3863
-FBB_APP=default bash wireless/bearpi-pico-h3863/scripts/build.sh
+# 构建 H3863（在平台目录下）
+cd wireless/bearpi-pico-h3863
+python tools/build.py              # default app
+python tools/build.py --app sle_decoy
 
 # 烧录（共享工具）
 python3 wireless/tools/burn.py board_a <fwpkg>
