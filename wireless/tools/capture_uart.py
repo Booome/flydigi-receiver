@@ -152,6 +152,8 @@ def pulse_reset(board, env):
     pin = env.get("BOARD_%s_RST_PIN" % key)
     if not (port and pin):
         raise RuntimeError("missing BOARD_%s_RST_PORT/PIN in .env" % key)
+    subprocess.run(["uart-gpio", "config", port, "A", pin, "open-drain"],
+                   check=True)
     subprocess.run(["uart-gpio", "pulse", port, "A", pin, "0", str(RESET_PULSE_MS)],
                    check=True)
 
