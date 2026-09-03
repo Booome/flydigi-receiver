@@ -27,6 +27,7 @@ static uint8_t g_client_id = 0;
 static uint16_t g_prop_hdls[PROBE_MAX_PROPERTIES];
 static uint8_t g_prop_cnt = 0;
 static uint8_t g_read_idx = 0;
+static uint8_t g_find_phase = 0;
 
 static void probe_start_scan(void);
 static void probe_rescan(void);
@@ -68,6 +69,7 @@ static void probe_start_scan(void) {
 static void probe_rescan(void) {
     g_prop_cnt = 0;
     g_read_idx = 0;
+    g_find_phase = 0;
     scan_table_reset();
     probe_start_scan();
 }
@@ -181,6 +183,21 @@ static void probe_start_ssap(void) {
     }
 }
 
+static void probe_start_next_find(void) {
+    uint8_t type;
+    if (g_find_phase == 0) {
+        type = SSAP_FIND_TYPE_PRIMARY_SERVICE;
+    } else {
+        type = SSAP_FIND_TYPE_PROPERTY;
+    }
+    ssapc_find_structure_param_t find_param = {0};
+    find_param.type = type;
+    find_param.start_hdl = 1;
+    find_param.end_hdl = 0xFFFF;
+    errcode_t ret = ssapc_find_structure(g_client_id, g_conn_id, &find_param);
+    osal_printk("%s find structure type=%u sent ret=%x\r\n", PROBE_LOG, type, ret);
+}
+
 static void ssapc_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param,
                                    errcode_t status) {
     g_client_id = client_id;
@@ -193,12 +210,8 @@ static void ssapc_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exc
         return;
     }
 
-    ssapc_find_structure_param_t find_param = {0};
-    find_param.type = SSAP_FIND_TYPE_PROPERTY;
-    find_param.start_hdl = 1;
-    find_param.end_hdl = 0xFFFF;
-    errcode_t ret = ssapc_find_structure(client_id, conn_id, &find_param);
-    osal_printk("%s find structure (PROPERTY) sent ret=%x\r\n", PROBE_LOG, ret);
+    g_find_phase = 0;
+    probe_start_next_find();
 }
 
 static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
@@ -206,8 +219,12 @@ static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
     if (status != ERRCODE_SLE_SUCCESS || service == NULL) {
         return;
     }
-    osal_printk("%s find_structure hdl=%x-%x status=%x\r\n", PROBE_LOG, service->start_hdl,
-                service->end_hdl, status);
+    osal_printk("%s find_structure hdl=%x-%x uuid[len=%u]:", PROBE_LOG, service->start_hdl,
+                service->end_hdl, service->uuid.len);
+    for (uint8_t i = 0; i < SLE_UUID_LEN; i++) {
+        osal_printk("%02X", service->uuid.uuid[i]);
+    }
+    osal_printk(" status=%x\r\n", status);
 }
 
 static void ssapc_find_property_cb(uint8_t client_id, uint16_t conn_id,
@@ -215,8 +232,13 @@ static void ssapc_find_property_cb(uint8_t client_id, uint16_t conn_id,
     if (status != ERRCODE_SLE_SUCCESS || property == NULL) {
         return;
     }
-    osal_printk("%s find_property hdl=0x%x oper=0x%x desc_cnt=%u\r\n", PROBE_LOG, property->handle,
-                property->operate_indication, property->descriptors_count);
+    osal_printk("%s find_property hdl=0x%x oper=0x%x desc_cnt=%u uuid[len=%u]:", PROBE_LOG,
+                property->handle, property->operate_indication, property->descriptors_count,
+                property->uuid.len);
+    for (uint8_t i = 0; i < SLE_UUID_LEN; i++) {
+        osal_printk("%02X", property->uuid.uuid[i]);
+    }
+    osal_printk("\r\n");
     if (g_prop_cnt < PROBE_MAX_PROPERTIES) {
         g_prop_hdls[g_prop_cnt++] = property->handle;
     }
@@ -224,7 +246,14 @@ static void ssapc_find_property_cb(uint8_t client_id, uint16_t conn_id,
 
 static void ssapc_find_structure_cmp_cb(uint8_t client_id, uint16_t conn_id,
                                         ssapc_find_structure_result_t *result, errcode_t status) {
-    osal_printk("%s find complete status=%x, %u properties\r\n", PROBE_LOG, status, g_prop_cnt);
+    osal_printk("%s find complete phase=%u status=%x, %u properties\r\n", PROBE_LOG, g_find_phase,
+                status, g_prop_cnt);
+    if (g_find_phase == 0) {
+        g_find_phase = 1;
+        g_prop_cnt = 0;
+        probe_start_next_find();
+        return;
+    }
     g_read_idx = 0;
     probe_start_next_read();
 }

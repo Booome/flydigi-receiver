@@ -5,8 +5,6 @@
 #include "sle_errcode.h"
 #include "sle_decoy.h"
 
-#define SLE_ADV_TX_POWER_DBM 10
-
 #define SLE_ADV_INTERVAL_MIN_DEFAULT 0xC8
 #define SLE_ADV_INTERVAL_MAX_DEFAULT 0xC8
 #define SLE_CONN_INTV_MIN_DEFAULT 0x64
@@ -20,11 +18,9 @@
 static unsigned char g_local_addr[SLE_ADDR_LEN] = {0xA1, 0xA2, 0xC8, 0x75, 0x43, 0xB8};
 
 /* Captured from the real controller over the air (BS21 decoy). */
-static const uint8_t g_adv_data[] = {
-    0x01, 0x01, 0x01, 0x05, 0x04, 0x0B, 0x06, 0x09, 0x06, 0x03,
-    0x12, 0x09, 0x06, 0x07, 0x03, 0x02, 0x05, 0x00, 0x06, 0x0A,
-    0x66, 0x6C, 0x79, 0x5F, 0x64, 0x69, 0x67, 0x69, 0x67, 0x31
-};
+static const uint8_t g_adv_data[] = {0x01, 0x01, 0x01, 0x05, 0x04, 0x0B, 0x06, 0x09, 0x06, 0x03,
+                                     0x12, 0x09, 0x06, 0x07, 0x03, 0x02, 0x05, 0x00, 0x06, 0x0A,
+                                     0x66, 0x6C, 0x79, 0x5F, 0x64, 0x69, 0x67, 0x69, 0x67, 0x31};
 static const uint8_t g_adv_rsp[] = {0x0B, 0x0A, 0x66, 0x6C, 0x79, 0x5F,
                                     0x64, 0x69, 0x67, 0x69, 0x67, 0x73};
 
@@ -43,14 +39,13 @@ static int sle_set_default_announce_param(void) {
     param.announce_handle = 1;
     param.announce_gt_role = SLE_ANNOUNCE_ROLE_T_CAN_NEGO;
     param.announce_level = SLE_ANNOUNCE_LEVEL_NORMAL;
-    param.announce_channel_map = SLE_ADV_CHANNEL_MAP_DEFAULT;
+    param.announce_channel_map = 0x04;
     param.announce_interval_min = SLE_ADV_INTERVAL_MIN_DEFAULT;
     param.announce_interval_max = SLE_ADV_INTERVAL_MAX_DEFAULT;
     param.conn_interval_min = SLE_CONN_INTV_MIN_DEFAULT;
     param.conn_interval_max = SLE_CONN_INTV_MAX_DEFAULT;
     param.conn_max_latency = SLE_CONN_MAX_LATENCY;
     param.conn_supervision_timeout = SLE_CONN_SUPERVISION_TIMEOUT_DEFAULT;
-    param.announce_tx_power = SLE_ADV_TX_POWER_DBM;
     param.own_addr.type = 0;
     ret = memcpy_s(param.own_addr.addr, SLE_ADDR_LEN, g_local_addr, SLE_ADDR_LEN);
     if (ret != EOK) {
@@ -93,6 +88,7 @@ static void sle_decoy_announce_terminal_cb(uint32_t announce_id) {
 errcode_t sle_decoy_adv_init(void) {
     errcode_t ret;
     sle_announce_seek_callbacks_t seek_cbks = {0};
+    osal_printk("%s adv_init start\r\n", SLE_DECOY_LOG);
     seek_cbks.announce_enable_cb = sle_decoy_announce_enable_cb;
     seek_cbks.announce_disable_cb = sle_decoy_announce_disable_cb;
     seek_cbks.announce_terminal_cb = sle_decoy_announce_terminal_cb;
