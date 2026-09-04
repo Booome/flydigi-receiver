@@ -20,6 +20,9 @@ import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PLATFORM_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, SCRIPT_DIR)
+
+import patch_nv_coex  # noqa: E402
 
 
 def prepare_sdk(sdk_dir):
@@ -45,10 +48,20 @@ def prepare_sdk(sdk_dir):
     print(f"Toolchain: {compiler_root}")
 
 
+def patch_coex(sdk_dir, target):
+    """Set NV btc_channel_scan_switch=0 so coex stops masking adv channels."""
+    try:
+        print(f"[coex-patch] {patch_nv_coex.apply(sdk_dir)}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[coex-patch] WARNING: skipped ({exc})", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build a WS63 app")
     parser.add_argument("--app", "-a", default="default", help="app name (default: default)")
     parser.add_argument("--clean", action="store_true", help="clean then build")
+    parser.add_argument("--no-coex-patch", action="store_true",
+                        help="skip the WS63 advertising coex-channel patch")
     parser.add_argument("args", nargs="*", help="extra args passed to the SDK build.py")
     args = parser.parse_args()
 
@@ -60,6 +73,8 @@ def main():
     prepare_sdk(sdk_dir)
 
     target = "ws63-liteos-app"
+    if not args.no_coex_patch:
+        patch_coex(sdk_dir, target)
     build_root = os.environ.get("FBB_BUILD_ROOT_PATH",
                                 os.path.join(PLATFORM_DIR, "build", args.app))
     os.makedirs(build_root, exist_ok=True)
