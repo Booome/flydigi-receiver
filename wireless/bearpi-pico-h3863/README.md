@@ -9,7 +9,8 @@
 
 ## SDK
 
-海思 **fbb_ws63**（`~/workspace/fbb_ws63`），只读引用模式（SDK 不修改源码）。
+海思 **fbb_ws63**（`~/workspace/fbb_ws63`），只读引用模式（不改 SDK 源码；
+构建时 `tools/build.py` 会预置一个 NV 配置项 `btc_channel_scan_switch`，详见参考文档）。
 
 ## 目录结构
 
@@ -88,3 +89,10 @@ Flash Init Fail! ret = 0x80001341
 ## 开发环境搭建
 
 详见 `wireless/bearpi-pico-h3863/docs/design.md`
+
+## 参考文档
+
+- `docs/ws63v100-nv-storage-guide.md` — 海思《WS63V100 NV 存储用户指南》离线副本，
+  含 BSLE/BTC 配置键汇总（`0x20A0~0x20AD`）。其中 `0x20AB btc_channel_scan_switch`
+  （channel scan / 共存信道避让开关）即 SLE 广播单信道问题的官方配置入口，
+  `tools/build.py` 构建时自动将其由默认 1 预置为 0 以恢复多信道广播。
