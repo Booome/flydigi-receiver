@@ -11,6 +11,7 @@
 #define SLE_CONN_INTV_MAX_DEFAULT 0x64
 #define SLE_CONN_SUPERVISION_TIMEOUT_DEFAULT 0x64
 #define SLE_CONN_MAX_LATENCY 0x1F3
+#define SLE_ADV_TX_POWER_DBM 10
 
 #define SLE_DECOY_LOG "[sle decoy]"
 
@@ -39,13 +40,14 @@ static int sle_set_default_announce_param(void) {
     param.announce_handle = 1;
     param.announce_gt_role = SLE_ANNOUNCE_ROLE_T_CAN_NEGO;
     param.announce_level = SLE_ANNOUNCE_LEVEL_NORMAL;
-    param.announce_channel_map = 0x04;
+    param.announce_channel_map = SLE_ADV_CHANNEL_MAP_DEFAULT;
     param.announce_interval_min = SLE_ADV_INTERVAL_MIN_DEFAULT;
     param.announce_interval_max = SLE_ADV_INTERVAL_MAX_DEFAULT;
     param.conn_interval_min = SLE_CONN_INTV_MIN_DEFAULT;
     param.conn_interval_max = SLE_CONN_INTV_MAX_DEFAULT;
     param.conn_max_latency = SLE_CONN_MAX_LATENCY;
     param.conn_supervision_timeout = SLE_CONN_SUPERVISION_TIMEOUT_DEFAULT;
+    param.announce_tx_power = SLE_ADV_TX_POWER_DBM;
     param.own_addr.type = 0;
     ret = memcpy_s(param.own_addr.addr, SLE_ADDR_LEN, g_local_addr, SLE_ADDR_LEN);
     if (ret != EOK) {

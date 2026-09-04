@@ -39,6 +39,10 @@ static void seek_result_cb(sle_seek_result_info_t *result) {
   osal_printk("\r\n");
 }
 
+/* SDK's central libbth_gle.a references this SSAP discovery hook unconditionally;
+   pure scan never reaches it, so provide a no-op to satisfy the link. */
+void probe_dump_discovery_cfm(void *ctx, uint8_t *pdu, uint32_t len) {}
+
 void axk_main(void) {
   bs21_rst();
   osal_printk("app: g_scanner\r\n");

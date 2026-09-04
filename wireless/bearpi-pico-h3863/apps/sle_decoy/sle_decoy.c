@@ -340,9 +340,25 @@ static errcode_t sle_decoy_start(void) {
     return ERRCODE_SLE_SUCCESS;
 }
 
+static void sle_set_local_addr_spoof(void) {
+    sle_addr_t la = {0};
+    la.type = SLE_ADDRESS_TYPE_PUBLIC;
+    la.addr[0] = 0xA1;
+    la.addr[1] = 0xA2;
+    la.addr[2] = 0xC8;
+    la.addr[3] = 0x75;
+    la.addr[4] = 0x43;
+    la.addr[5] = 0xB8;
+    errcode_t ret_set = sle_set_local_addr(&la);
+    if (ret_set != ERRCODE_SLE_SUCCESS) {
+        osal_printk("%s set_local_addr fail:%x\r\n", SLE_DECOY_LOG, ret_set);
+    }
+}
+
 static void sle_enable_cb(errcode_t status) {
     osal_printk("[SLE] enable_cb status=%x\r\n", status);
     if (status == ERRCODE_SLE_SUCCESS) {
+        sle_set_local_addr_spoof();
         sle_decoy_start();
     }
 }
@@ -427,19 +443,6 @@ errcode_t sle_decoy_init(void) {
     if (ret != ERRCODE_SLE_SUCCESS) {
         osal_printk("%s adv_cbks fail:%x\r\n", SLE_DECOY_LOG, ret);
         return ret;
-    }
-
-    sle_addr_t la = {0};
-    la.type = SLE_ADDRESS_TYPE_PUBLIC;
-    la.addr[0] = 0xAA;
-    la.addr[1] = 0xBB;
-    la.addr[2] = 0xCC;
-    la.addr[3] = 0xDD;
-    la.addr[4] = 0xEE;
-    la.addr[5] = 0x02;
-    ret = sle_set_local_addr(&la);
-    if (ret != ERRCODE_SLE_SUCCESS) {
-        osal_printk("%s set_local_addr fail:%x\r\n", SLE_DECOY_LOG, ret);
     }
 
     ret = enable_sle();
