@@ -23,20 +23,21 @@
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_bt.h"
+#include "esp_gap_bt_api.h"
 #include "esp_hid_gap.h"
 #include "esp_hidh.h"
 #include "esp_hidh_gattc.h"
 #include "hid_report.h"
 
 #define TAG "default"
-#define SCAN_DURATION_SEC 5
+#define SCAN_DURATION_SEC 3
 #define HYSTERESIS_DB 3
 #define LOCK_WAIT_MS 3000
 #define MAX_WAIT_MS 8000
 #define CONNECT_TIMEOUT_MS                                                                         \
-    12000 /* open() issued but no OPEN/CLOSE event for this long -> give up, rescan */
-#define RETRY_BACKOFF_MS 1000 /* pause after a failed/disconnected attempt before rescanning */
-#define EWMA_ALPHA_NUM 3      /* /10 → alpha=0.3 */
+    4000 /* open() issued but no OPEN/CLOSE event for this long -> give up, rescan */
+#define RETRY_BACKOFF_MS 300 /* pause after a failed/disconnected attempt before rescanning */
+#define EWMA_ALPHA_NUM 3     /* /10 → alpha=0.3 */
 #define EWMA_ALPHA_DEN 10
 #define CANDIDATE_GONE_ROUNDS 2
 #define EWMA_MAX 16
@@ -156,6 +157,51 @@ static void backoff_to_scan(void) {
     g_rescan_at_ms = esp_timer_get_time() / 1000 + RETRY_BACKOFF_MS;
 }
 
+/* Track consecutive connect failures to one address. After a few, the cause is
+ * usually a stale bond on the PAD side (which a host cannot clear remotely), so
+ * surface an actionable hint and back off longer instead of silently thrashing.
+ * Cleared on a successful connect. */
+#define CONNECT_FAIL_HINT_AFTER 3
+static esp_bd_addr_t g_fail_bda = {0};
+static int g_fail_count = 0;
+
+static void note_connect_fail(const uint8_t *bda) {
+    if (bda && memcmp(bda, g_fail_bda, sizeof(esp_bd_addr_t)) == 0) {
+        g_fail_count++;
+    } else {
+        memcpy(g_fail_bda, bda ? bda : g_fail_bda, sizeof(esp_bd_addr_t));
+        g_fail_count = 1;
+    }
+    if (g_fail_count == CONNECT_FAIL_HINT_AFTER) {
+        printf("[hid] %d connect fails to ", g_fail_count);
+        print_bda(g_fail_bda);
+        printf(" - pad may hold a stale bond, re-enter PAIRING on the pad\n");
+        g_rescan_at_ms = esp_timer_get_time() / 1000 + RETRY_BACKOFF_MS * 4;
+    }
+}
+
+static void note_connect_ok(const uint8_t *bda) {
+    (void)bda;
+    g_fail_count = 0;
+    memset(g_fail_bda, 0, sizeof(g_fail_bda));
+}
+
+/* Drop our stored link key for a peer. Needed when the pad re-pairs (it forgot
+ * us) but we keep an old key: esp_hidh_dev_open then attempts an ENCRYPTED
+ * reconnect the repaired pad won't honor, so it hangs until timeout with no
+ * OPEN event -> without clearing here too, we retry the same stale key forever. */
+static void remove_bond_of(const uint8_t *bda) {
+    if (!bda) {
+        return;
+    }
+    esp_bd_addr_t peer;
+    memcpy(peer, bda, sizeof(esp_bd_addr_t));
+    esp_bt_gap_remove_bond_device(peer);
+    printf("[hid] bond removed for ");
+    print_bda(bda);
+    printf(" (bond_num=%d)\n", esp_bt_gap_get_bond_device_num());
+}
+
 static void
 hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
@@ -172,6 +218,7 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
             print_bda(bda);
             printf(" transport=%s\n", transport_str(transport));
             hid_dump_report_map(param->open.dev);
+            note_connect_ok(bda);
         } else {
             printf("[hid] open FAIL: addr=");
             print_bda(bda);
@@ -180,21 +227,15 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
                 transport_str(transport),
                 (unsigned)param->open.status
             );
-            /* Root-cause fix: clear the stale NVS bond so the next scan+open
-             * starts a fresh pairing instead of repeating auth failure
-             * (status=0xffffffff). esp_hidh_dev_free must precede removal.
-             * bda from esp_hidh_dev_bda_get is const; copy to non-const
-             * esp_bd_addr_t for the gap API. */
+            /* Stale bond on our side vs a re-paired pad -> auth fails. Free the
+             * dev first, then drop the link key so the next scan+open does a
+             * fresh Just Works pairing instead of repeating the failure. */
             if (param->open.dev) {
                 esp_hidh_dev_free(param->open.dev);
             }
-            esp_bd_addr_t peer;
-            memcpy(peer, bda, sizeof(esp_bd_addr_t));
-            esp_bt_gap_remove_bond_device(peer);
-            printf("[hid] stale bond removed for ");
-            print_bda(bda);
-            printf("\n");
+            remove_bond_of(bda);
             backoff_to_scan();
+            note_connect_fail(bda); /* may lengthen backoff + hint after a few */
         }
         break;
     case ESP_HIDH_INPUT_EVENT: {
@@ -266,6 +307,43 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(esp_hidh_init(&hidh_cfg));
 
+    /* Diagnostic: what BR/EDR links keys do we already have at boot? A stale
+     * entry for the pad is what makes a repaired pad fail to re-pair quickly. */
+    {
+        int nb = esp_bt_gap_get_bond_device_num();
+        printf("[hid] boot bonds=%d", nb);
+        if (nb > 0) {
+            esp_bd_addr_t list[8];
+            int want = nb > 8 ? 8 : nb;
+            if (esp_bt_gap_get_bond_device_list(&want, list) == ESP_OK) {
+                for (int i = 0; i < want; i++) {
+                    printf(" ");
+                    print_bda(list[i]);
+                }
+                /* Root cause of "pad stuck 连接中 / pairing while we idle in
+                 * inquiry": the pad's bonded reconnect state is page-scannable
+                 * but not inquiry-scannable. Our scan-only loop would never
+                 * find it. If we have any bonded BR/EDR peer, seed an
+                 * OUTBOUND page now so we can (a) reconnect a matching pad and
+                 * (b) on auth failure hit the timeout/fail path that clears
+                 * the stale bond, then fall back to inquiry for fresh pairing.
+                 */
+                memcpy(g_candidate.bda, list[0], sizeof(esp_bd_addr_t));
+                g_candidate.transport = ESP_HID_TRANSPORT_BT;
+                g_candidate.smoothed = 0;
+                g_candidate.active = true;
+                int64_t t = esp_timer_get_time() / 1000;
+                g_candidate.set_at_ms = t;
+                set_state(ST_CONNECTING, t);
+                printf("\n[hid] boot: outbound page bonded ");
+                print_bda(g_candidate.bda);
+                printf("\n");
+                esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
+            }
+        }
+        printf("\n");
+    }
+
     g_scan_start_ms = esp_timer_get_time() / 1000;
 
     while (1) {
@@ -282,7 +360,14 @@ void app_main(void) {
         if (g_state == ST_CONNECTING) {
             if (now - g_state_since_ms > CONNECT_TIMEOUT_MS) {
                 printf("[hid] connect timeout, rescan\n");
+                esp_bd_addr_t tried;
+                memcpy(tried, g_candidate.bda, sizeof(tried));
                 reset_to_scan();
+                /* A hung attempt (no OPEN event) usually means a stale link key
+                 * on our side vs a re-paired pad: clear it so the next try does
+                 * fresh Just Works instead of a doomed encrypted reconnect. */
+                remove_bond_of(tried);
+                note_connect_fail(tried);
             } else {
                 vTaskDelay(pdMS_TO_TICKS(200));
                 continue;
@@ -303,10 +388,14 @@ void app_main(void) {
             continue;
         }
 
-        /* 层1: 只保留 gamepad-class BR/EDR */
+        /* 层1: 只保留 gamepad-class BR/EDR; count distinct gamepads for
+         * single-candidate fast-connect (no competitor -> no need to wait for
+         * the 3s anti-oscillation window). */
         esp_hid_scan_result_t *best = NULL;
+        int gp_count = 0;
         for (size_t i = 0; i < n; i++) {
             if (is_gamepad(&results[i])) {
+                gp_count++;
                 if (!best || results[i].rssi > best->rssi) {
                     best = &results[i];
                 }
@@ -349,7 +438,7 @@ void app_main(void) {
             g_not_seen_count = 0;
             printf("[hid] candidate: addr=");
             print_bda(best->bda);
-            printf(" smoothed=%.1f\n", g_candidate.smoothed);
+            printf(" smoothed=%.1f gp=%d\n", g_candidate.smoothed, gp_count);
         } else if (bda_eq(best->bda, g_candidate.bda) && best->transport == g_candidate.transport) {
             /* 同候选: 计时继续朝 LOCK_WAIT_MS 走 */
             g_not_seen_count = 0;
