@@ -39,18 +39,21 @@
 （不是 STM32 USB-serial 的 DTR/RTS）。`burn.py` / `capture_uart.py` 通过调用
 `uart-gpio` 控制复位脉冲。
 
-**共享工具**（`wireless/tools/`）：
-- `burn.py` — 自动烧录（跑 ws63flash + 驱动复位，多状态机判定）
-- `capture_uart.py` — 串口抓取（自动连串口 + 可选延迟复位 + 落盘 + 时间戳）
+**共享工具**（顶层 `tools/` + SLE 专用）：
+- `tools/capture_uart.py` — 串口抓取（自动连串口 + 可选延迟复位 + 落盘 + 时间戳）。**跨 SLE / 蓝牙两方向通用**——`--board-a` / `--board-b` / `--rst-a` / `--rst-b` 按物理位置识别，端口读 `.env`。
+- `wireless/tools/burn.py` — SLE 烧录（ws63flash），SLE 专用。
+- `bluetooth/esp32-wroom-32e/tools/burn.py` — ESP32 烧录（idf.py flash），ESP32 专用。
 
 ```bash
 # 烧录
 python3 wireless/tools/burn.py board_a                 # BS21 default app
 python3 wireless/tools/burn.py board_a -a sle_probe    # BS21 指定 app
 python3 wireless/tools/burn.py board_a <h3863.fwpkg>  # H3863 显式传 fwpkg
+python3 bluetooth/esp32-wroom-32e/tools/burn.py        # ESP32 DevKitC（默认 BOARD_A_PORT）
 
-# 抓 log
-python3 wireless/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
+# 抓 log（SLE 板 / ESP32 通用）
+python3 tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
+python3 tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts   # ESP32 hello_world 串口
 ```
 
 - burn.py 状态机：跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
