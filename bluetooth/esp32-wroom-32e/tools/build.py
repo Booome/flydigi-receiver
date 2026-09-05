@@ -53,7 +53,7 @@ def run(cmd: list[str], cwd: Path) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build an ESP-IDF app under bluetooth/esp32-wroom-32e")
-    ap.add_argument("--app", default="hello_world", help="app name under apps/")
+    ap.add_argument("--app", default="default", help="app name under apps/")
     ap.add_argument("--clean", action="store_true",
                     help="rm build/<app>/ before building")
     ap.add_argument("--no-set-target", action="store_true",
