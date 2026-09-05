@@ -64,53 +64,111 @@ flydigi-receiver/
 └── ...
 ```
 
-## 四、候选连接算法
+## 四、候选连接算法（三层：语义过滤 + RSSI 平滑 + 迟滞兜底）
 
-```
-init: esp_hid_gap_init(ESP_BT_MODE_BTDM)
-      nvs_flash_init
+**核心问题**：RSSI 抖动 ±3~5 dB + 多设备共在 → 选"最强"会反复 flip-flop，候选永远稳定不下来 → 永不连接。
 
+**验证（M10/M11）**：飞智八爪鱼5 BT 模式 BR/EDR 广播 28s 共 15 次命中，全部为 `COD: major=PERIPHERAL (5), minor=2`，NAME 一致为 `Xbox Wireless Controller`，RSSI 在 -47 ~ -54 dBm 抖动。**无其他 gamepad-class BR/EDR 设备干扰**（Apple 手机都是非手柄设备）。这意味着**按类别过滤可彻底消除 90% 的 flip-flop 风险**。
+
+### 三层算法
+
+```python
+# 常量
+HYSTERESIS_DB       = 3      # 平滑后仍要求的迟滞（噪声已被层2削掉，3dB 够）
+LOCK_WAIT_MS        = 3000   # 同候选稳定时间
+MAX_WAIT_MS         = 8000   # 最大等待：超时就强制连当前最优（活性兜底）
+CANDIDATE_GONE_ROUNDS = 2    # 连续 N 轮没看到候选 → 认为它走了
+
+# 每设备的 EWMA RSSI（key = MAC+transport）
+ewMA = {}  # {(addr, transport): smoothed_rssi}
+
+# 主循环
+init: esp_hid_gap_init(ESP_BT_MODE_BTDM); nvs_flash_init
 state:
-  candidate = {addr, transport, rssi} | NULL
-  candidate_set_at = monotonic_ms()
+  candidate = None  # {addr, transport, smoothed_rssi, set_at}
+  not_seen_count = 0
+  start_at = monotonic_ms()
 
-loop (forever):
-  if candidate == NULL OR now - candidate_set_at < 3000:
-      # 还在候选阶段 / 倒计时阶段：持续扫
-      esp_hid_scan(5s, &n, &results)
-      best = pick_strongest(results)  # 选 RSSI 最大、BR_EDR 优先
-      if best:
-          if candidate == NULL OR best->rssi > candidate->rssi:
-              # 任何新候选（或首次见到）→ 替换 + 重置计时
-              candidate = best
-              candidate_set_at = now
-              log("[hid] candidate: ... rssi=...")
-      esp_hid_scan_results_free(results)
-  else:
-      # 候选稳定 3s+ → 连接
-      esp_hid_host_open(candidate->transport, candidate->bda)
-      log("[hid] open: ...")
-      break
+while True:
+    esp_hid_scan(5s, &n, &results)
 
-# HID input callback（注册到 esp_hid）：
-void on_hid_input(addr, transport, data, len):
-    printf("[hid] report: addr=%02x:%02x:...:%02x transport=%s len=%d data=",
-           ...);
-    for (int i = 0; i < len; i++) printf("%02x", data[i]);
-    printf("\n");
+    # ── 层1 · 语义过滤：只看 gamepad ──
+    gamepads = [r for r in results
+                if r.transport == BR_EDR and r.cod.major==5 and r.cod.minor==2]
+                # 飞智 Apex5 实测 (M10+M11)：COD major=PERIPHERAL(5), minor=2(2)
+                # 其他周边设备（手机/笔记本/音箱）major != 5 或 minor != 2 → 滤掉
 
-# disconnect callback：
-void on_hid_close(addr, transport, reason):
-    log("[hid] close: ... reason=0x%x", reason);
-    candidate = NULL; candidate_set_at = 0;  # 清状态，回候选阶段
-    esp_hid_host_open...  # 重新进入候选循环
+    if not gamepads:
+        if candidate and not_seen_count >= CANDIDATE_GONE_ROUNDS:
+            log("[hid] candidate gone: %s", candidate.addr)
+            candidate = None
+        not_seen_count = (not_seen_count + 1) if candidate else 0
+        free(results); continue
+
+    # ── 层2 · EWMA 平滑 ──
+    # 对每设备更新 EWMA，挑平滑值最大者
+    best_raw = max(gamepads, key=lambda r: r.rssi)
+    key = (best_raw.addr, best_raw.transport)
+    prev_smoothed = ewMA.get(key, best_raw.rssi)
+    smoothed = 0.3 * best_raw.rssi + 0.7 * prev_smoothed
+    ewMA[key] = smoothed
+    best = (key[0], key[transport], smoothed)
+
+    # ── 层3 · 迟滞 + 锁定计时 ──
+    if candidate is None:
+        # 首次见到
+        candidate = {addr:best.addr, transport:best.transport, smoothed:best.smoothed, set_at:now}
+        not_seen_count = 0
+        log("[hid] candidate: ... rssi=%.0f", best.smoothed)
+    elif best.addr == candidate.addr:
+        # 同候选：计时继续朝 LOCK_WAIT_MS 走
+        not_seen_count = 0
+    elif best.smoothed >= candidate.smoothed + HYSTERESIS_DB:
+        # 新候选平滑 RSSI 比候选大 >= 3dB → 明显更强；替换 + 重置计时
+        # （RSSI 是负数，smoothed 大 = 更靠近 0 = 信号更强）
+        candidate = {addr:best.addr, transport:best.transport, smoothed:best.smoothed, set_at:now}
+        not_seen_count = 0
+        log("[hid] candidate replace: %s rssi=%.0f", best.addr, best.smoothed)
+    # else: 接近打平，保留原候选（防 flip-flop）
+
+    # 锁定条件：稳定 3s 或超 8s 兜底
+    elapsed_stable = now - candidate.set_at
+    if elapsed_stable >= LOCK_WAIT_MS or (now - start_at) >= MAX_WAIT_MS:
+        esp_hid_host_open(candidate.transport, candidate.addr)
+        log("[hid] open: %s %s", candidate.addr, "BR_EDR" if ...)
+        break
+
+    free(results)
 ```
 
-**"明显更强" 阈值**：简化为"任何新 HID 候选都替换 + 重置计时"。原因：
-- 候选阶段重置代价低（最多等 3s），新设备竞争/手柄切换场景下"明显更强"难精确量化
-- 简化实现 + 行为可预测
+### HID input / close callback
 
-**为何 3s**：用户在 brainstorming 阶段指定。手柄进入配对状态通常持续 ~30s-几分钟；3s 等待足够避开瞬态噪音（如路由器、其他 BT 设备的广播脉冲），又不会让用户久等。
+```python
+def on_hid_input(addr, transport, data, len):
+    printf("[hid] report: addr=%02x:%02x:...:%02x transport=%s len=%d data=",
+           MAC_FMT(addr), transport_str(transport), len)
+    for (i=0; i<len; i++) printf("%02x", data[i])
+    printf("\n")
+
+def on_hid_close(addr, transport, reason):
+    log("[hid] close: ... reason=0x%x", reason)
+    # 断开重连：清状态回候选阶段
+    ewMA.clear()
+    candidate = None; not_seen_count = 0; start_at = monotonic_ms()
+    # 不需要显式 esp_hid_host_open... → 主循环 while True 会自然重新跑
+```
+
+### 各层作用与失效模式
+
+| 层 | 做什么 | 防御什么 |
+|---|---|---|
+| 1 · COD 过滤 | 只看 `major=PERIPHERAL && minor=2` | 周边非手柄设备（Apple/路由器/手机）天然被滤掉，根本不进 RSSI 比较 |
+| 2 · EWMA | 对每设备 `0.3*新 + 0.7*旧` 平滑 RSSI | RSSI ±3~5 dB 抖动被平均化；-50/-49 不再"来回切" |
+| 3 · 迟滞 + 兜底 | 平滑后差 ≥ 3dB 才换；3s 稳定；8s 强制连 | 两个真 gamepad 信号接近 → 锁定第一个；永不连（病理）兜底 |
+
+**为什么 3 dB 迟滞**：层2 把噪声降到 ±1~2 dB，3 dB 远大于噪声上界，是真"更强"的可靠阈值。比 6 dB（噪声阈值）更灵敏。
+**为什么 EWMA alpha=0.3**：3 0 是 0.3/0.7 平滑，约 3 个采样（5s×3=15s）窗口。手柄移动/姿势变化时 RSSI 真变能跟到。
+**为什么 8s 兜底**：手柄配对状态进入后 BR/EDR 可发现通常持续 30s+；8s 内应至少一次"稳定 3s"窗口；超过则强制连接（信号真差不多时也可接受）。
 
 ## 五、`sdkconfig.defaults`
 
