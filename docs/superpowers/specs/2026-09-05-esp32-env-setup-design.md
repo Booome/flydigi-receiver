@@ -53,7 +53,7 @@ flydigi-receiver/
         ├── apps/                      # 每个 app 一个独立 ESP-IDF 项目（可写）
         │   └── hello_world/
         │       ├── CMakeLists.txt      # 顶层 ESP-IDF project
-        │       ├── hello_world_main.c # 源码直接放 app 根（无 main/ 子目录）
+        │       ├── main.c            # 源码直接放 app 根（无 main/ 子目录）
         │       ├── sdkconfig.defaults # CONFIG_IDF_TARGET="esp32" 等
         │       └── README.md
         ├── build/                     # 编译产物（不入库）
@@ -88,14 +88,14 @@ ESP32_RST_PIN=<同 CTRL_PIN，可省>
 **移植步骤**（首次）：
 1. `cp -r /opt/esp-idf/examples/get-started/hello_world bluetooth/esp32-wroom-32e/apps/hello_world`
 2. 进入 `apps/hello_world/`，顶层 `CMakeLists.txt` 内 `PROJECT_NAME` 保持 `hello_world`（无歧义）
-3. 将 `main/hello_world_main.c` 移到 app 根：`mv apps/hello_world/main/hello_world_main.c apps/hello_world/`，同步更新 `main/CMakeLists.txt` 改为引用 `../hello_world_main.c`，或直接将 `main/` 内容合并到 app 根 `CMakeLists.txt` 的 `idf_component_register(SRCS ...)` 中
+3. 将 `main/hello_world_main.c` 移到 app 根并**改名为 `main.c`**（app 内不再带 app 名前缀）：`mv apps/hello_world/main/hello_world_main.c apps/hello_world/main.c`，同步更新 `main/CMakeLists.txt` 改为引用 `../main.c`，或直接将 `main/` 内容合并到 app 根 `CMakeLists.txt` 的 `idf_component_register(SRCS "main.c")` 中
 4. 删除空的 `main/` 目录与 `main/CMakeLists.txt`
 
 最终 `apps/hello_world/` 内容：
 ```
 apps/hello_world/
-├── CMakeLists.txt       # 顶层（PROJECT_NAME hello_world，可保留原 example 的 idf_component_register 设置）
-├── hello_world_main.c   # 从原 example 的 main/hello_world_main.c 复制到此
+├── CMakeLists.txt       # 顶层（PROJECT_NAME hello_world，idf_component_register(SRCS "main.c")）
+├── main.c               # 从原 example 的 main/hello_world_main.c 改名而来
 ├── sdkconfig.defaults   # 新增，固定 CONFIG_IDF_TARGET="esp32"，避免每次 set-target
 └── README.md            # 简述：用途、依赖 ESP-IDF v6.0.2、构建命令
 ```
