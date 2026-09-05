@@ -458,9 +458,12 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
     case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
         if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
             lock();
-            if (g_probe) {
+            if (g_probe && g_state == ST_SCANNING) {
                 /* Probe ended without matching the bonded peer: it must be in
-                 * page-only bonded-reconnect mode. Fall back to outbound page. */
+                 * page-only bonded-reconnect mode. Fall back to outbound page.
+                 * The SCANNING guard makes this a no-op when the STOPPED was
+                 * triggered by our own cancel after OPEN OK (g_probe should be
+                 * cleared there, but be defensive). */
                 g_probe = false;
                 open_bonded();
             } else if (g_state == ST_SCANNING) {
@@ -520,6 +523,11 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
         if (param->open.status == ESP_OK) {
             lock();
             halt_scanning_side_effects();
+            /* A successful OPEN (esp_hidh_dev_open we issued OR an inbound page
+             * we accepted) makes the bonded-probe irrelevant. Clear it so the
+             * DISC_STATE=STOPPED we just triggered does NOT get misread as
+             * "probe ended without match" and run a spurious open_bonded(). */
+            g_probe = false;
             g_state = ST_CONNECTED;
             memset(&g_candidate, 0, sizeof(g_candidate));
             note_connect_ok();
