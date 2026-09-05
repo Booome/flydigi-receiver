@@ -36,6 +36,29 @@
 #define CANDIDATE_GONE_ROUNDS 2
 #define EWMA_MAX 16
 
+/* Per-device EWMA RSSI: key = (bda, transport) */
+typedef struct {
+    uint8_t bda[6];
+    esp_hid_transport_t transport;
+    bool used;
+    float smoothed;
+} ewma_entry_t;
+
+/* Candidate state */
+typedef struct {
+    bool active;
+    uint8_t bda[6];
+    esp_hid_transport_t transport;
+    float smoothed;
+    int64_t set_at_ms;
+} candidate_t;
+
+static ewma_entry_t g_ewma[EWMA_MAX];
+static candidate_t g_candidate = {0};
+static int g_not_seen_count = 0;
+static int64_t g_scan_start_ms = 0;
+static volatile bool g_connected = false;
+
 static const char *transport_str(esp_hid_transport_t t) {
     switch (t) {
     case ESP_HID_TRANSPORT_BLE:
@@ -55,14 +78,16 @@ static uint8_t bda_eq(const uint8_t *a, const uint8_t *b) {
     return memcmp(a, b, 6) == 0;
 }
 
-/* Per-device EWMA RSSI: key = (bda, transport) */
-typedef struct {
-    uint8_t bda[6];
-    esp_hid_transport_t transport;
-    bool used;
-    float smoothed;
-} ewma_entry_t;
-static ewma_entry_t g_ewma[EWMA_MAX];
+static bool is_gamepad(const esp_hid_scan_result_t *r) {
+    /* 层1: 仅 gamepad-class BR/EDR. 实测 Apex5: major=PERIPHERAL(5) minor=2. */
+    if (r->transport != ESP_HID_TRANSPORT_BT)
+        return false;
+    if (r->bt.cod.major != 5)
+        return false;
+    if (r->bt.cod.minor != 2)
+        return false;
+    return true;
+}
 
 static float *ewma_get_or_create(const uint8_t *bda, esp_hid_transport_t t) {
     for (int i = 0; i < EWMA_MAX; i++) {
@@ -85,30 +110,6 @@ static float *ewma_get_or_create(const uint8_t *bda, esp_hid_transport_t t) {
 static void ewma_clear(void) {
     for (int i = 0; i < EWMA_MAX; i++)
         g_ewma[i].used = false;
-}
-
-/* Candidate state */
-typedef struct {
-    bool active;
-    uint8_t bda[6];
-    esp_hid_transport_t transport;
-    float smoothed;
-    int64_t set_at_ms;
-} candidate_t;
-static candidate_t g_candidate = {0};
-static int g_not_seen_count = 0;
-static int64_t g_scan_start_ms = 0;
-static volatile bool g_connected = false;
-
-static bool is_gamepad(const esp_hid_scan_result_t *r) {
-    /* 层1: 仅 gamepad-class BR/EDR. 实测 Apex5: major=PERIPHERAL(5) minor=2. */
-    if (r->transport != ESP_HID_TRANSPORT_BT)
-        return false;
-    if (r->bt.cod.major != 5)
-        return false;
-    if (r->bt.cod.minor != 2)
-        return false;
-    return true;
 }
 
 static void reset_to_scan(void) {
