@@ -596,7 +596,24 @@ static void bt_gap_event_handler(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_para
         break;
     }
     case ESP_BT_GAP_KEY_REQ_EVT:
-        ESP_LOGI(TAG, "BT GAP KEY_REQ_EVT Please enter passkey!");
+        /* Headless host: no keyboard. Accept with passkey 0 so SSP never stalls. */
+        ESP_LOGI(TAG, "BT GAP KEY_REQ_EVT reply passkey=0");
+        esp_bt_gap_ssp_passkey_reply(param->key_req.bda, true, 0);
+        break;
+    case ESP_BT_GAP_AUTH_CMPL_EVT:
+        printf(
+            "[gap] AUTH_CMPL addr=%02x:%02x:%02x:%02x:%02x:%02x name=%s stat=%d %s lk=%d\n",
+            param->auth_cmpl.bda[0],
+            param->auth_cmpl.bda[1],
+            param->auth_cmpl.bda[2],
+            param->auth_cmpl.bda[3],
+            param->auth_cmpl.bda[4],
+            param->auth_cmpl.bda[5],
+            (const char *)param->auth_cmpl.device_name,
+            (int)param->auth_cmpl.stat,
+            (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) ? "OK" : "FAIL",
+            (int)param->auth_cmpl.lk_type
+        );
         break;
 #endif
     case ESP_BT_GAP_MODE_CHG_EVT:
@@ -630,7 +647,10 @@ static esp_err_t init_bt_gap(void) {
 #if (CONFIG_EXAMPLE_SSP_ENABLED)
     /* Set default parameters for Secure Simple Pairing */
     esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
-    esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_IO;
+    /* Headless host (no screen/keyboard): advertise NoInputNoOutput so SSP uses
+     * Just Works and pairing never waits on a passkey/display the user can't
+     * provide. (Was ESP_BT_IO_CAP_IO, which stalls reconnect.) */
+    esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_NONE;
     esp_bt_gap_set_security_param(param_type, &iocap, sizeof(uint8_t));
 #endif
     /*

@@ -70,6 +70,17 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 
 - **手柄断开会回到候选阶段**：ESP32 HID 主机收到 `ESP_HIDH_CLOSE_EVT` 后会自动清状态、回扫描循环（不需手动重连）。
 
+- **手柄 BT 身份随机身「连接模式」变化**（存在手柄里、掉电保留，误触菜单/组合键会翻，恢复出厂回默认 X-input）：
+  | 模式 | 蓝牙名 | 实质 |
+  |---|---|---|
+  | PC>蓝牙 / Android / iOS（X-input）| `Xbox Wireless Controller` | 飞智 X-input HID（我们主线目标）|
+  | FlashPlay | `Flydigi Apex5` | 飞智映射 |
+  | Switch | `Pro Controller` | 伪装成任天堂 Pro Controller（`057e:2009`），不同 HID 协议/不同 BD_ADDR |
+
+  `apps/default/` 的候选筛选**按名字白名单**（`g_gamepad_names`），当前含 Xbox + Pro Controller 两个实测身份；**后期出现新名字再加**（不排除变其它名）。按 `strcasecmp` 全名匹配 + `transport==BT`。
+
+- **手柄配对/bond 须自动处理**：手柄 factory-reset 或切到新设备后，ESP32 NVS 仍留旧 bond → 鉴权失败(`esp_hidh_dev_open` 返 `0xffffffff`)。**固件需在启动/配对失败时自动清除/覆写旧 bond**(`esp_bt_gap_remove_bond_device` 或 `nvs_flash_erase_partition` bt bond 区),不要依赖手工 `esptool erase_flash`。具体方案(回调里 fail-detect + remove,或周期性 stale-check)后续 Task 收。
+
 ## 平台
 
 ### BS21 开发板（已挂起）
@@ -115,7 +126,7 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 python3 wireless/tools/burn.py board_a                 # BS21 default app
 python3 wireless/tools/burn.py board_a -a sle_probe    # BS21 指定 app
 python3 wireless/tools/burn.py board_a <h3863.fwpkg>  # H3863 显式传 fwpkg
-python3 bluetooth/esp32-wroom-32e/tools/burn.py        # ESP32 DevKitC（默认 BOARD_A_PORT）
+python3 bluetooth/esp32-wroom-32e/tools/burn.py --board-a    # ESP32 DevKitC
 
 # 抓 log：SLE 板（默认 BOARD_A_TYPE=ai-bs21-32s-kit 或 bearpi-pico-h3863，uart-gpio 复位）
 python3 tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
@@ -174,6 +185,12 @@ dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播
 
 反例（禁止）：在 board_a + board_b 互测进行中，突然要求用户插真机 dongle 抓包，
 却不说明切换原因和操作步骤。
+
+### 输出语言约定
+
+**对用户的所有输出尽量用中文**：终端回复、进度说明、分析结论、设计/计划文档一律中文。
+仅以下保持英文：代码、代码注释、标识符、commit message、日志里给机器解析的字段前缀
+（如 `[hid] state: btn=...`）。即"面向人读的用中文，面向机器/仓库约定的保持英文"。
 
 ## 开发规范
 
