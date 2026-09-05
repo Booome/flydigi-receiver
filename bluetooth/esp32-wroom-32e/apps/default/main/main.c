@@ -206,8 +206,14 @@ static void remove_bond_of(const uint8_t *bda) {
     printf(" (bond_num=%d)\n", esp_bt_gap_get_bond_device_num());
 }
 
-/* Count consecutive silent failures to one addr; clear a hopeless bond after N.
- * Returns the backoff delay (ms) to use for this failure. Caller holds lock. */
+/* Count consecutive silent failures to one addr and return the backoff delay
+ * (ms). Bare connect timeouts (peer absent / not yet powered) NEVER drop the
+ * stored bond: a power-off/power-on pad has its own copy of the key and will
+ * page us on power-on; if we cleared our key here, the controller would still
+ * accept the inbound ACL but our app layer has no dev_open in flight, so the
+ * ACL sits idle until the supervision timeout and the pad sits in "连接中"
+ * forever. The bond is only dropped on an OPEN FAIL (0xffffffff), which is
+ * handled directly in hidh_event_handler. Caller holds lock. */
 static int64_t note_connect_fail(const uint8_t *bda) {
     if (bda && memcmp(bda, g_fail_bda, sizeof(esp_bd_addr_t)) == 0) {
         g_fail_count++;
@@ -218,8 +224,7 @@ static int64_t note_connect_fail(const uint8_t *bda) {
     if (g_fail_count == CONNECT_FAIL_HINT_AFTER) {
         printf("[hid] %d connect fails to ", g_fail_count);
         print_bda(g_fail_bda);
-        printf(" - dropping bond, re-pair if needed\n");
-        remove_bond_of(g_fail_bda);
+        printf(" - peer absent; lengthening backoff (bond kept)\n");
         return RETRY_BACKOFF_MS * 4;
     }
     return RETRY_BACKOFF_MS;
