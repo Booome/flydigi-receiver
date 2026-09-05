@@ -197,17 +197,40 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
             backoff_to_scan();
         }
         break;
-    case ESP_HIDH_INPUT_EVENT:
-        bda = esp_hidh_dev_bda_get(param->input.dev);
-        transport = esp_hidh_dev_transport_get(param->input.dev);
-        printf("[hid] report: addr=");
-        print_bda(bda);
-        printf(" transport=%s len=%d data=", transport_str(transport), param->input.length);
-        for (uint16_t i = 0; i < param->input.length; i++) {
-            printf("%02x", param->input.data[i]);
+    case ESP_HIDH_INPUT_EVENT: {
+        apex5_xinput_t cur;
+        if (!hid_decode(param->input.data, param->input.length, &cur)) {
+            break;
         }
-        printf("\n");
+#if HID_DEBUG_DELTA
+        /* bring-up aid: show which raw bytes moved, to map fields in Task 3 */
+        static uint8_t raw_prev[64];
+        static uint16_t raw_prev_len = 0;
+        if (param->input.length <= sizeof(raw_prev)) {
+            for (uint16_t i = 0; i < param->input.length; i++) {
+                if (i >= raw_prev_len || raw_prev[i] != param->input.data[i]) {
+                    printf(
+                        "[hid] d b%u:%02x>%02x ",
+                        i,
+                        i < raw_prev_len ? raw_prev[i] : 0,
+                        param->input.data[i]
+                    );
+                }
+            }
+            printf("\n");
+            memcpy(raw_prev, param->input.data, param->input.length);
+            raw_prev_len = param->input.length;
+        }
+#endif
+        static apex5_xinput_t prev;
+        static bool have_prev = false;
+        if (!have_prev || memcmp(&prev, &cur, sizeof(cur)) != 0) {
+            hid_print_state(&cur);
+            prev = cur;
+            have_prev = true;
+        }
         break;
+    }
     case ESP_HIDH_CLOSE_EVENT:
         bda = esp_hidh_dev_bda_get(param->close.dev);
         transport = esp_hidh_dev_transport_get(param->close.dev);
