@@ -44,6 +44,7 @@
 #define CANDIDATE_GONE_MS 6000  /* candidate not sighted this long -> drop it */
 #define LOCK_TICK_MS 250        /* periodic re-evaluation cadence */
 #define INQ_LENGTH 8            /* esp_bt_gap_start_discovery length (8*1.28s) */
+#define INQ_LENGTH_BONDED 2     /* bonded-probe length (2*1.28s ~2.56s) */
 #define EWMA_ALPHA_NUM 3        /* /10 -> alpha=0.3 */
 #define EWMA_ALPHA_DEN 10
 #define EWMA_MAX 16
@@ -70,6 +71,13 @@ static ewma_entry_t g_ewma[EWMA_MAX];
 static candidate_t g_candidate = {0};
 static int64_t g_scan_start_ms = 0;
 static volatile app_state_t g_state = ST_SCANNING;
+/* Bonded-probe: when bonds>0, run a short inquiry to detect whether the bonded
+ * peer is currently in inquiry-discoverable mode (=fresh-pairing, keyless).
+ * If we see it, we drop the bond and dev_open fresh instead of outbound-page
+ * (the outbound-page path can leave a half-dead ACL slot that deadlocks the
+ * next dev_open for tens of seconds in v6.0.2). All probe access under lock. */
+static bool g_probe;
+static uint8_t g_probe_bda[6];
 static esp_bd_addr_t g_fail_bda = {0};
 static int g_fail_count = 0;
 static SemaphoreHandle_t g_app_mutex = NULL;
@@ -229,6 +237,7 @@ static void reset_scan_state(void) {
     memset(&g_candidate, 0, sizeof(g_candidate));
     ewma_clear();
     g_state = ST_SCANNING;
+    g_probe = false;
 }
 
 static void arm_rescan(int64_t delay_ms) {
@@ -288,11 +297,39 @@ static bool open_bonded(void) {
     return true;
 }
 
-/* Resume after boot / fail / close: page the bonded peer if one is usable, else
- * start a scan round. open_bonded() returns false when there is no bond, so the
- * fallback preserves the old fall-through-to-inquiry behavior. */
+/* Bonded-probe: a short inquiry (INQ_LENGTH_BONDED ~2.56s) that runs BEFORE
+ * the outbound-page. If the bonded peer appears in the inquiry results it is
+ * in inquiry-discoverable mode (i.e. freshly pairing, has forgotten our key);
+ * we then drop the bond and dev_open fresh so the controller never has to
+ * deal with a half-dead ACL slot from a doomed encrypted page. If the probe
+ * ends without seeing the bonded peer, the peer is in page-only mode
+ * (bonded-reconnect) and we fall back to outbound page as before. Caller
+ * holds lock. */
+static void probe_then_page_or_pair(void) {
+    esp_bd_addr_t list[8];
+    int want = 8;
+    if (esp_bt_gap_get_bond_device_list(&want, list) != ESP_OK || want <= 0) {
+        /* Cannot read the bonded list even though bond_num>0; fall back. */
+        open_bonded();
+        return;
+    }
+    memcpy(g_probe_bda, list[0], sizeof(g_probe_bda));
+    g_probe = true;
+    reset_scan_state(); /* clears candidate/ewma/g_probe (will be set true above) */
+    g_probe = true;     /* re-assert after reset_scan_state clears it */
+    g_scan_start_ms = now_ms();
+    g_state = ST_SCANNING;
+    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH_BONDED, 0);
+}
+
+/* Resume after boot / fail / close. If we hold a bond, run the bonded-probe
+ * so a peer currently in fresh-pairing (discoverable) is paired cleanly via
+ * a fresh SSP instead of a doomed outbound page; otherwise the probe falls
+ * back to open_bonded() on inquiry completion. With no bond, just scan. */
 static void resume_scan(void) {
-    if (!open_bonded()) {
+    if (esp_bt_gap_get_bond_device_num() > 0) {
+        probe_then_page_or_pair();
+    } else {
         begin_scan_round();
     }
 }
@@ -389,6 +426,20 @@ static void handle_disc_result(esp_bt_gap_cb_param_t *p) {
         return;
     }
     lock();
+    if (g_probe) {
+        /* Bonded-probe: react only to the bonded BDA in discoverable mode. */
+        if (bda_eq(bda, g_probe_bda)) {
+            g_probe = false;
+            remove_bond_of(bda); /* safe: no ACL yet (probe runs before page) */
+            memcpy(g_candidate.bda, bda, 6);
+            g_candidate.active = true;
+            g_candidate.smoothed = 0;
+            g_candidate.set_at_ms = now_ms();
+            issue_connect(bda); /* halts scan, arms timeout, dev_open */
+        }
+        unlock();
+        return;
+    }
     if (g_state == ST_SCANNING) {
         int64_t t = now_ms();
         float s = ewma_update(bda, rssi, t);
@@ -405,11 +456,16 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         handle_disc_result(param);
         break;
     case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
-        /* Continuous inquiry: Bluedroid stops inquiry after INQ_LENGTH;
-         * restart immediately while still scanning (keeps candidate/EWMA). */
         if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
             lock();
-            if (g_state == ST_SCANNING) {
+            if (g_probe) {
+                /* Probe ended without matching the bonded peer: it must be in
+                 * page-only bonded-reconnect mode. Fall back to outbound page. */
+                g_probe = false;
+                open_bonded();
+            } else if (g_state == ST_SCANNING) {
+                /* Continuous inquiry: restart immediately while still scanning
+                 * (keeps candidate/EWMA clocks). */
                 esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
             }
             unlock();
