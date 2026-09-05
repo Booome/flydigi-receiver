@@ -79,10 +79,10 @@ python3 tools/capture_uart.py --board-a --rst-a --duration 60 --odir /tmp --ts
 | ② bonded 重连 | page → open ≈ **1.5s** |
 | ③ 手柄侧残留旧 bond | ~30s 内自动清键 + 打印 `re-pair if needed` + 回 `bonds=0` |
 
-完整事件时间线与日志片段见 `docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md` §十二。
+完整事件时间线与日志片段见 [`docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md`](../../../../docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md) §十二。
 
 ## 设计文档
 
-- 设计 spec：`docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md`
-- 实施计划：`docs/superpowers/plans/2026-09-06-bt-hid-callback-refactor.md`
-- 前序（轮询版 + 解码）：`docs/superpowers/specs/2026-09-05-bt-hid-host-capture-design.md`、`2026-09-05-bt-hid-report-decode-design.md`
+- 设计 spec：[`docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md`](../../../../docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md)
+- 实施计划：[`docs/superpowers/plans/2026-09-06-bt-hid-callback-refactor.md`](../../../../docs/superpowers/plans/2026-09-06-bt-hid-callback-refactor.md)
+- 前序（轮询版 + 解码）：[`2026-09-05-bt-hid-host-capture-design.md`](../../../../docs/superpowers/specs/2026-09-05-bt-hid-host-capture-design.md)、[`2026-09-05-bt-hid-report-decode-design.md`](../../../../docs/superpowers/specs/2026-09-05-bt-hid-report-decode-design.md)
