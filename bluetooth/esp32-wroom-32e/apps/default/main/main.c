@@ -13,6 +13,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,13 +26,17 @@
 #include "esp_hid_gap.h"
 #include "esp_hidh.h"
 #include "esp_hidh_gattc.h"
+#include "hid_report.h"
 
 #define TAG "default"
 #define SCAN_DURATION_SEC 5
 #define HYSTERESIS_DB 3
 #define LOCK_WAIT_MS 3000
 #define MAX_WAIT_MS 8000
-#define EWMA_ALPHA_NUM 3 /* /10 → alpha=0.3 */
+#define CONNECT_TIMEOUT_MS                                                                         \
+    12000 /* open() issued but no OPEN/CLOSE event for this long -> give up, rescan */
+#define RETRY_BACKOFF_MS 1000 /* pause after a failed/disconnected attempt before rescanning */
+#define EWMA_ALPHA_NUM 3      /* /10 → alpha=0.3 */
 #define EWMA_ALPHA_DEN 10
 #define CANDIDATE_GONE_ROUNDS 2
 #define EWMA_MAX 16
@@ -53,11 +58,18 @@ typedef struct {
     int64_t set_at_ms;
 } candidate_t;
 
+/* Connection lifecycle. Only ST_SCANNING may scan or issue a new open;
+ * ST_CONNECTING/CONNECTED must NOT run inquiry (it disturbs the ACL link)
+ * nor re-open. Events drive SCANNING<->CONNECTING<->CONNECTED. */
+typedef enum { ST_SCANNING, ST_CONNECTING, ST_CONNECTED } app_state_t;
+
 static ewma_entry_t g_ewma[EWMA_MAX];
 static candidate_t g_candidate = {0};
 static int g_not_seen_count = 0;
 static int64_t g_scan_start_ms = 0;
-static volatile bool g_connected = false;
+static volatile app_state_t g_state = ST_SCANNING;
+static int64_t g_state_since_ms = 0;
+static int64_t g_rescan_at_ms = 0; /* backoff gate before next scan after fail/close */
 
 static const char *transport_str(esp_hid_transport_t t) {
     switch (t) {
@@ -78,15 +90,26 @@ static uint8_t bda_eq(const uint8_t *a, const uint8_t *b) {
     return memcmp(a, b, 6) == 0;
 }
 
+/* Known Apex5 BT identities (BR/EDR advertised name) seen so far. The pad
+ * presents a different name per its onboard connection mode, and unknown new
+ * names are possible — extend this list as they appear. */
+static const char *const g_gamepad_names[] = {
+    "Xbox Wireless Controller", /* PC>Bluetooth / Android / iOS = X-input */
+    "Pro Controller",           /* Nintendo Switch (NS) mode             */
+};
+
 static bool is_gamepad(const esp_hid_scan_result_t *r) {
-    /* 层1: 仅 gamepad-class BR/EDR. 实测 Apex5: major=PERIPHERAL(5) minor=2. */
+    /* Match by BT transport + name in the known-identity allowlist
+     * (case-insensitive). Add new names to g_gamepad_names as seen. */
     if (r->transport != ESP_HID_TRANSPORT_BT)
         return false;
-    if (r->bt.cod.major != 5)
+    if (!r->name)
         return false;
-    if (r->bt.cod.minor != 2)
-        return false;
-    return true;
+    for (size_t i = 0; i < sizeof(g_gamepad_names) / sizeof(g_gamepad_names[0]); i++) {
+        if (strcasecmp(r->name, g_gamepad_names[i]) == 0)
+            return true;
+    }
+    return false;
 }
 
 static float *ewma_get_or_create(const uint8_t *bda, esp_hid_transport_t t) {
@@ -112,11 +135,25 @@ static void ewma_clear(void) {
         g_ewma[i].used = false;
 }
 
+static void set_state(app_state_t s, int64_t now_ms) {
+    g_state = s;
+    g_state_since_ms = now_ms;
+}
+
+/* Go back to scanning: clear candidate/ewma, restart the lock clock. */
 static void reset_to_scan(void) {
     memset(&g_candidate, 0, sizeof(g_candidate));
     ewma_clear();
     g_not_seen_count = 0;
     g_scan_start_ms = esp_timer_get_time() / 1000;
+    set_state(ST_SCANNING, g_scan_start_ms);
+}
+
+/* Called after a failed open or a close: rescan, but back off briefly so we
+ * don't hammer the controller while it is still in a transient state. */
+static void backoff_to_scan(void) {
+    reset_to_scan();
+    g_rescan_at_ms = esp_timer_get_time() / 1000 + RETRY_BACKOFF_MS;
 }
 
 static void
@@ -130,10 +167,11 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
         bda = esp_hidh_dev_bda_get(param->open.dev);
         transport = esp_hidh_dev_transport_get(param->open.dev);
         if (param->open.status == ESP_OK) {
-            g_connected = true;
+            set_state(ST_CONNECTED, esp_timer_get_time() / 1000);
             printf("[hid] open: addr=");
             print_bda(bda);
             printf(" transport=%s\n", transport_str(transport));
+            hid_dump_report_map(param->open.dev);
         } else {
             printf("[hid] open FAIL: addr=");
             print_bda(bda);
@@ -142,7 +180,10 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
                 transport_str(transport),
                 (unsigned)param->open.status
             );
-            reset_to_scan();
+            if (param->open.dev) {
+                esp_hidh_dev_free(param->open.dev);
+            }
+            backoff_to_scan();
         }
         break;
     case ESP_HIDH_INPUT_EVENT:
@@ -167,8 +208,7 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
         if (param->close.dev) {
             esp_hidh_dev_free(param->close.dev);
         }
-        g_connected = false;
-        reset_to_scan();
+        backoff_to_scan();
         break;
     default:
         break;
@@ -195,6 +235,31 @@ void app_main(void) {
     g_scan_start_ms = esp_timer_get_time() / 1000;
 
     while (1) {
+        int64_t now = esp_timer_get_time() / 1000;
+
+        /* CONNECTED: do not scan or re-open (inquiry would break the link).
+         * Reports arrive via the event callback. Wait for a close event. */
+        if (g_state == ST_CONNECTED) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+        /* CONNECTING: a pending open owns the radio; wait for its result,
+         * but bail out to rescan if no event arrives (device vanished). */
+        if (g_state == ST_CONNECTING) {
+            if (now - g_state_since_ms > CONNECT_TIMEOUT_MS) {
+                printf("[hid] connect timeout, rescan\n");
+                reset_to_scan();
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(200));
+                continue;
+            }
+        }
+        /* ST_SCANNING but still inside a post-fail/backoff window: idle. */
+        if (now < g_rescan_at_ms) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
         esp_hid_scan_result_t *results = NULL;
         size_t n = 0;
         esp_err_t sr = esp_hid_scan(SCAN_DURATION_SEC, &n, &results);
@@ -268,14 +333,16 @@ void app_main(void) {
         }
         /* else: 接近打平, 保留, 不重置计时 */
 
-        /* 锁定条件: 稳定 3s 或超 8s 兜底 */
-        int64_t now = esp_timer_get_time() / 1000;
-        int64_t stable_elapsed = now - g_candidate.set_at_ms;
-        int64_t total_elapsed = now - g_scan_start_ms;
+        /* 锁定条件: 稳定 3s 或超 8s 兜底 -> 发起连接并转入 CONNECTING。
+         * 不再 reset_to_scan：连接结果由 OPEN/CLOSE 事件驱动状态迁移。 */
+        int64_t stable_elapsed = now_ms - g_candidate.set_at_ms;
+        int64_t total_elapsed = now_ms - g_scan_start_ms;
         if (stable_elapsed >= LOCK_WAIT_MS || total_elapsed >= MAX_WAIT_MS) {
+            printf("[hid] connecting: addr=");
+            print_bda(g_candidate.bda);
+            printf(" transport=%s\n", transport_str(g_candidate.transport));
+            set_state(ST_CONNECTING, now_ms);
             esp_hidh_dev_open(g_candidate.bda, g_candidate.transport, 0);
-            /* open/close events clear state via reset_to_scan() in callback */
-            reset_to_scan();
         }
 
         esp_hid_scan_results_free(results);
