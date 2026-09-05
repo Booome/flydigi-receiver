@@ -18,13 +18,26 @@
 
 ## 串口抓取
 
-与 SLE 共用顶层 `tools/capture_uart.py`：
+与 SLE 共用顶层 `tools/capture_uart.py`。ESP32 DevKitC 板载 USB-UART 桥已把
+DTR 接 EN，所以 ESP32 走 **DTR 复位**（不需 `uart-gpio` / ctrl pin）。
 
 ```bash
+# 一次性抓（不复位）
 python3 tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts
+
+# 抓 + DTR 复位（前提：.env 里有 BOARD_A_TYPE=esp32-wroom-32e）
+python3 tools/capture_uart.py --board-a --rst-a --duration 14 --odir /tmp --ts
 ```
 
-不需要新增 `.env` 键——ESP32 复用 SLE 的 `BOARD_A_PORT` / `BOARD_B_PORT` / `CTRL_PIN`。
+`.env` 里需要：
+```
+BOARD_A_PORT=/dev/serial/by-path/pci-...   # 串口路径（与 SLE 复用）
+BOARD_A_TYPE=esp32-wroom-32e               # 选 DTR 复位机制
+```
+
+复位机制走 `BOARD_<X>_TYPE` 分派：
+- `esp32-wroom-32e` —— DTR toggle（DevKitC 板载 USB-UART 桥）
+- `ai-bs21-32s-kit` / `bearpi-pico-h3863` —— `uart-gpio` 脉冲（BS21/WS63 接控制板）
 
 ## 添加新 app
 
