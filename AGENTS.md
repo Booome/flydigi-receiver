@@ -26,7 +26,24 @@
 - 项目在 `bluetooth/esp32-wroom-32e/`（与 `wireless/` 平级），非侵入式编译，多 app（`apps/<app>/` + `build/<app>/`）
 - 烧录 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` 调 ESP-IDF；串口抓取走顶层 `tools/capture_uart.py`（与 SLE 共用，端口从 `.env` 的 `BOARD_A_PORT`/`BOARD_B_PORT` 复用，`BOARD_A_TYPE=esp32-wroom-32e` 选 DTR 复位）
 - **M9 = 环境搭建**（hello_world 编译/烧录/串口），不涉及手柄；后续 M10/M3+ 起做 BT inquiry、HID 主机连接
+- **M10 = BT 双模扫描**（`apps/bt_scan/`，esp_hid_scan 双侧都能看到手柄）✓
 - 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md`，实施计划：`docs/superpowers/plans/2026-09-05-esp32-env-setup.md`
+
+### M10 实测（2026-09-05）飞智八爪鱼5 蓝牙广播
+
+ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
+
+| 字段 | 值 |
+|---|---|
+| MAC | `b5:5d:e7:98:54:75` |
+| NAME | `Xbox Wireless Controller`（BR/EDR 侧就用这个名字，不是"Flydigi Apex5"）|
+| COD | major = PERIPHERAL (5)，minor = 2（gamepad/joystick）|
+| UUID | 0x1124（HID over BR/EDR L2CAP）|
+| RSSI | -48 ~ -58 dBm |
+| 40s BR/EDR 命中 | ~60 次 |
+| BLE 命中 | **0 次**（手柄不广播 BLE——纠正先前"双模蓝牙"猜测，**手柄是单模 BR/EDR**）|
+
+详见 `bluetooth/esp32-wroom-32e/apps/bt_scan/README.md` 验证结果节、`docs/controller-modes.md` 三节。
 
 ## 平台
 

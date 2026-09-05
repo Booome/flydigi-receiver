@@ -50,7 +50,7 @@
 
 | 芯片标记 | 用途 | 技术 |
 |---------|------|------|
-| BP1Y303-D4 | BT/BLE | 蓝牙 (BR/EDR) |
+| BP1Y303-D4 | BR/EDR（经典蓝牙单模） | 蓝牙 (BR/EDR) |
 | P352903N1 | 2.4G | **星闪 SLE 1.0** (NearLink) |
 
 > P352903N1 为飞智定制编号，无公开资料。产品页标注 "NearLink Technology with 1000Hz Ultra-High Polling Rate"，
@@ -163,6 +163,32 @@
 > **注意**：经实测，八爪鱼5的蓝牙模式使用 **BR/EDR（经典蓝牙）**，
 > 而非 BLE HID over GATT。设备识别为 "Xbox Wireless Controller"，
 > UUID 0x1124。之前文档中描述的 BLE 内容可能不适用于此手柄。
+
+### M10 实测广播信息（BR/EDR inquiry）
+
+2026-09-05 用 `bluetooth/esp32-wroom-32e/apps/bt_scan/`（ESP-IDF v6.0.2 + `esp_hid_scan`）扫描手柄 BT 模式（蓝色 LED 亮 + 配对状态）得到：
+
+| 字段 | 值 |
+|---|---|
+| MAC | `b5:5d:e7:98:54:75` |
+| NAME | `Xbox Wireless Controller`（BR/EDR 侧就是这个名，**不**是"Flydigi Apex5"）|
+| COD | major = PERIPHERAL (5)，minor = 2（gamepad/joystick）|
+| UUID | 0x1124（HID over BR/EDR L2CAP，**经典蓝牙标准**，不是 GATT）|
+| RSSI | -48 ~ -58 dBm（距离 ~0.5m）|
+| 广播通道 | **仅 BR/EDR**：40s 扫描期内 BLE GAP debug 一次都没出现这个 MAC；BLE 扫描到的全是 Apple 设备（`U-ACGDDEC` 等）和一些 random UUID 0xfdaa 的设备 |
+
+**结论**：八爪鱼5 的蓝牙模式 **只走经典蓝牙 BR/EDR**，**不广播 BLE**。BP1Y303-D4 是单模 BR/EDR 蓝牙芯片（不是 BR/EDR + BLE 双模）。本节原先"一部分走 BLE、一部分走经典蓝牙"的猜测**有误**。
+
+**捕获命令复现**（在 `.env` 已设 `BOARD_A_TYPE=esp32-wroom-32e` 的前提下）：
+
+```bash
+source /opt/esp-idf/export.sh
+cd bluetooth/esp32-wroom-32e
+python3 tools/build.py --app bt_scan
+python3 tools/burn.py --app bt_scan
+python3 ../../tools/capture_uart.py --board-a --rst-a --duration 40 --odir /tmp --ts
+grep "Xbox Wireless Controller\|mode=BR_EDR" /tmp/board_a_<ts>.log
+```
 
 ### 协议：标准 HID over BR/EDR
 

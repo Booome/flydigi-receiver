@@ -90,3 +90,41 @@ ESP-IDF 自动发现 `components/<name>/`（`project.cmake:500`），无需在�
 - M10：BT inquiry（经典 BT 扫描，看到手柄）
 - M11+：BluedR HID 主机连接手柄（`esp_hid_host`）
 - HID 报告 TLV 化（复用现有 `formatter`）
+
+## M10：BT 双模扫描（已完成）
+
+详见：
+- 设计：`docs/superpowers/specs/2026-09-05-bt-scan-design.md`
+- 实施计划：`docs/superpowers/plans/2026-09-05-bt-scan.md`
+- App：`apps/bt_scan/`（基于 `examples/bluetooth/esp_hid_host/` 精简）
+- 验证记录：`apps/bt_scan/README.md` "验证结果" 节（含手柄 MAC / NAME / COD / RSSI）
+
+### 实测关键发现
+
+- 手柄八爪鱼5 在 BT 模式下走 **BR/EDR 经典蓝牙**，BLE 不广播（纠正 docs/controller-modes.md 之前"双模蓝牙"猜测——**手柄是单模 BR/EDR**，BP1Y303-D4 不是双模芯片）
+- 手柄 BR/EDR 广播 name = `Xbox Wireless Controller`（不是"Flydigi Apex5"），是手柄固件把 HID-over-BR/EDR 映射成 Xbox 兼容身份
+- ESP-IDF v6.0.2 的 `esp_hid_scan()` 自带 GAP debug print（`BT : ...` / `BLE: ...` 前缀），方便对比 esp_hid HID 过滤的 hit（`[bt_scan]` 行）vs 真实收到的所有广播
+- esp_hid 的 HID 匹配只对 UUID 0x1812（BLE）+ 标准 BR/EDR HID UUID（0x1124）；不是 HID 设备的广播只出现在 GAP debug、不进 results 列表
+
+### 复位机制（`capture_uart.py`）
+
+ESP32 DevKitC 板载 USB-UART 桥已把 DTR 接 EN，所以 ESP32 走 **DTR 复位**
+（不需 `uart-gpio` / ctrl pin）。
+
+```bash
+# 一次性抓（不复位）
+python3 tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts
+
+# 抓 + DTR 复位（前提：.env 里有 BOARD_A_TYPE=esp32-wroom-32e）
+python3 tools/capture_uart.py --board-a --rst-a --duration 14 --odir /tmp --ts
+```
+
+`.env` 里需要：
+```
+BOARD_A_PORT=/dev/serial/by-path/pci-...   # 串口路径（与 SLE 复用）
+BOARD_A_TYPE=esp32-wroom-32e               # 选 DTR 复位机制
+```
+
+复位机制走 `BOARD_<X>_TYPE` 分派：
+- `esp32-wroom-32e` —— DTR toggle（DevKitC 板载 USB-UART 桥）
+- `ai-bs21-32s-kit` / `bearpi-pico-h3863` —— `uart-gpio` 脉冲（BS21/WS63 接控制板）
