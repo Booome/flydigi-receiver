@@ -66,7 +66,7 @@ def run(cmd: list[str], cwd: Path) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Flash an ESP-IDF app under bluetooth/esp32-wroom-32e")
-    ap.add_argument("--app", default="hello_world")
+    ap.add_argument("--app", default="default")
     ap.add_argument("--board-a", action="store_true", default=True,
                     help="use BOARD_A_PORT from .env (default)")
     ap.add_argument("--board-b", action="store_true",

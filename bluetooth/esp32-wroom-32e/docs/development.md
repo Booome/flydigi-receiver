@@ -128,3 +128,44 @@ BOARD_A_TYPE=esp32-wroom-32e               # 选 DTR 复位机制
 复位机制走 `BOARD_<X>_TYPE` 分派：
 - `esp32-wroom-32e` —— DTR toggle（DevKitC 板载 USB-UART 桥）
 - `ai-bs21-32s-kit` / `bearpi-pico-h3863` —— `uart-gpio` 脉冲（BS21/WS63 接控制板）
+## M11：BT HID 主机连接 + 原始报告采集（已完成）
+
+详见：
+- 设计：`docs/superpowers/specs/2026-09-05-bt-hid-host-capture-design.md`
+- 实施计划：`docs/superpowers/plans/2026-09-05-bt-hid-host-capture.md`
+- App：`apps/default/`（**项目主 app**，从本里程碑起固定在 `default`，后续功能迭代都更新这里）
+- 验证日志样例：`docs/sample-default-capture.log`
+
+### 三层候选算法（spec §四）
+
+```
+层1 语义过滤:  只保留 gamepad-class BR/EDR (COD major=5 minor=2)
+层2 EWMA 平滑:  smoothed = 0.3*新 + 0.7*旧  (alpha=0.3)
+层3 迟滞 + 兜底: 平滑后差 >= 3dB 才换候选; 3s 稳定锁; 8s 强制连
+```
+
+常量：HYSTERESIS_DB=3, LOCK_WAIT_MS=3000, MAX_WAIT_MS=8000, EWMA alpha=0.3, CANDIDATE_GONE_ROUNDS=2。
+
+### 工具默认值改动
+
+- `tools/build.py` / `tools/burn.py`：`--app` 默认 `"default"`（原 `"hello_world"`）。
+- 显式 `--app hello_world` / `--app bt_scan` 仍可指定。
+- 调用方不传 `--app` 即烧/构建主功能 `default`。
+
+### 输出格式
+
+每行一条 HID 输入报告：
+```
+[hid] candidate: addr=b5:5d:e7:98:54:75 smoothed=-41.0
+[hid] open: addr=b5:5d:e7:98:54:75 transport=BR_EDR
+[hid] report: addr=b5:5d:e7:98:54:75 transport=BR_EDR len=15 data=0080ff800080ff8000000000000000
+[hid] close: addr=b5:5d:e7:98:54:75 transport=BR_EDR status=0x13
+```
+
+### 关键陷阱（已踩）
+
+**`esp_hid_scan()` 即使只用 BR/EDR 也会在 BLE 信号量上阻塞**——必须 `esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)`。漏调 → 候选循环静默卡死，30s+ 看不到任何 `[hid] candidate` 输出。`main.c` 里 fix 见 commit `dbc385a`。
+
+### 里程碑命名约定
+
+不再用 `M<n>` 编号——换板时 Mn 容易乱。新里程碑按**工作内容命名**（`apps/hello_world/`、`apps/bt_scan/`、`apps/default/`）。spec/plan/分支名 = `<topic>-<action>` 形式。

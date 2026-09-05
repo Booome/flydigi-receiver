@@ -25,11 +25,22 @@
 - 仅经典 ESP32 在 ESP-IDF 全家族中带 BR/EDR（S2/S3/C3/C5/C6/H2/C61/E22 全 BLE-only），故 ESP32-WROOM-32E 是 BR/EDR HID 主机研究的唯一对口芯片
 - 项目在 `bluetooth/esp32-wroom-32e/`（与 `wireless/` 平级），非侵入式编译，多 app（`apps/<app>/` + `build/<app>/`）
 - 烧录 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` 调 ESP-IDF；串口抓取走顶层 `tools/capture_uart.py`（与 SLE 共用，端口从 `.env` 的 `BOARD_A_PORT`/`BOARD_B_PORT` 复用，`BOARD_A_TYPE=esp32-wroom-32e` 选 DTR 复位）
-- **M9 = 环境搭建**（hello_world 编译/烧录/串口），不涉及手柄；后续 M10/M3+ 起做 BT inquiry、HID 主机连接
-- **M10 = BT 双模扫描**（`apps/bt_scan/`，esp_hid_scan 双侧都能看到手柄）✓
-- 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md`，实施计划：`docs/superpowers/plans/2026-09-05-esp32-env-setup.md`
+- **环境搭建**（`apps/hello_world/` 编译/烧录/串口）✓
+- **BT 双模扫描**（`apps/bt_scan/`，esp_hid_scan 扫到 Apex5 BR/EDR 广播）✓
+- **BT HID 主机连接 + 原始报告采集**（`apps/default/` ——项目主 app，从本里程碑起固定在 `default`，后续迭代都更新它）→ 进行中
+- 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md` / `2026-09-05-bt-scan-design.md` / `2026-09-05-bt-hid-host-capture-design.md`
 
-### M10 实测（2026-09-05）飞智八爪鱼5 蓝牙广播
+#### **里程碑命名约定（2026-09 修订）**
+
+不再用 `M<n>` 编号。理由：换板时（不同物理槽位、不同 BLE/SLE 板混插）`M<n>` 与具体板的对应会乱。改用**实际工作内容命名**：
+- `apps/hello_world/` = 环境基线（hello world 验证）
+- `apps/bt_scan/` = BT 双模扫描工具
+- `apps/default/` = 项目主 app（持续迭代）
+- spec / plan / 分支名 = `<topic>-<action>` 形式（如 `bt-hid-host`）
+
+历史内容里 M9/M10/M10 之类命名保留作为 commit message 记录（便于 git log 追溯），但**新里程碑不再用 Mn 编号**。
+
+### BT 双模扫描实测（2026-09-05）飞智八爪鱼5 蓝牙广播
 
 ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 
@@ -39,11 +50,22 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 | NAME | `Xbox Wireless Controller`（BR/EDR 侧就用这个名字，不是"Flydigi Apex5"）|
 | COD | major = PERIPHERAL (5)，minor = 2（gamepad/joystick）|
 | UUID | 0x1124（HID over BR/EDR L2CAP）|
-| RSSI | -48 ~ -58 dBm |
-| 40s BR/EDR 命中 | ~60 次 |
-| BLE 命中 | **0 次**（手柄不广播 BLE——纠正先前"双模蓝牙"猜测，**手柄是单模 BR/EDR**）|
+| RSSI | -47 ~ -54 dBm（28s 实测，噪声 ±3~5 dB）|
+| BR/EDR 命中 | 15 次（28s）|
+| BLE 命中 | **0 次**（手柄不广播 BLE——**手柄是单模 BR/EDR**，纠正先前"双模蓝牙"猜测）|
+| 周边干扰 | 仅有 Apple 设备（`U-ACGDDEC`/`U-ACGA332` 等），COD 非 gamepad，不构成竞争 |
 
 详见 `bluetooth/esp32-wroom-32e/apps/bt_scan/README.md` 验证结果节、`docs/controller-modes.md` 三节。
+
+### 手柄操作经验（（机注意）
+
+- **手柄空闲时极快进入省电模式**：手柄不进配对状态、不使用时 10-30 秒内就停止 BR/EDR 可发现广播。每次准备测试手柄相关功能（scan、connect）前，先**提醒用户**确认手柄：
+  1. 拨杆到中间（蓝牙 / 蓝色 LED 位置）
+  2. 长按配对键进入可发现状态（蓝色 LED 快闪）
+  3. 用户回复"开好了"后再跑命令
+  4. 常见错误：以为手柄没开 → 实测已关省电 → 30s 扫不到 → 误判为协议问题
+
+- **手柄断开会回到候选阶段**：ESP32 HID 主机收到 `ESP_HIDH_CLOSE_EVT` 后会自动清状态、回扫描循环（不需手动重连）。
 
 ## 平台
 
