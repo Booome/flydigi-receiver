@@ -29,6 +29,7 @@
 #include "esp_bt.h"
 #include "esp_gap_bt_api.h"
 #include "esp_hidh.h"
+#include "esp_hidh_gattc.h"
 #include "bt_stack.h"
 #include "hid_report.h"
 
@@ -543,6 +544,12 @@ void app_main(void) {
         .event_stack_size = 4096,
         .callback_arg = NULL,
     };
+#if CONFIG_BT_BLE_ENABLED
+    /* esp_hidh always initializes its BLE host path (esp_ble_hidh_init) which
+     * blocks until a GATTC app-register event is routed; that event needs this
+     * callback even though we use BR/EDR only. Plumbing, not a BLE data flow. */
+    ESP_ERROR_CHECK(esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler));
+#endif
     ESP_ERROR_CHECK(esp_hidh_init(&hidh_cfg));
 
     const esp_timer_create_args_t tick_args = {
