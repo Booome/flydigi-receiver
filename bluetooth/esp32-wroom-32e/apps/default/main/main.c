@@ -217,40 +217,53 @@ static int64_t note_connect_fail(const uint8_t *bda) {
     return RETRY_BACKOFF_MS;
 }
 
-static void note_connect_ok(const uint8_t *bda) {
+static void note_connect_ok(void) {
     g_fail_count = 0;
     memset(g_fail_bda, 0, sizeof(g_fail_bda));
 }
 
 /* ---- side-effect helpers (all called with lock held) ---- */
 
+/* Clear selection state and mark scanning (does not touch timers/discovery). */
+static void reset_scan_state(void) {
+    memset(&g_candidate, 0, sizeof(g_candidate));
+    ewma_clear();
+    g_state = ST_SCANNING;
+}
+
 static void arm_rescan(int64_t delay_ms) {
     esp_timer_start_once(g_rescan_backoff, (uint64_t)delay_ms * 1000);
 }
 
-static void begin_scan_round(void) {
-    memset(&g_candidate, 0, sizeof(g_candidate));
-    ewma_clear();
-    g_scan_start_ms = now_ms();
-    g_state = ST_SCANNING;
-    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
-    esp_timer_start_periodic(g_lock_tick, (uint64_t)LOCK_TICK_MS * 1000);
-}
-
-/* stop scanning side-effects before we take the radio for an open. */
+/* Stop scanning side-effects: cancel inquiry and pause the lock tick. */
 static void halt_scanning_side_effects(void) {
     esp_bt_gap_cancel_discovery();
     esp_timer_stop(g_lock_tick);
 }
 
-static void open_candidate(void) {
+/* Take the radio for one open: halt scanning, arm the connect watchdog, mark
+ * CONNECTING, and issue the async open for bda (caller resolved the address). */
+static void issue_connect(const uint8_t *bda) {
+    esp_bd_addr_t peer;
+    memcpy(peer, bda, sizeof(peer));
     halt_scanning_side_effects();
     esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000);
     g_state = ST_CONNECTING;
+    esp_hidh_dev_open(peer, ESP_HID_TRANSPORT_BT, 0);
+}
+
+static void begin_scan_round(void) {
+    reset_scan_state();
+    g_scan_start_ms = now_ms();
+    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+    esp_timer_start_periodic(g_lock_tick, (uint64_t)LOCK_TICK_MS * 1000);
+}
+
+static void open_candidate(void) {
     printf("[hid] connecting: addr=");
     print_bda(g_candidate.bda);
     printf(" transport=BR_EDR\n");
-    esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
+    issue_connect(g_candidate.bda);
 }
 
 /* Returns true when a bonded page was actually issued; false = no usable bond. */
@@ -268,21 +281,18 @@ static bool open_bonded(void) {
     g_candidate.smoothed = 0;
     g_candidate.active = true;
     g_candidate.set_at_ms = now_ms();
-    halt_scanning_side_effects();
-    esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000);
-    g_state = ST_CONNECTING;
     printf("[hid] outbound page bonded ");
     print_bda(g_candidate.bda);
     printf(" (bonds=%d)\n", want);
-    esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
+    issue_connect(g_candidate.bda);
     return true;
 }
 
-/* Resume after boot / fail / close: page the bonded peer if any, else scan. */
+/* Resume after boot / fail / close: page the bonded peer if one is usable, else
+ * start a scan round. open_bonded() returns false when there is no bond, so the
+ * fallback preserves the old fall-through-to-inquiry behavior. */
 static void resume_scan(void) {
-    if (esp_bt_gap_get_bond_device_num() > 0 && open_bonded()) {
-        /* paging */
-    } else {
+    if (!open_bonded()) {
         begin_scan_round();
     }
 }
@@ -324,9 +334,7 @@ static void conn_timeout_cb(void *arg) {
     printf("[hid] connect timeout, rescan\n");
     esp_bd_addr_t tried;
     memcpy(tried, g_candidate.bda, sizeof(tried));
-    memset(&g_candidate, 0, sizeof(g_candidate));
-    ewma_clear();
-    g_state = ST_SCANNING;
+    reset_scan_state();
     int64_t delay = note_connect_fail(tried);
     arm_rescan(delay);
     unlock();
@@ -458,7 +466,7 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
             halt_scanning_side_effects();
             g_state = ST_CONNECTED;
             memset(&g_candidate, 0, sizeof(g_candidate));
-            note_connect_ok(bda);
+            note_connect_ok();
             unlock();
             printf("[hid] open: addr=");
             print_bda(bda);
@@ -474,9 +482,7 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
             lock();
             remove_bond_of(bda); /* peer rejected our key -> drop it, next round pairs fresh */
             int64_t delay = note_connect_fail(bda);
-            memset(&g_candidate, 0, sizeof(g_candidate));
-            ewma_clear();
-            g_state = ST_SCANNING;
+            reset_scan_state();
             arm_rescan(delay);
             unlock();
         }
@@ -523,7 +529,7 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
             esp_hidh_dev_free(param->close.dev);
         }
         lock();
-        g_state = ST_SCANNING; /* bond kept; resume_scan() will page it */
+        reset_scan_state(); /* bond kept; resume_scan() will page it after backoff */
         arm_rescan(RETRY_BACKOFF_MS);
         unlock();
         break;

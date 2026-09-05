@@ -979,3 +979,17 @@ git commit -m "docs(esp32): document callback-chain refactor + verification resu
 - **占位符**：无 TBD/TODO；所有代码步骤含完整代码。
 - **类型一致**：`bt_stack_start(void)->esp_err_t`（Task1 定义、Task2 调用一致）；`hid_decode/hid_print_state/apex5_xinput_t/HID_DEBUG_DELTA` 用 `hid_report.h` 现签名；`note_connect_fail` 返回 `int64`（Task2 内一致）；timer 名/handle 三处一致。
 - **风险点已落计划**：esp_timer 回调里 `lock()` 短暂阻塞（临界区仅内存判定 + 非阻塞 BT API，无死锁）；连续 inquiry 在 `DISC_STATE STOPPED` 续扫不重置候选；`resume_scan` 有 bond 先 page（覆盖 bonded pad 的 page-only 态）。
+
+## 执行期修正（实现/实测暴露，计划正文代码需以此为准）
+
+1. **`open_bonded()` 返回 `bool` + `resume_scan()` 回落扫描**（fix `140ef48..f6ef910`）：brief 原
+   代码在 `bond_num>0` 但 `get_bond_device_list` 失败/空时会"什么都不启动"，`g_state` 卡在
+   `ST_SCANNING` 且无 inquiry/timer → 永久失活（违反行为等价：旧 `try_open_bonded()` 会 fall-through
+   去 inquiry）。已改为 no-op 时回落 `begin_scan_round()`。
+2. **保留 `esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)`**（fix `82bd08e..ed6fb7a`）：
+   brief 里随阻塞扫描一并删了它，但 `esp_hidh_init` 的 BLE 分支 `esp_ble_hidh_init()` 会
+   `esp_ble_gattc_app_register(0)` 后 `WAIT_CB()`（`portMAX_DELAY`）等 gattc REG 事件；不注册则
+   **启动永久卡死在 `[hid] boot bonds` 之前**（Task 4 冷启动实测命中）。该注册是 esp_hidh 强制初始化
+   管道、即便只用 BR/EDR 也必需，不等于跑 BLE 业务流。已在 `app_main` `esp_hidh_init` 前恢复。
+3. 顺带清理：删 `(void)bda;`（仓库禁 `(void)arg`）、删无用的 `#include "freertos/task.h"`、
+   `g_app_mutex` 创建移到 `app_main` 最前（回调注册前）。

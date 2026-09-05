@@ -80,8 +80,11 @@ bluetooth/esp32-wroom-32e/apps/default/main/
 - **`main.c`**：`app_main` 只做 `nvs_flash_init → bt_stack_start → 注册 gap 回调 + esp_hidh_init
   → boot bond 诊断 → 起步决策（`try_open_bonded()` 或 `start_discovery()`）→ 返回`，**无 `while(1)`**。
   候选/EWMA/迟滞/锁定函数、三个 esp_timer 回调、`bt_gap_cb`、`hidh_event_handler` 全在此。
-  原 `app_main` 里那句 `esp_ble_gattc_register_callback(...)`（仅为喂 `esp_hid_scan` 的 BLE 信号量）
-  随阻塞扫描一起**删除**。
+  **必须保留** `esp_hidh_init` 前的 `esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)`：
+  `esp_hidh_init` 的 BLE 分支 `esp_ble_hidh_init()` 会 `esp_ble_gattc_app_register(0)` 后
+  `WAIT_CB()`（`portMAX_DELAY`）等 gattc REG 事件，而该回调未注册则**永久阻塞启动**——这是
+  esp_hidh 的强制初始化管道，**即便只用 BR/EDR 也需要**，不等于跑 BLE 业务流。
+  （曾误当作"喂 esp_hid_scan 的信号量"删除，实测导致启动卡在 `[hid] boot bonds` 之前，已恢复。）
 
 ### BLE 定位（重要，防"以为删 BLE 代码=没 BLE 了"）
 - **删 `esp_hid_gap.c` 里的 BLE adv/scan handler ≠ 关掉 BLE 射频**。那些是官方 example 胶水，
@@ -177,9 +180,10 @@ backoff_to_scan(): reset_to_scan(); arm rescan_backoff(RETRY_BACKOFF_MS, 单次)
 - **sdkconfig 保持现状（BTDM、`CONFIG_BT_BLE_ENABLED=y`）**：不削减 BLE 能力，控制器仍双模使能
   （见 §四「BLE 定位」）。本里程碑只是**不跑 BLE 业务流程**，**不改射频配置**。
 - `main/CMakeLists.txt`：`SRCS` 用 `bt_stack.c` 替换 `esp_hid_gap.c`；`REQUIRES`/`PRIV_REQUIRES`
-  保持 `bt`、`esp_hid`；不再需要 esp_hid_gap 头。删掉旧 `esp_hid_gap.c` 对 `esp_hidh_gattc.h`
-  的 BLE 用途依赖（app_main 不再注册 gattc 回调）。
-- `esp_hidh` 本身仍支持 BT+BLE；日后接 BLE HID 无需换栈，只补 `ble_gatt` 业务模块即可。
+  保持 `bt`、`esp_hid`；不再需要 esp_hid_gap 头。
+- `esp_hidh` 本身仍支持 BT+BLE；`esp_hidh_init` 内部会初始化 BLE HID 主机路径，故 `main.c`
+  **保留** `esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)`（见 §四），日后真要接
+  BLE HID 也无需换栈，只补 `ble_gatt` 业务模块即可。
 
 ## 九、验证矩阵
 

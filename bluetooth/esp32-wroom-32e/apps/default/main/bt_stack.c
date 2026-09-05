@@ -3,13 +3,12 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  *
- * Minimal BR/EDR (Bluedroid BTDM) bring-up extracted from esp_hid_gap:
- * controller + Bluedroid enable, SSP NoInputNoOutput (headless Just Works),
- * legacy pin, connectable+non-discoverable scan mode. GAP callback and
- * discovery are the caller's (main.c) responsibility.
+ * Minimal BR/EDR (Bluedroid BTDM) bring-up, distilled from the ESP-IDF esp_hid
+ * example glue: controller + Bluedroid enable, SSP NoInputNoOutput (headless
+ * Just Works), legacy pin, connectable+non-discoverable scan mode. The GAP
+ * callback and discovery are the caller's (main.c) responsibility.
  */
 
-#include <stdio.h>
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_bt.h"
