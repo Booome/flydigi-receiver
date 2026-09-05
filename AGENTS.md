@@ -126,7 +126,7 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 python3 wireless/tools/burn.py board_a                 # BS21 default app
 python3 wireless/tools/burn.py board_a -a sle_probe    # BS21 指定 app
 python3 wireless/tools/burn.py board_a <h3863.fwpkg>  # H3863 显式传 fwpkg
-python3 bluetooth/esp32-wroom-32e/tools/burn.py        # ESP32 DevKitC（默认 BOARD_A_PORT）
+python3 bluetooth/esp32-wroom-32e/tools/burn.py --board-a    # ESP32 DevKitC
 
 # 抓 log：SLE 板（默认 BOARD_A_TYPE=ai-bs21-32s-kit 或 bearpi-pico-h3863，uart-gpio 复位）
 python3 tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
@@ -185,6 +185,12 @@ dongle"、拔插某块板的 USB 电源、改接串口线等），**必须先播
 
 反例（禁止）：在 board_a + board_b 互测进行中，突然要求用户插真机 dongle 抓包，
 却不说明切换原因和操作步骤。
+
+### 输出语言约定
+
+**对用户的所有输出尽量用中文**：终端回复、进度说明、分析结论、设计/计划文档一律中文。
+仅以下保持英文：代码、代码注释、标识符、commit message、日志里给机器解析的字段前缀
+（如 `[hid] state: btn=...`）。即"面向人读的用中文，面向机器/仓库约定的保持英文"。
 
 ## 开发规范
 

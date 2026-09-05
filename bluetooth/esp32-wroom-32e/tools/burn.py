@@ -67,14 +67,19 @@ def run(cmd: list[str], cwd: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Flash an ESP-IDF app under bluetooth/esp32-wroom-32e")
     ap.add_argument("--app", default="default")
-    ap.add_argument("--board-a", action="store_true", default=True,
-                    help="use BOARD_A_PORT from .env (default)")
+    ap.add_argument("--board-a", action="store_true",
+                    help="use BOARD_A_PORT from .env")
     ap.add_argument("--board-b", action="store_true",
                     help="use BOARD_B_PORT from .env")
     ap.add_argument("--port", help="explicit serial port override")
     args = ap.parse_args()
 
     env = load_env()
+
+    if args.board_a and args.board_b:
+        ap.error("--board-a and --board-b are mutually exclusive; pick one")
+    if not (args.board_a or args.board_b):
+        ap.error("must select one board: --board-a or --board-b")
 
     if args.port:
         port = args.port

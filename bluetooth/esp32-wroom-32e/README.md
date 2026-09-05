@@ -29,8 +29,7 @@
 source /opt/esp-idf/export.sh
 cd bluetooth/esp32-wroom-32e
 python3 tools/build.py            # 默认 app=default
-python3 tools/build.py --app hello_world    # 也可指定历史 app
-python3 tools/burn.py             # 默认 app=default，烧 board_a（需连接 DevKitC）
+python3 tools/burn.py --board-a     # 烧 board_a（需连接 DevKitC）
 
 # 抓串口 log（顶层共享工具；ESP32 需 .env 里 BOARD_A_TYPE=esp32-wroom-32e → DTR 复位）
 python3 ../../tools/capture_uart.py --board-a --rst-a --duration 10 --odir /tmp --ts
