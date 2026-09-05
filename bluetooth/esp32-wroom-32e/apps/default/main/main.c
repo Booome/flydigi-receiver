@@ -24,6 +24,7 @@
 #include "esp_bt.h"
 #include "esp_hid_gap.h"
 #include "esp_hidh.h"
+#include "esp_hidh_gattc.h"
 
 #define TAG "default"
 #define SCAN_DURATION_SEC       5
@@ -177,6 +178,11 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_hid_gap_init(ESP_BT_MODE_BTDM));
     ESP_LOGI(TAG, "BTDM initialized");
+
+#if CONFIG_BT_BLE_ENABLED
+    /* esp_hid_scan() blocks on a BLE semaphore; need GATTC callback registered */
+    ESP_ERROR_CHECK(esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler));
+#endif
 
     esp_hidh_config_t hidh_cfg = {
         .callback = hidh_event_handler,
