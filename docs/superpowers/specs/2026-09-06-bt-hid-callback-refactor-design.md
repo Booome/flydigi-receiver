@@ -260,3 +260,18 @@ backoff_to_scan(): reset_to_scan(); arm rescan_backoff(RETRY_BACKOFF_MS, 单次)
 | 探询命中 → 全新 SSP（**修复点**） | ~1.5s | 原 30s+ 死锁，现 ~1.5s |
 
 用户视角：每次重配对行为一致（~1.5–6s 内连上，不再有"第 3 次卡死"）。代价仅 bonded 回连多 ~2.5s 探询。
+
+## 十四、续：OPEN OK 清 `g_probe` + DISC_STOP 加 SCANNING 守卫（修"断电→上电"死锁）
+
+**问题**（用户实测）：配对成功后**断电手柄→再上电**（手柄做 bonded-reconnect 主动 page 我们）时，手柄卡 "连接中"。
+
+**根因**：手柄上电 page 我们时，我们的 probe 探询刚启动不久：
+1. 控制器收页 → ACL 建立 → esp_hidh 投递 `OPEN EVENT (OK)`（入站连接）。
+2. OPEN OK handler 里**漏清 `g_probe`**。
+3. 我们自己 `cancel_discovery` 触发的 `DISC_STATE=STOPPED` 到了 → handler 看到 `g_probe==true` → 走"probe 回退" → `open_bonded()` 把 `g_state` 从 **CONNECTED** 改写为 **CONNECTING** + 又发一次 `dev_open` → 链接被打乱，手柄那边回不上 → "连接中" 卡死。
+
+**修法**（两处都属 §十三 bonded-probe 引入的清理）：
+1. OPEN OK 进锁后**清 `g_probe`**（在 `halt_scanning_side_effects()` 之后、`unlock()` 之前）。
+2. DISC_STOP 的 probe 回退分支加 `g_state == ST_SCANNING` 守卫（即使 g_probe 漏了，CONNECTED 状态也不会被回退覆盖）—— 防御性冗余。
+
+**真机验证**（待）：commit `3499bfe`，烧好后做"配对→断电→上电"，手柄应不再卡"连接中"，应在 ~2–6s 内连上（取决于手柄走 discoverable 还是 page-only 分支）。
