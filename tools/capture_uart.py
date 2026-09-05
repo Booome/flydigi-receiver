@@ -8,10 +8,17 @@ Board/serial mapping is read from the project .env file:
     BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN / BOARD_A_TYPE
     BOARD_B_PORT / BOARD_B_RST_PORT / BOARD_B_RST_PIN / BOARD_B_TYPE
 
-BOARD_*_TYPE selects the reset mechanism when --rst-a/--rst-b is given:
-    sle   (default) -> uart-gpio pulse via ctrl board pin (BS21/WS63)
-    esp32           -> DTR toggle via open serial port (ESP32 DevKitC, with
-                       onboard USB-UART bridge wiring DTR->EN)
+BOARD_*_TYPE selects the board model and determines the reset mechanism
+used when --rst-a/--rst-b is given. Accepted values:
+    esp32-wroom-32e       -> DTR toggle via open serial port (DevKitC
+                             onboard USB-UART bridge has DTR->EN wiring).
+                             BOARD_<X>_RST_PORT/PIN unused.
+    ai-bs21-32s-kit       -> uart-gpio pulse via ctrl board pin. Needs
+                             BOARD_<X>_RST_PORT/PIN.
+    bearpi-pico-h3863     -> uart-gpio pulse via ctrl board pin. Needs
+                             BOARD_<X>_RST_PORT/PIN.
+Default: 'ai-bs21-32s-kit' (backward compat with original SLE setup).
+Unknown values warn on stderr and fall back to 'ai-bs21-32s-kit'.
 """
 
 import argparse
@@ -152,8 +159,8 @@ def board_key(board):
     return board.split("_", 1)[-1].upper()
 
 
-def pulse_reset_sle(board, env):
-    """External uart-gpio reset for BS21/WS63 (reset pin wired to ctrl board)."""
+def pulse_reset_uart_gpio(board, env):
+    """External uart-gpio reset for wireless/ boards (BS21/WS63)."""
     key = board_key(board)
     port = env.get("BOARD_%s_RST_PORT" % key)
     pin = env.get("BOARD_%s_RST_PIN" % key)
@@ -165,11 +172,11 @@ def pulse_reset_sle(board, env):
                    check=True)
 
 
-def pulse_reset_esp32(stream):
-    """DTR toggle for ESP32 DevKitC (DTR->EN wiring on the onboard USB-UART).
+def pulse_reset_dtr(stream):
+    """DTR toggle for bluetooth/ boards (ESP32 DevKitC, DTR->EN wiring).
 
-    Toggles DTR line — works regardless of DTR polarity (active-high vs
-    active-low EN). ESP32 sees a reset pulse and boots normally.
+    Toggles DTR line — works regardless of DTR polarity. ESP32 sees a
+    reset pulse and boots normally.
     """
     stream.dtr = not stream.dtr
     time.sleep(0.1)
@@ -177,12 +184,29 @@ def pulse_reset_esp32(stream):
     time.sleep(0.5)
 
 
+def _reset_mode(board_type):
+    """Map BOARD_<X>_TYPE value to reset mechanism.
+
+    Returns 'dtr' for esp32-wroom-32e, 'uart-gpio' for ai-bs21-32s-kit /
+    bearpi-pico-h3863, None otherwise. Case-insensitive.
+    """
+    bt = board_type.lower()
+    if bt == "esp32-wroom-32e":
+        return "dtr"
+    if bt in ("ai-bs21-32s-kit", "bearpi-pico-h3863"):
+        return "uart-gpio"
+    return None
+
+
 def reset_plan(args, env, streams):
     """Return list of zero-arg reset callables, one per requested board.
 
-    Board type is read from .env (BOARD_A_TYPE / BOARD_B_TYPE, default 'sle'):
-      - sle   -> uart-gpio pulse via ctrl board (BS21/WS63)
-      - esp32 -> DTR toggle via the open serial stream (ESP32 DevKitC)
+    Board type read from .env (BOARD_A_TYPE / BOARD_B_TYPE, default
+    'ai-bs21-32s-kit'). Maps to reset mechanism:
+      esp32-wroom-32e       -> DTR toggle via open serial port
+      ai-bs21-32s-kit       -> uart-gpio pulse via ctrl board
+      bearpi-pico-h3863     -> uart-gpio pulse via ctrl board
+    Unknown values warn on stderr and fall back to 'ai-bs21-32s-kit'.
     """
     plan = []
     board_to_stream = {b: s for s, b in streams.items()}
@@ -190,19 +214,20 @@ def reset_plan(args, env, streams):
         if not flag:
             continue
         key = board_key(board)
-        btype = env.get("BOARD_%s_TYPE" % key, "sle").lower()
-        if btype not in ("sle", "esp32"):
-            print("[WARN] unknown BOARD_%s_TYPE=%r, falling back to 'sle'" %
+        btype = env.get("BOARD_%s_TYPE" % key, "ai-bs21-32s-kit")
+        mode = _reset_mode(btype)
+        if mode is None:
+            print("[WARN] unknown BOARD_%s_TYPE=%r, falling back to 'ai-bs21-32s-kit'" %
                   (key, btype), file=sys.stderr)
-            btype = "sle"
-        if btype == "esp32":
+            mode = "uart-gpio"
+        if mode == "dtr":
             stream = board_to_stream.get(board)
             if stream is None:
-                raise RuntimeError("BOARD_%s_TYPE=esp32 but %s not open" %
-                                   (key, board))
-            plan.append(lambda s=stream: pulse_reset_esp32(s))
+                raise RuntimeError("BOARD_%s_TYPE=%s but %s not open" %
+                                   (key, btype, board))
+            plan.append(lambda s=stream: pulse_reset_dtr(s))
         else:
-            plan.append(lambda b=board: pulse_reset_sle(b, env))
+            plan.append(lambda b=board: pulse_reset_uart_gpio(b, env))
     return plan
 
 

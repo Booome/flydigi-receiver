@@ -24,7 +24,7 @@
 - ESP-IDF v6.0.2（yay AUR `esp-idf`，`/opt/esp-idf`，**不**复制到 `~/workspace`）
 - 仅经典 ESP32 在 ESP-IDF 全家族中带 BR/EDR（S2/S3/C3/C5/C6/H2/C61/E22 全 BLE-only），故 ESP32-WROOM-32E 是 BR/EDR HID 主机研究的唯一对口芯片
 - 项目在 `bluetooth/esp32-wroom-32e/`（与 `wireless/` 平级），非侵入式编译，多 app（`apps/<app>/` + `build/<app>/`）
-- 烧录 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` 调 ESP-IDF；串口抓取走顶层 `tools/capture_uart.py`（与 SLE 共用，端口从 `.env` 的 `BOARD_A_PORT`/`BOARD_B_PORT` 复用，不增键）
+- 烧录 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` 调 ESP-IDF；串口抓取走顶层 `tools/capture_uart.py`（与 SLE 共用，端口从 `.env` 的 `BOARD_A_PORT`/`BOARD_B_PORT` 复用，`BOARD_A_TYPE=esp32-wroom-32e` 选 DTR 复位）
 - **M9 = 环境搭建**（hello_world 编译/烧录/串口），不涉及手柄；后续 M10/M3+ 起做 BT inquiry、HID 主机连接
 - 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md`，实施计划：`docs/superpowers/plans/2026-09-05-esp32-env-setup.md`
 
@@ -53,12 +53,13 @@
 串口/复位配置记录在项目根 `.env`（不入库，模板见 `.env.example`），统一用
 `/dev/serial/by-path/` 稳定路径（ttyUSB 编号会漂移，勿硬编码）。
 
-**复位控制**：WS63 reset 引脚通过控制板物理连接，由 `uart-gpio` 命令行工具控制
-（不是 STM32 USB-serial 的 DTR/RTS）。`burn.py` / `capture_uart.py` 通过调用
-`uart-gpio` 控制复位脉冲。
+**复位控制**：每块板的复位机制由 `.env` 的 `BOARD_<X>_TYPE` 决定（默认 `ai-bs21-32s-kit`，即 SLE 板）：
+- `ai-bs21-32s-kit` / `bearpi-pico-h3863` —— reset 引脚接控制板，`tools/capture_uart.py` 通过 `uart-gpio` 命令行工具控制复位脉冲。需要 `.env` 里的 `BOARD_<X>_RST_PORT` / `BOARD_<X>_RST_PIN`。
+- `esp32-wroom-32e` —— 板载 USB-UART 桥已把 DTR 接 EN，`tools/capture_uart.py` 直接 toggle DTR 复位（无需 `uart-gpio` / ctrl pin）。RST_PORT/PIN 不需要。
+未知值会警告并回落到 `ai-bs21-32s-kit`。`wireless/tools/burn.py`（ws63flash）始终走 `uart-gpio`，与 BOARD_TYPE 无关。
 
 **共享工具**（顶层 `tools/` + SLE 专用）：
-- `tools/capture_uart.py` — 串口抓取（自动连串口 + 可选延迟复位 + 落盘 + 时间戳）。**跨 SLE / 蓝牙两方向通用**——`--board-a` / `--board-b` / `--rst-a` / `--rst-b` 按物理位置识别，端口读 `.env`。
+- `tools/capture_uart.py` — 串口抓取（自动连串口 + 可选延迟复位 + 落盘 + 时间戳）。**跨 SLE / 蓝牙两方向通用**——`--board-a` / `--board-b` / `--rst-a` / `--rst-b` 按物理位置识别，端口读 `.env`。复位机制按 `BOARD_<X>_TYPE` 分支。
 - `wireless/tools/burn.py` — SLE 烧录（ws63flash），SLE 专用。
 - `bluetooth/esp32-wroom-32e/tools/burn.py` — ESP32 烧录（idf.py flash），ESP32 专用。
 
@@ -69,9 +70,11 @@ python3 wireless/tools/burn.py board_a -a sle_probe    # BS21 指定 app
 python3 wireless/tools/burn.py board_a <h3863.fwpkg>  # H3863 显式传 fwpkg
 python3 bluetooth/esp32-wroom-32e/tools/burn.py        # ESP32 DevKitC（默认 BOARD_A_PORT）
 
-# 抓 log（SLE 板 / ESP32 通用）
+# 抓 log：SLE 板（默认 BOARD_A_TYPE=ai-bs21-32s-kit 或 bearpi-pico-h3863，uart-gpio 复位）
 python3 tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp --ts
-python3 tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts   # ESP32 hello_world 串口
+
+# 抓 log：ESP32 DevKitC（需在 .env 加 BOARD_A_TYPE=esp32-wroom-32e，DTR 复位）
+python3 tools/capture_uart.py --board-a --rst-a --duration 10 --odir /tmp --ts
 ```
 
 - burn.py 状态机：跑 ws63flash（pty 实时输出）→ 等 2s 判定 boot. 循环态；无则脉冲复位
