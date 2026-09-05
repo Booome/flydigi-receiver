@@ -18,6 +18,16 @@
 - `docs/history.md` - 项目历史与技术演进记录
 - `wireless/bearpi-pico-h3863/docs/design.md` - H3863 开发环境设计文档
 
+### 蓝牙方向（新，与 SLE 独立）
+
+- ESP32-WROOM-32E（ESP32-D0WD-V3，Xtensa LX6 双核 240MHz，rev3.1）
+- ESP-IDF v6.0.2（yay AUR `esp-idf`，`/opt/esp-idf`，**不**复制到 `~/workspace`）
+- 仅经典 ESP32 在 ESP-IDF 全家族中带 BR/EDR（S2/S3/C3/C5/C6/H2/C61/E22 全 BLE-only），故 ESP32-WROOM-32E 是 BR/EDR HID 主机研究的唯一对口芯片
+- 项目在 `bluetooth/esp32-wroom-32e/`（与 `wireless/` 平级），非侵入式编译，多 app（`apps/<app>/` + `build/<app>/`）
+- 烧录 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` 调 ESP-IDF；串口抓取走顶层 `tools/capture_uart.py`（与 SLE 共用，端口从 `.env` 的 `BOARD_A_PORT`/`BOARD_B_PORT` 复用，不增键）
+- **M9 = 环境搭建**（hello_world 编译/烧录/串口），不涉及手柄；后续 M10/M3+ 起做 BT inquiry、HID 主机连接
+- 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md`，实施计划：`docs/superpowers/plans/2026-09-05-esp32-env-setup.md`
+
 ## 平台
 
 ### BS21 开发板（已挂起）
@@ -27,6 +37,14 @@
 ### BearPi-Pico H3863 开发板（新主平台）
 
 详见 `wireless/bearpi-pico-h3863/README.md`（芯片规格、SDK、多 app 结构、构建、烧录）。
+
+### ESP32-WROOM-32E 开发板（蓝牙方向，新平台）
+
+详见 `bluetooth/esp32-wroom-32e/README.md`（芯片规格、ESP-IDF 位置、构建/烧录/串口流程）。
+
+- **非侵入式**：ESP-IDF `/opt/esp-idf` 全程只读；`apps/` 下 example 通过 `cp -r` 复制后再改
+- **多 app**：每个 app 是独立 ESP-IDF 项目（顶层 `CMakeLists.txt` + `main/` 组件）；编译产物通过 `-B ../../build/<app>` 落到 board 顶层 `build/<app>/`
+- **共享工具**：与 SLE 共用顶层 `tools/capture_uart.py`；ESP32 专用 `tools/{build,burn}.py` 跟随项目
 
 ## 烧录与调试（共享工具，两个平台通用）
 
