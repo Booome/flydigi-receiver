@@ -217,10 +217,6 @@ git worktree move <old> .worktrees/<branch>   # 移动已有 worktree 到 .workt
 3. **合并 / rebase 后**：跨分支合并会带回不同格式副本，合并完立即全量刷一遍再提交。
 4. **审阅 diff 前**：先格式化再看，避免逻辑改动被格式噪声淹没。
 
-**格式化配置**：
-- `.clang-format`：LLVM，4 空格，100 列，`AlignAfterOpenBracket: BlockIndent` + `BinPack{Arguments,Parameters}: false`（长花括号列表 / 参数展开成 4 空格块、每项一行、`};` 独立）。
-- `.cmake-format.yaml`：`max_pargs_hwrap: 1` + `dangle_parens: true`（单值 `set(X y)` 一行；多值每项一行、`)` 单独一行）。
-
 **全量格式化（tracked，跳过 build/ 与 docs/reference/）**：
 ```bash
 find . \( -name '*.c' -o -name '*.h' \) \
@@ -244,17 +240,3 @@ find . \( -name '*.c' -o -name '*.h' \) -not -path './.git/*' -not -path '*/buil
 ### 禁止 `(void)arg` 抑制 unused-parameter 警告
 
 项目 CMakeLists 已启用 `-Wno-unused-parameter`，**不需要** `(void)arg;` 来消除 unused-parameter 警告。禁止写此类语句——保持未使用参数裸写即可。
-
-### CMake 手写风格
-
-`set(VAR value)` 单行写法优先。禁止将单值变量拆成多行：
-
-```cmake
-# 正确
-set(WHOLE_LINK true)
-
-# 禁止
-set(WHOLE_LINK
-    true
-)
-```
