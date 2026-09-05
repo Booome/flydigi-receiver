@@ -14,16 +14,13 @@ void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn);
 void conn_mgr_start(void);
 
 void conn_mgr_seek_result(sle_seek_result_info_t *result);
-void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr,
-                            sle_acb_state_t conn_state,
-                            sle_pair_state_t pair_state,
-                            sle_disc_reason_t disc_reason);
-void conn_mgr_pair_complete(uint16_t conn_id, const sle_addr_t *addr,
-                            errcode_t status);
+void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr, sle_acb_state_t conn_state,
+                            sle_pair_state_t pair_state, sle_disc_reason_t disc_reason);
+void conn_mgr_pair_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t status);
 void conn_mgr_param_update(uint16_t conn_id, errcode_t status,
                            const sle_connection_param_update_evt_t *param);
-void conn_mgr_auth_complete(uint16_t conn_id, const sle_addr_t *addr,
-                            errcode_t status, const sle_auth_info_evt_t *evt);
+void conn_mgr_auth_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
+                            const sle_auth_info_evt_t *evt);
 void conn_mgr_seek_enable(errcode_t status);
 void conn_mgr_seek_disable(errcode_t status);
 

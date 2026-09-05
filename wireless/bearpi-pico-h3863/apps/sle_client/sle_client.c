@@ -60,8 +60,8 @@ static void sle_client_seek_result_cbk(sle_seek_result_info_t *seek_result_data)
         return;
     }
 
-    osal_printk("%s scan addr:%02x:%02x:%02x:%02x:%02x:%02x rssi:%d len:%d data:",
-                SLE_CLIENT_LOG, seek_result_data->addr.addr[0], seek_result_data->addr.addr[1],
+    osal_printk("%s scan addr:%02x:%02x:%02x:%02x:%02x:%02x rssi:%d len:%d data:", SLE_CLIENT_LOG,
+                seek_result_data->addr.addr[0], seek_result_data->addr.addr[1],
                 seek_result_data->addr.addr[2], seek_result_data->addr.addr[3],
                 seek_result_data->addr.addr[4], seek_result_data->addr.addr[5],
                 seek_result_data->rssi, seek_result_data->data_length);

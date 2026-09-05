@@ -18,12 +18,11 @@
 #include "esp_bt.h"
 #include "esp_hid_gap.h"
 
-#define TAG                 "bt_scan"
-#define SCAN_DURATION_SEC   5
-#define SCAN_GAP_MS         500
+#define TAG "bt_scan"
+#define SCAN_DURATION_SEC 5
+#define SCAN_GAP_MS 500
 
-static void print_scan_results(esp_hid_scan_result_t *results, size_t n)
-{
+static void print_scan_results(esp_hid_scan_result_t *results, size_t n) {
     for (size_t i = 0; i < n; i++) {
         esp_hid_scan_result_t *r = &results[i];
         const char *mode = "?";
@@ -35,19 +34,16 @@ static void print_scan_results(esp_hid_scan_result_t *results, size_t n)
             appearance = r->ble.appearance;
         } else if (r->transport == ESP_HID_TRANSPORT_BT) {
             mode = "BR_EDR";
-            major    = r->bt.cod.major;
-            minor    = r->bt.cod.minor;
-            service  = r->bt.cod.service;
+            major = r->bt.cod.major;
+            minor = r->bt.cod.minor;
+            service = r->bt.cod.service;
         } else {
-            mode = "USB";  /* not expected on ESP32 */
+            mode = "USB"; /* not expected on ESP32 */
         }
 
         printf("[bt_scan] mode=%-5s addr=%02x:%02x:%02x:%02x:%02x:%02x "
                "name=\"%s\"",
-               mode,
-               r->bda[0], r->bda[1], r->bda[2],
-               r->bda[3], r->bda[4], r->bda[5],
-               name);
+               mode, r->bda[0], r->bda[1], r->bda[2], r->bda[3], r->bda[4], r->bda[5], name);
 
         if (r->transport == ESP_HID_TRANSPORT_BT) {
             printf(" cod(major=%u minor=%u srv=0x%03x)", major, minor, service);
@@ -58,11 +54,9 @@ static void print_scan_results(esp_hid_scan_result_t *results, size_t n)
     }
 }
 
-void app_main(void)
-{
+void app_main(void) {
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -75,11 +69,9 @@ void app_main(void)
         esp_hid_scan_result_t *results = NULL;
         size_t num_results = 0;
 
-        esp_err_t scan_ret = esp_hid_scan(SCAN_DURATION_SEC,
-                                          &num_results, &results);
+        esp_err_t scan_ret = esp_hid_scan(SCAN_DURATION_SEC, &num_results, &results);
         if (scan_ret != ESP_OK) {
-            ESP_LOGE(TAG, "esp_hid_scan failed: %s",
-                     esp_err_to_name(scan_ret));
+            ESP_LOGE(TAG, "esp_hid_scan failed: %s", esp_err_to_name(scan_ret));
             vTaskDelay(pdMS_TO_TICKS(2000));
             continue;
         }

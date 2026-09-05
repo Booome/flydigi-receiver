@@ -4,8 +4,8 @@
 #include "soc_osal.h"
 
 void axk_main(void) {
-  bs21_rst();
-  osal_printk("app: sle-probe\r\n");
-  probe_init();
-  enable_sle();
+    bs21_rst();
+    osal_printk("app: sle-probe\r\n");
+    probe_init();
+    enable_sle();
 }

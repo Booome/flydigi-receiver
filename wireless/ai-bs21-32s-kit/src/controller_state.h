@@ -25,14 +25,14 @@
 
 /* Structured controller state - standard interface between layers */
 struct controller_state {
-  uint16_t buttons; /* Button bitmask (see BTN_* above) */
-  uint8_t lt;       /* Left trigger  0-255 */
-  uint8_t rt;       /* Right trigger 0-255 */
-  int16_t lx;       /* Left stick X  -32768 ~ 32767 */
-  int16_t ly;       /* Left stick Y */
-  int16_t rx;       /* Right stick X */
-  int16_t ry;       /* Right stick Y */
-  uint8_t battery;  /* Battery level 0-100 */
+    uint16_t buttons; /* Button bitmask (see BTN_* above) */
+    uint8_t lt;       /* Left trigger  0-255 */
+    uint8_t rt;       /* Right trigger 0-255 */
+    int16_t lx;       /* Left stick X  -32768 ~ 32767 */
+    int16_t ly;       /* Left stick Y */
+    int16_t rx;       /* Right stick X */
+    int16_t ry;       /* Right stick Y */
+    uint8_t battery;  /* Battery level 0-100 */
 };
 
 #endif /* CONTROLLER_STATE_H */
