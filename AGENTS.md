@@ -70,6 +70,15 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 
 - **手柄断开会回到候选阶段**：ESP32 HID 主机收到 `ESP_HIDH_CLOSE_EVT` 后会自动清状态、回扫描循环（不需手动重连）。
 
+- **手柄 BT 身份随机身「连接模式」变化**（存在手柄里、掉电保留，误触菜单/组合键会翻，恢复出厂回默认 X-input）：
+  | 模式 | 蓝牙名 | 实质 |
+  |---|---|---|
+  | PC>蓝牙 / Android / iOS（X-input）| `Xbox Wireless Controller` | 飞智 X-input HID（我们主线目标）|
+  | FlashPlay | `Flydigi Apex5` | 飞智映射 |
+  | Switch | `Pro Controller` | 伪装成任天堂 Pro Controller（`057e:2009`），不同 HID 协议/不同 BD_ADDR |
+
+  `apps/default/` 的候选筛选**按名字白名单**（`g_gamepad_names`），当前含 Xbox + Pro Controller 两个实测身份；**后期出现新名字再加**（不排除变其它名）。按 `strcasecmp` 全名匹配 + `transport==BT`。
+
 ## 平台
 
 ### BS21 开发板（已挂起）
