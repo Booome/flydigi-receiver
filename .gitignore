@@ -21,3 +21,4 @@ __pycache__/
 
 # Bluetooth project build outputs
 bluetooth/*/build/
+bluetooth/*/apps/*/sdkconfig

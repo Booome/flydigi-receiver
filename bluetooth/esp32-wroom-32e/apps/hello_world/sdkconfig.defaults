@@ -1,0 +1,2 @@
+# Pin target chip so re-builds skip the idf.py set-target prompt
+CONFIG_IDF_TARGET="esp32"
