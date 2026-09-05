@@ -2,11 +2,12 @@
 
 ## 项目状态
 
-手柄使用**星闪 SLE 1.0 (NearLink)** 进行 2.4GHz 无线通信，正在开发 SLE 接收器。
-当前两个开发板平台：
-- **Ai-BS21-32S-Kit**（BS21，2 块）— 因 SDK 限制已挂起，后期可能废弃
-- **BearPi-Pico H3863**（WS63）— **新主平台**（替代 BS21，性能更强：240MHz/606KB SRAM/Wi-Fi 6），
-  开发环境已打通（Hello World 验证），SLE 接收器功能待迁移
+手柄使用**星闪 SLE 1.0 (NearLink)** 进行 2.4GHz 无线通信。SLE 接收器方向**两个平台均已挂起**，
+当前活跃方向是**蓝牙（ESP32）**：
+- **Ai-BS21-32S-Kit**（BS21）— 已挂起：SDK 闭源 loaderboot 不支持安信可 SiP flash，无法烧录运行
+- **BearPi-Pico H3863**（WS63）— 已挂起：SLE 广播对 BS2x 家族平台级不可见，无法与 dongle/手柄建立 SLE 通信
+
+两平台挂起的详细原因与验证见「## 平台」各节与 `docs/history.md`。
 
 历史尝试（nRF52840 BLE / 2.4GHz 无线）见 `docs/history.md`。
 
@@ -27,7 +28,9 @@
 - 烧录 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` 调 ESP-IDF；串口抓取走顶层 `tools/capture_uart.py`（与 SLE 共用，端口从 `.env` 的 `BOARD_A_PORT`/`BOARD_B_PORT` 复用，`BOARD_A_TYPE=esp32-wroom-32e` 选 DTR 复位）
 - **环境搭建**（`apps/hello_world/` 编译/烧录/串口）✓
 - **BT 双模扫描**（`apps/bt_scan/`，esp_hid_scan 扫到 Apex5 BR/EDR 广播）✓
-- **BT HID 主机连接 + 原始报告采集**（`apps/default/` ——项目主 app，从本里程碑起固定在 `default`，后续迭代都更新它）→ 进行中
+- **BT HID 主机连接 + 原始报告采集**（`apps/default/` ——项目主 app，后续迭代都更新它）✓
+  三层候选算法（COD gamepad 过滤 + EWMA 平滑 + 迟滞/8s 兜底）连上 Apex5，稳定收 15 字节
+  Xbox 风格 HID 报告（~36/s，实测 60s 2190 条），原始 hex 打串口。HID 反格式 / 震动输出留后续
 - 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md` / `2026-09-05-bt-scan-design.md` / `2026-09-05-bt-hid-host-capture-design.md`
 
 #### **里程碑命名约定（2026-09 修订）**
@@ -38,7 +41,7 @@
 - `apps/default/` = 项目主 app（持续迭代）
 - spec / plan / 分支名 = `<topic>-<action>` 形式（如 `bt-hid-host`）
 
-历史内容里 M9/M10/M10 之类命名保留作为 commit message 记录（便于 git log 追溯），但**新里程碑不再用 Mn 编号**。
+历史内容里 M9/M10/M11 之类命名保留作为 commit message 记录（便于 git log 追溯），但**新里程碑不再用 Mn 编号**。
 
 ### BT 双模扫描实测（2026-09-05）飞智八爪鱼5 蓝牙广播
 
@@ -57,7 +60,7 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 
 详见 `bluetooth/esp32-wroom-32e/apps/bt_scan/README.md` 验证结果节、`docs/controller-modes.md` 三节。
 
-### 手柄操作经验（（机注意）
+### 手柄操作经验（重要）
 
 - **手柄空闲时极快进入省电模式**：手柄不进配对状态、不使用时 10-30 秒内就停止 BR/EDR 可发现广播。每次准备测试手柄相关功能（scan、connect）前，先**提醒用户**确认手柄：
   1. 拨杆到中间（蓝牙 / 蓝色 LED 位置）
@@ -73,9 +76,14 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 
 详见 `wireless/ai-bs21-32S-Kit/README.md`（芯片规格、SDK、构建、烧录、双模块逆向实验、SDK 陷阱）。
 
-### BearPi-Pico H3863 开发板（新主平台）
+### BearPi-Pico H3863 开发板（已挂起）
 
 详见 `wireless/bearpi-pico-h3863/README.md`（芯片规格、SDK、多 app 结构、构建、烧录）。
+
+**挂起原因**：WS63 的 SLE 广播对 BS2x 家族（真机 dongle、手柄 SLE 芯片同源）平台级不可见，
+无法与 dongle/控制器建立 SLE 通信。信道掩码问题可用 NV `btc_channel_scan_switch=0` 修，
+但修完仍扫不到——根因在控制器同步层以下，穷尽 host 侧配置无解（详见 `docs/history.md`、
+如般微/海思官方"广播格式仅支持手机星闪扫描"记录）。编译/烧录环境本身可用，SLE 接收器链路不通。
 
 ### ESP32-WROOM-32E 开发板（蓝牙方向，新平台）
 
@@ -85,7 +93,7 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 - **多 app**：每个 app 是独立 ESP-IDF 项目（顶层 `CMakeLists.txt` + `main/` 组件）；编译产物通过 `-B ../../build/<app>` 落到 board 顶层 `build/<app>/`
 - **共享工具**：与 SLE 共用顶层 `tools/capture_uart.py`；ESP32 专用 `tools/{build,burn}.py` 跟随项目
 
-## 烧录与调试（共享工具，两个平台通用）
+## 烧录与调试（共享工具，SLE / 蓝牙跨方向通用）
 
 > **禁止裸跑 ws63flash / screen**，统一用共享工具。
 
@@ -199,23 +207,45 @@ git worktree move <old> .worktrees/<branch>   # 移动已有 worktree 到 .workt
 4. **回归必须覆盖真实数据**：`regress_find.py` 验证 probe 显示通过 ≠ 线上
    字节一致，需要时补充原始字节对比断言。
 
-### C 代码格式
+### 保持仓库代码始终已格式化（重要，适用所有代码）
 
-修改任何 `.c` 或 `.h` 文件后，**必须**使用 `clang-format` 格式化：
+仓库里所有 `.c/.h` 与 `CMakeLists.txt` **必须始终处于格式化状态**，任何时刻都不留未格式化代码。
 
+**时机（何时格式化）**：
+1. **每次编辑后**：改任何 `.c`/`.h` 立即 `clang-format -i <文件>`；改 `CMakeLists.txt` 立即 `cmake-format -c .cmake-format.yaml -i <文件>`。不攒到提交前。
+2. **提交前（强制闸门）**：commit 前对涉及文件跑格式化；拿不准就全量刷（命令见下）。格式化改动与代码改动一起提交。
+3. **合并 / rebase 后**：跨分支合并会带回不同格式副本，合并完立即全量刷一遍再提交。
+4. **审阅 diff 前**：先格式化再看，避免逻辑改动被格式噪声淹没。
+
+**格式化配置**：
+- `.clang-format`：LLVM，4 空格，100 列，`AlignAfterOpenBracket: BlockIndent` + `BinPack{Arguments,Parameters}: false`（长花括号列表 / 参数展开成 4 空格块、每项一行、`};` 独立）。
+- `.cmake-format.yaml`：`max_pargs_hwrap: 1` + `dangle_parens: true`（单值 `set(X y)` 一行；多值每项一行、`)` 单独一行）。
+
+**全量格式化（tracked，跳过 build/ 与 docs/reference/）**：
 ```bash
-clang-format -i <修改的文件>
+find . \( -name '*.c' -o -name '*.h' \) \
+  -not -path './.git/*' -not -path '*/build/*' -not -path './docs/reference/*' \
+  -print0 | xargs -0 clang-format -i
+find . -name CMakeLists.txt -not -path './.git/*' -not -path '*/build/*' \
+  -print0 | xargs -0 cmake-format -c .cmake-format.yaml -i
 ```
 
-项目根目录已配置 `.clang-format`（LLVM 风格，4 空格缩进，100 列宽）。
-格式化后再提交，确保代码风格一致。
+**提交前校验（有未格式化即非 0 退出，可作 pre-commit 闸门）**：
+```bash
+find . \( -name '*.c' -o -name '*.h' \) -not -path './.git/*' -not -path '*/build/*' \
+  -not -path './docs/reference/*' -print0 \
+  | xargs -0 clang-format --dry-run --Werror
+```
+
+**无豁免**：从 ESP-IDF example `cp -r` 进来的副本（`apps/*/main/esp_hid_gap.c`、
+`apps/hello_world/main/main.c` 等）也一并格式化（2026-09 起取消豁免）——格式化只动空白 /
+换行、不改语义；重新 `cp` 上游后按本节再刷一次即可。
 
 ### 禁止 `(void)arg` 抑制 unused-parameter 警告
 
-项目 CMakeLists 已启用 `-Wno-unused-parameter`，**不需要** `unused(arg)` /
-`(void)arg;` 来消除 unused-parameter 警告。禁止写此类语句——保持未使用参数裸写即可。
+项目 CMakeLists 已启用 `-Wno-unused-parameter`，**不需要** `(void)arg;` 来消除 unused-parameter 警告。禁止写此类语句——保持未使用参数裸写即可。
 
-### CMake 格式
+### CMake 手写风格
 
 `set(VAR value)` 单行写法优先。禁止将单值变量拆成多行：
 
@@ -226,23 +256,5 @@ set(WHOLE_LINK true)
 # 禁止
 set(WHOLE_LINK
     true
-)
-```
-
-### CMake 格式检查
-
-修改任何 `CMakeLists.txt` 后，**必须**使用 `cmake-format` 格式化：
-
-```bash
-cmake-format -c .cmake-format.yaml -i <修改的文件>
-```
-
-项目根目录已配置 `.cmake-format.yaml`（`max_pargs_hwrap: 1` + `dangle_parens: true`）：
-- 单值变量单行：`set(WHOLE_LINK true)`
-- 多值变量每项一行，`)` 单独一行：
-```cmake
-set(SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/sle_server.c
 )
 ```
