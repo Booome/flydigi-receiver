@@ -172,15 +172,23 @@ def pulse_reset_uart_gpio(board, env):
                    check=True)
 
 
-def pulse_reset_dtr(stream):
-    """DTR toggle for bluetooth/ boards (ESP32 DevKitC, DTR->EN wiring).
+def pulse_reset_esp32(stream):
+    """Reset an ESP32 DevKitC to run via the DTR/RTS 2-transistor auto-reset net.
 
-    Toggles DTR line — works regardless of DTR polarity. ESP32 sees a
-    reset pulse and boots normally.
+    pyserial line levels feed an active-low auto-reset circuit; measured truth
+    table (D=stream.dtr, R=stream.rts):
+        D=0,R=1 -> EN=0 (held in reset), IO0=1
+        D=1,R=0 -> IO0=0 (download/boot), EN=1
+        D=1,R=1 -> run (EN=1, IO0=1);  D=0,R=0 -> run
+    Deterministic reset-into-run: hold EN low (IO0 high), then raise EN while
+    IO0 stays high so the chip boots from flash (NOT download). Does not depend
+    on the port-open line state (unlike a bare DTR toggle).
     """
-    stream.dtr = not stream.dtr
+    stream.dtr = False
+    stream.rts = True     # -> EN=0 held in reset, IO0=1
     time.sleep(0.1)
-    stream.dtr = not stream.dtr
+    stream.dtr = True
+    stream.rts = True     # -> EN rises with IO0=1 -> normal boot to run
     time.sleep(0.5)
 
 
@@ -225,7 +233,7 @@ def reset_plan(args, env, streams):
             if stream is None:
                 raise RuntimeError("BOARD_%s_TYPE=%s but %s not open" %
                                    (key, btype, board))
-            plan.append(lambda s=stream: pulse_reset_dtr(s))
+            plan.append(lambda s=stream: pulse_reset_esp32(s))
         else:
             plan.append(lambda b=board: pulse_reset_uart_gpio(b, env))
     return plan
