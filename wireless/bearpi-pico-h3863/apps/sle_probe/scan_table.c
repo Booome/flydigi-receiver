@@ -37,11 +37,18 @@ void scan_table_print(void) {
     osal_printk("[probe] devices:%u\r\n", n);
     for (uint8_t i = 0; i < SCAN_TABLE_SIZE; i++) {
         if (g_scan_table[i].used) {
-            osal_printk("  %u) %02x:%02x:%02x:%02x:%02x:%02x rssi:%d cnt:%u\r\n", i,
-                        g_scan_table[i].addr.addr[0], g_scan_table[i].addr.addr[1],
-                        g_scan_table[i].addr.addr[2], g_scan_table[i].addr.addr[3],
-                        g_scan_table[i].addr.addr[4], g_scan_table[i].addr.addr[5],
-                        g_scan_table[i].rssi, g_scan_table[i].count);
+            osal_printk(
+                "  %u) %02x:%02x:%02x:%02x:%02x:%02x rssi:%d cnt:%u\r\n",
+                i,
+                g_scan_table[i].addr.addr[0],
+                g_scan_table[i].addr.addr[1],
+                g_scan_table[i].addr.addr[2],
+                g_scan_table[i].addr.addr[3],
+                g_scan_table[i].addr.addr[4],
+                g_scan_table[i].addr.addr[5],
+                g_scan_table[i].rssi,
+                g_scan_table[i].count
+            );
         }
     }
     if (g_table_full) {

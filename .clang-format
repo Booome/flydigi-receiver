@@ -4,5 +4,8 @@ IndentWidth: 4
 ColumnLimit: 100
 AllowShortFunctionsOnASingleLine: Empty
 BreakBeforeBraces: Attach
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: false
 SortIncludes: false
 ...

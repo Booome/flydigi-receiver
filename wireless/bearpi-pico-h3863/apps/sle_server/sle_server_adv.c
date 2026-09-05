@@ -171,13 +171,15 @@ static int sle_set_default_announce_data(void) {
 }
 
 static void sle_server_announce_enable_cbk(uint32_t announce_id, errcode_t status) {
-    osal_printk("%s announce enable cbk id:%02x, status:%x\r\n", SLE_SERVER_LOG, announce_id,
-                status);
+    osal_printk(
+        "%s announce enable cbk id:%02x, status:%x\r\n", SLE_SERVER_LOG, announce_id, status
+    );
 }
 
 static void sle_server_announce_disable_cbk(uint32_t announce_id, errcode_t status) {
-    osal_printk("%s announce disable cbk id:%02x, status:%x\r\n", SLE_SERVER_LOG, announce_id,
-                status);
+    osal_printk(
+        "%s announce disable cbk id:%02x, status:%x\r\n", SLE_SERVER_LOG, announce_id, status
+    );
 }
 
 static void sle_server_announce_terminal_cbk(uint32_t announce_id) {

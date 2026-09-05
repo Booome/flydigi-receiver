@@ -25,8 +25,9 @@ static uint16_t g_sle_conn_hdl = 0;
 
 static char g_property_value[OCTET_BIT_LEN] = {0};
 
-static uint8_t g_sle_base_uuid[] = {0x37, 0xBE, 0xA8, 0x80, 0xFC, 0x70, 0x11, 0xEA,
-                                    0xB7, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+static uint8_t g_sle_base_uuid[] = {
+    0x37, 0xBE, 0xA8, 0x80, 0xFC, 0x70, 0x11, 0xEA, 0xB7, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
 
 static void encode2byte_little(uint8_t *ptr, uint16_t data) {
     *(uint8_t *)(ptr + 1) = (uint8_t)(data >> 0x8);
@@ -49,39 +50,79 @@ static void sle_set_uuid_u2(uint16_t u2, sle_uuid_t *out) {
     encode2byte_little(&out->uuid[UUID_INDEX], u2);
 }
 
-static void ssaps_mtu_changed_cbk(uint8_t server_id, uint16_t conn_id,
-                                  ssap_exchange_info_t *mtu_size, errcode_t status) {
-    osal_printk("%s mtu_changed server_id:%x, conn_id:%x, mtu:%x, status:%x\r\n", SLE_SERVER_LOG,
-                server_id, conn_id, mtu_size->mtu_size, status);
+static void ssaps_mtu_changed_cbk(
+    uint8_t server_id, uint16_t conn_id, ssap_exchange_info_t *mtu_size, errcode_t status
+) {
+    osal_printk(
+        "%s mtu_changed server_id:%x, conn_id:%x, mtu:%x, status:%x\r\n",
+        SLE_SERVER_LOG,
+        server_id,
+        conn_id,
+        mtu_size->mtu_size,
+        status
+    );
 }
 
 static void ssaps_start_service_cbk(uint8_t server_id, uint16_t handle, errcode_t status) {
-    osal_printk("%s start_service server_id:%d, handle:%x, status:%x\r\n", SLE_SERVER_LOG,
-                server_id, handle, status);
+    osal_printk(
+        "%s start_service server_id:%d, handle:%x, status:%x\r\n",
+        SLE_SERVER_LOG,
+        server_id,
+        handle,
+        status
+    );
 }
 
-static void ssaps_add_service_cbk(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle,
-                                  errcode_t status) {
-    osal_printk("%s add_service server_id:%x, handle:%x, status:%x\r\n", SLE_SERVER_LOG, server_id,
-                handle, status);
+static void
+ssaps_add_service_cbk(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status) {
+    osal_printk(
+        "%s add_service server_id:%x, handle:%x, status:%x\r\n",
+        SLE_SERVER_LOG,
+        server_id,
+        handle,
+        status
+    );
 }
 
-static void ssaps_add_property_cbk(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
-                                   uint16_t handle, errcode_t status) {
-    osal_printk("%s add_property server_id:%x, svc_hdl:%x, prop_hdl:%x, status:%x\r\n",
-                SLE_SERVER_LOG, server_id, service_handle, handle, status);
+static void ssaps_add_property_cbk(
+    uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle, uint16_t handle, errcode_t status
+) {
+    osal_printk(
+        "%s add_property server_id:%x, svc_hdl:%x, prop_hdl:%x, status:%x\r\n",
+        SLE_SERVER_LOG,
+        server_id,
+        service_handle,
+        handle,
+        status
+    );
 }
 
-static void ssaps_add_descriptor_cbk(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
-                                     uint16_t property_handle, errcode_t status) {
-    osal_printk("%s add_descriptor server_id:%x, svc_hdl:%x, prop_hdl:%x, status:%x\r\n",
-                SLE_SERVER_LOG, server_id, service_handle, property_handle, status);
+static void ssaps_add_descriptor_cbk(
+    uint8_t server_id,
+    sle_uuid_t *uuid,
+    uint16_t service_handle,
+    uint16_t property_handle,
+    errcode_t status
+) {
+    osal_printk(
+        "%s add_descriptor server_id:%x, svc_hdl:%x, prop_hdl:%x, status:%x\r\n",
+        SLE_SERVER_LOG,
+        server_id,
+        service_handle,
+        property_handle,
+        status
+    );
 }
 
-static void sle_read_request_cb(uint8_t server_id, uint16_t conn_id,
-                                ssaps_req_read_cb_t *read_cb_para, errcode_t status) {
-    osal_printk("%s read_req handle=0x%04x, type=0x%x\r\n", SLE_SERVER_LOG, read_cb_para->handle,
-                read_cb_para->type);
+static void sle_read_request_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_read_cb_t *read_cb_para, errcode_t status
+) {
+    osal_printk(
+        "%s read_req handle=0x%04x, type=0x%x\r\n",
+        SLE_SERVER_LOG,
+        read_cb_para->handle,
+        read_cb_para->type
+    );
 
     if (read_cb_para->need_rsp) {
         ssaps_send_rsp_t rsp = {0};
@@ -94,18 +135,24 @@ static void sle_read_request_cb(uint8_t server_id, uint16_t conn_id,
     }
 }
 
-static void sle_write_request_cb(uint8_t server_id, uint16_t conn_id,
-                                 ssaps_req_write_cb_t *write_cb_para, errcode_t status) {
-    osal_printk("%s write_req handle=0x%04x, len=%d\r\n", SLE_SERVER_LOG, write_cb_para->handle,
-                write_cb_para->length);
+static void sle_write_request_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_write_cb_t *write_cb_para, errcode_t status
+) {
+    osal_printk(
+        "%s write_req handle=0x%04x, len=%d\r\n",
+        SLE_SERVER_LOG,
+        write_cb_para->handle,
+        write_cb_para->length
+    );
 
     if (write_cb_para->length > sizeof(g_property_value)) {
         osal_printk("%s write data too large, rejected\r\n", SLE_SERVER_LOG);
         return;
     }
 
-    if (memcpy_s(g_property_value, sizeof(g_property_value), write_cb_para->value,
-                 write_cb_para->length) != EOK) {
+    if (memcpy_s(
+            g_property_value, sizeof(g_property_value), write_cb_para->value, write_cb_para->length
+        ) != EOK) {
         osal_printk("%s write memcpy failed\r\n", SLE_SERVER_LOG);
         return;
     }
@@ -126,8 +173,9 @@ static void sle_write_request_cb(uint8_t server_id, uint16_t conn_id,
 }
 
 static void ssaps_delete_all_service_cbk(uint8_t server_id, errcode_t status) {
-    osal_printk("%s delete_all_service server_id:%x, status:%x\r\n", SLE_SERVER_LOG, server_id,
-                status);
+    osal_printk(
+        "%s delete_all_service server_id:%x, status:%x\r\n", SLE_SERVER_LOG, server_id, status
+    );
 }
 
 static errcode_t sle_server_ssaps_register_cbks(void) {
@@ -170,8 +218,9 @@ static errcode_t sle_server_add_property(void) {
     if (property.value == NULL) {
         return ERRCODE_SLE_FAIL;
     }
-    if (memcpy_s(property.value, sizeof(g_property_value), g_property_value,
-                 sizeof(g_property_value)) != EOK) {
+    if (memcpy_s(
+            property.value, sizeof(g_property_value), g_property_value, sizeof(g_property_value)
+        ) != EOK) {
         osal_vfree(property.value);
         return ERRCODE_SLE_FAIL;
     }
@@ -232,13 +281,27 @@ static errcode_t sle_server_start(void) {
     return ERRCODE_SLE_SUCCESS;
 }
 
-static void sle_connect_state_changed_cbk(uint16_t conn_id, const sle_addr_t *addr,
-                                          sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                          sle_disc_reason_t disc_reason) {
-    osal_printk("%s conn_state conn_id:0x%02x, state:0x%x, pair:0x%x, disc:0x%x\r\n",
-                SLE_SERVER_LOG, conn_id, conn_state, pair_state, disc_reason);
-    osal_printk("%s addr:%02x:**:**:**:%02x:%02x\r\n", SLE_SERVER_LOG, addr->addr[BT_INDEX_0],
-                addr->addr[BT_INDEX_4]);
+static void sle_connect_state_changed_cbk(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "%s conn_state conn_id:0x%02x, state:0x%x, pair:0x%x, disc:0x%x\r\n",
+        SLE_SERVER_LOG,
+        conn_id,
+        conn_state,
+        pair_state,
+        disc_reason
+    );
+    osal_printk(
+        "%s addr:%02x:**:**:**:%02x:%02x\r\n",
+        SLE_SERVER_LOG,
+        addr->addr[BT_INDEX_0],
+        addr->addr[BT_INDEX_4]
+    );
 
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         g_sle_conn_hdl = conn_id;

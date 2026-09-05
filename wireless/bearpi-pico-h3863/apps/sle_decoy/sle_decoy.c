@@ -48,12 +48,13 @@ static uint8_t g_server_id = 0;
 static uint8_t g_val_11[4] = {0x00, 0x00, 0x00, 0x00};
 static uint8_t g_cccd_11[2] = {0x02, 0x00};
 static uint8_t g_val_12[8] = {0x01, 0x01, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00};
-static uint8_t g_val_13[HID_MAP_LEN] = {
-    0x00, 0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01, 0xA1, 0x00, 0x85, 0x01, 0x05,
-    0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81,
-    0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x01, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x16,
-    0x01, 0xF8, 0x26, 0xFF, 0x07, 0x75, 0x0C, 0x95, 0x02, 0x81, 0x06, 0x05, 0x01, 0x09,
-    0x38, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06, 0xC0, 0xC0};
+static uint8_t g_val_13[HID_MAP_LEN] = {0x00, 0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01, 0xA1,
+                                        0x00, 0x85, 0x01, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15,
+                                        0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02, 0x95,
+                                        0x01, 0x75, 0x05, 0x81, 0x01, 0x05, 0x01, 0x09, 0x30, 0x09,
+                                        0x31, 0x16, 0x01, 0xF8, 0x26, 0xFF, 0x07, 0x75, 0x0C, 0x95,
+                                        0x02, 0x81, 0x06, 0x05, 0x01, 0x09, 0x38, 0x15, 0x81, 0x25,
+                                        0x7F, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06, 0xC0, 0xC0};
 static uint8_t g_val_14[2] = {0x06, 0x00};
 static uint8_t g_val_16[] = "fly_digigs";
 static uint8_t g_val_17[3] = {0x00, 0x05, 0x02};
@@ -70,8 +71,9 @@ static attr_entry_t g_attrs[MAX_ATTRS];
 static uint8_t g_attr_cnt = 0;
 
 /* Flydigi base UUID: 37BE-A880-FC70-11EA-B720-00000000xxxx. */
-static const uint8_t g_sle_base_uuid[] = {0x37, 0xBE, 0xA8, 0x80, 0xFC, 0x70, 0x11, 0xEA,
-                                          0xB7, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t g_sle_base_uuid[] = {
+    0x37, 0xBE, 0xA8, 0x80, 0xFC, 0x70, 0x11, 0xEA, 0xB7, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
 
 static void sle_set_uuid_u16(uint16_t u16, sle_uuid_t *out) {
     if (memcpy_s(out->uuid, SLE_UUID_LEN, g_sle_base_uuid, SLE_UUID_LEN) != EOK) {
@@ -92,8 +94,9 @@ static attr_entry_t *decoy_find_attr(uint16_t handle) {
     return NULL;
 }
 
-static void ssaps_mtu_changed_cb(uint8_t server_id, uint16_t conn_id,
-                                 ssap_exchange_info_t *mtu_size, errcode_t status) {
+static void ssaps_mtu_changed_cb(
+    uint8_t server_id, uint16_t conn_id, ssap_exchange_info_t *mtu_size, errcode_t status
+) {
     osal_printk("[SSAP] mtu_changed mtu=%d status=%x\r\n", mtu_size->mtu_size, status);
 }
 
@@ -101,27 +104,36 @@ static void ssaps_start_service_cb(uint8_t server_id, uint16_t handle, errcode_t
     osal_printk("[SSAP] start_service handle=%x status=%x\r\n", handle, status);
 }
 
-static void ssaps_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle,
-                                 errcode_t status) {
+static void
+ssaps_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status) {
     osal_printk("[SSAP] add_service handle=%x status=%x\r\n", handle, status);
 }
 
-static void ssaps_add_property_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
-                                  uint16_t handle, errcode_t status) {
-    osal_printk("[SSAP] add_property svc_hdl=%x prop_hdl=%x status=%x\r\n", service_handle, handle,
-                status);
+static void ssaps_add_property_cb(
+    uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle, uint16_t handle, errcode_t status
+) {
+    osal_printk(
+        "[SSAP] add_property svc_hdl=%x prop_hdl=%x status=%x\r\n", service_handle, handle, status
+    );
 }
 
-static void ssaps_add_descriptor_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
-                                    uint16_t handle, errcode_t status) {
-    osal_printk("[SSAP] add_descriptor svc_hdl=%x desc_hdl=%x status=%x\r\n", service_handle,
-                handle, status);
+static void ssaps_add_descriptor_cb(
+    uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle, uint16_t handle, errcode_t status
+) {
+    osal_printk(
+        "[SSAP] add_descriptor svc_hdl=%x desc_hdl=%x status=%x\r\n", service_handle, handle, status
+    );
 }
 
-static void sle_read_request_cb(uint8_t server_id, uint16_t conn_id,
-                                ssaps_req_read_cb_t *read_cb_para, errcode_t status) {
-    osal_printk("[SSAP][RCV] read_req handle=0x%04x type=%d need_rsp=%d\r\n", read_cb_para->handle,
-                read_cb_para->type, read_cb_para->need_rsp);
+static void sle_read_request_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_read_cb_t *read_cb_para, errcode_t status
+) {
+    osal_printk(
+        "[SSAP][RCV] read_req handle=0x%04x type=%d need_rsp=%d\r\n",
+        read_cb_para->handle,
+        read_cb_para->type,
+        read_cb_para->need_rsp
+    );
 
     attr_entry_t *attr = decoy_find_attr(read_cb_para->handle);
     if (read_cb_para->need_rsp) {
@@ -139,11 +151,16 @@ static void sle_read_request_cb(uint8_t server_id, uint16_t conn_id,
     }
 }
 
-static void sle_write_request_cb(uint8_t server_id, uint16_t conn_id,
-                                 ssaps_req_write_cb_t *write_cb_para, errcode_t status) {
-    osal_printk("[SSAP][RCV] write_req handle=0x%04x type=%d len=%d need_rsp=%d data:",
-                write_cb_para->handle, write_cb_para->type, write_cb_para->length,
-                write_cb_para->need_rsp);
+static void sle_write_request_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_write_cb_t *write_cb_para, errcode_t status
+) {
+    osal_printk(
+        "[SSAP][RCV] write_req handle=0x%04x type=%d len=%d need_rsp=%d data:",
+        write_cb_para->handle,
+        write_cb_para->type,
+        write_cb_para->length,
+        write_cb_para->need_rsp
+    );
     for (uint16_t i = 0; i < write_cb_para->length; i++) {
         osal_printk("%02x ", write_cb_para->value[i]);
     }
@@ -151,8 +168,12 @@ static void sle_write_request_cb(uint8_t server_id, uint16_t conn_id,
 
     if (write_cb_para->type == SSAP_DESCRIPTOR_CLIENT_CONFIGURATION && write_cb_para->length == 2 &&
         write_cb_para->value != NULL) {
-        osal_printk("[SSAP] *** CCCD write hdl=0x%04x value=%02x %02x\r\n", write_cb_para->handle,
-                    write_cb_para->value[0], write_cb_para->value[1]);
+        osal_printk(
+            "[SSAP] *** CCCD write hdl=0x%04x value=%02x %02x\r\n",
+            write_cb_para->handle,
+            write_cb_para->value[0],
+            write_cb_para->value[1]
+        );
         memcpy_s(g_cccd_11, sizeof(g_cccd_11), write_cb_para->value, 2);
     } else {
         attr_entry_t *attr = decoy_find_attr(write_cb_para->handle);
@@ -172,9 +193,9 @@ static void sle_write_request_cb(uint8_t server_id, uint16_t conn_id,
     }
 }
 
-static void sle_read_by_uuid_request_cb(uint8_t server_id, uint16_t conn_id,
-                                        ssaps_req_read_by_uuid_cb_t *read_cb_para,
-                                        errcode_t status) {
+static void sle_read_by_uuid_request_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_read_by_uuid_cb_t *read_cb_para, errcode_t status
+) {
     osal_printk("[SSAP][RCV] read_by_uuid_req uuid=");
     for (uint8_t i = 0; i < read_cb_para->uuid.len; i++) {
         osal_printk("%02x", read_cb_para->uuid.uuid[i]);
@@ -192,9 +213,15 @@ static void sle_read_by_uuid_request_cb(uint8_t server_id, uint16_t conn_id,
     }
 }
 
-static errcode_t decoy_add_property(uint16_t svc_handle, uint32_t oper, uint16_t perms,
-                                    uint8_t *buf, uint16_t len, uint16_t uuid_val,
-                                    uint16_t *hdl_out) {
+static errcode_t decoy_add_property(
+    uint16_t svc_handle,
+    uint32_t oper,
+    uint16_t perms,
+    uint8_t *buf,
+    uint16_t len,
+    uint16_t uuid_val,
+    uint16_t *hdl_out
+) {
     ssaps_property_info_t property = {0};
     sle_set_uuid_u16(uuid_val, &property.uuid);
     property.permissions = perms;
@@ -214,8 +241,9 @@ static errcode_t decoy_add_property(uint16_t svc_handle, uint32_t oper, uint16_t
         g_attrs[g_attr_cnt].len = len;
         g_attr_cnt++;
     }
-    osal_printk("[SSAP] property hdl=0x%x oper=0x%x len=%u uuid=0x%04x\r\n", handle, oper, len,
-                uuid_val);
+    osal_printk(
+        "[SSAP] property hdl=0x%x oper=0x%x len=%u uuid=0x%04x\r\n", handle, oper, len, uuid_val
+    );
     if (hdl_out != NULL) {
         *hdl_out = handle;
     }
@@ -249,27 +277,53 @@ static errcode_t sle_decoy_add_services(void) {
     osal_printk("[SSAP] svc0 handle=%x\r\n", h_svc0);
 
     uint16_t h_11 = 0;
-    ret = decoy_add_property(h_svc0, 0x30D, SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11,
-                             sizeof(g_val_11), UUID_P11, &h_11);
+    ret = decoy_add_property(
+        h_svc0,
+        0x30D,
+        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+        g_val_11,
+        sizeof(g_val_11),
+        UUID_P11,
+        &h_11
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
     decoy_add_cccd(h_svc0, h_11);
-    ret = decoy_add_property(h_svc0, 0x5, SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_12,
-                             sizeof(g_val_12), UUID_P12, NULL);
+    ret = decoy_add_property(
+        h_svc0,
+        0x5,
+        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+        g_val_12,
+        sizeof(g_val_12),
+        UUID_P12,
+        NULL
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
-    ret = decoy_add_property(h_svc0,
-                             SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
-                                 SSAP_OPERATE_INDICATION_BIT_NOTIFY,
-                             SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_13, HID_MAP_LEN,
-                             UUID_P13, NULL);
+    ret = decoy_add_property(
+        h_svc0,
+        SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
+            SSAP_OPERATE_INDICATION_BIT_NOTIFY,
+        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+        g_val_13,
+        HID_MAP_LEN,
+        UUID_P13,
+        NULL
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
-    ret = decoy_add_property(h_svc0, SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP,
-                             SSAP_PERMISSION_WRITE, g_val_14, sizeof(g_val_14), UUID_P14, NULL);
+    ret = decoy_add_property(
+        h_svc0,
+        SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP,
+        SSAP_PERMISSION_WRITE,
+        g_val_14,
+        sizeof(g_val_14),
+        UUID_P14,
+        NULL
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
@@ -284,18 +338,39 @@ static errcode_t sle_decoy_add_services(void) {
     }
     osal_printk("[SSAP] svc1 handle=%x\r\n", h_svc1);
 
-    ret = decoy_add_property(h_svc1, SSAP_OPERATE_INDICATION_BIT_READ, SSAP_PERMISSION_READ,
-                             g_val_16, (uint16_t)(sizeof(g_val_16) - 1), UUID_P16, NULL);
+    ret = decoy_add_property(
+        h_svc1,
+        SSAP_OPERATE_INDICATION_BIT_READ,
+        SSAP_PERMISSION_READ,
+        g_val_16,
+        (uint16_t)(sizeof(g_val_16) - 1),
+        UUID_P16,
+        NULL
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
-    ret = decoy_add_property(h_svc1, SSAP_OPERATE_INDICATION_BIT_READ, SSAP_PERMISSION_READ,
-                             g_val_17, sizeof(g_val_17), UUID_P17, NULL);
+    ret = decoy_add_property(
+        h_svc1,
+        SSAP_OPERATE_INDICATION_BIT_READ,
+        SSAP_PERMISSION_READ,
+        g_val_17,
+        sizeof(g_val_17),
+        UUID_P17,
+        NULL
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
-    ret = decoy_add_property(h_svc1, SSAP_OPERATE_INDICATION_BIT_READ, SSAP_PERMISSION_READ,
-                             g_val_18, (uint16_t)(sizeof(g_val_18) - 1), UUID_P18, NULL);
+    ret = decoy_add_property(
+        h_svc1,
+        SSAP_OPERATE_INDICATION_BIT_READ,
+        SSAP_PERMISSION_READ,
+        g_val_18,
+        (uint16_t)(sizeof(g_val_18) - 1),
+        UUID_P18,
+        NULL
+    );
     if (ret != ERRCODE_SLE_SUCCESS) {
         return ret;
     }
@@ -363,11 +438,20 @@ static void sle_enable_cb(errcode_t status) {
     }
 }
 
-static void sle_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                         sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                         sle_disc_reason_t disc_reason) {
-    osal_printk("[CONN] state conn_id:0x%02x state:0x%x pair:0x%x disc:0x%x\r\n", conn_id,
-                conn_state, pair_state, disc_reason);
+static void sle_connect_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "[CONN] state conn_id:0x%02x state:0x%x pair:0x%x disc:0x%x\r\n",
+        conn_id,
+        conn_state,
+        pair_state,
+        disc_reason
+    );
 }
 
 static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status) {
@@ -379,17 +463,29 @@ static void sle_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errco
     ssaps_set_info(g_server_id, &info);
 }
 
-static void sle_auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
-                                 const sle_auth_info_evt_t *evt) {
-    osal_printk("[AUTH] complete conn_id:0x%02x status:%x bond:%d\r\n", conn_id, status,
-                (evt != NULL) ? evt->is_bond : -1);
+static void sle_auth_complete_cb(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status, const sle_auth_info_evt_t *evt
+) {
+    osal_printk(
+        "[AUTH] complete conn_id:0x%02x status:%x bond:%d\r\n",
+        conn_id,
+        status,
+        (evt != NULL) ? evt->is_bond : -1
+    );
 }
 
-static void sle_connect_param_update_req_cb(uint16_t conn_id, errcode_t status,
-                                            const sle_connection_param_update_req_t *param) {
-    osal_printk("[CONN] param_update_req conn=%u status=%x min=%u max=%u lat=%u to=%u\r\n", conn_id,
-                status, param->interval_min, param->interval_max, param->max_latency,
-                param->supervision_timeout);
+static void sle_connect_param_update_req_cb(
+    uint16_t conn_id, errcode_t status, const sle_connection_param_update_req_t *param
+) {
+    osal_printk(
+        "[CONN] param_update_req conn=%u status=%x min=%u max=%u lat=%u to=%u\r\n",
+        conn_id,
+        status,
+        param->interval_min,
+        param->interval_max,
+        param->max_latency,
+        param->supervision_timeout
+    );
 }
 
 static errcode_t sle_decoy_register_ssaps_cbks(void) {

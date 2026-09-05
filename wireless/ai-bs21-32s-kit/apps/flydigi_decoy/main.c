@@ -42,8 +42,9 @@ static unsigned char g_local_addr[6] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x02};
 static const uint8_t g_adv_data[] = {0x01, 0x01, 0x01, 0x05, 0x04, 0x0B, 0x06, 0x09, 0x06, 0x03,
                                      0x12, 0x09, 0x06, 0x07, 0x03, 0x02, 0x05, 0x00, 0x06, 0x0A,
                                      0x66, 0x6C, 0x79, 0x5F, 0x64, 0x69, 0x67, 0x69, 0x67, 0x31};
-static const uint8_t g_adv_rsp[] = {0x0B, 0x0A, 0x66, 0x6C, 0x79, 0x5F,
-                                    0x64, 0x69, 0x67, 0x69, 0x67, 0x73};
+static const uint8_t g_adv_rsp[] = {
+    0x0B, 0x0A, 0x66, 0x6C, 0x79, 0x5F, 0x64, 0x69, 0x67, 0x69, 0x67, 0x73
+};
 
 static sle_dev_manager_callbacks_t g_dev_cbk = {0};
 static sle_announce_seek_callbacks_t g_seek_cbk = {0};
@@ -101,8 +102,16 @@ static void sle_enable_cb(uint8_t status) {
 
     sle_addr_t la = {0};
     if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
-        osal_printk("%s local addr: %02x:%02x:%02x:%02x:%02x:%02x\r\n", DECOY_LOG, la.addr[0],
-                    la.addr[1], la.addr[2], la.addr[3], la.addr[4], la.addr[5]);
+        osal_printk(
+            "%s local addr: %02x:%02x:%02x:%02x:%02x:%02x\r\n",
+            DECOY_LOG,
+            la.addr[0],
+            la.addr[1],
+            la.addr[2],
+            la.addr[3],
+            la.addr[4],
+            la.addr[5]
+        );
     }
     sle_setup_set_local_addr();
 
@@ -128,11 +137,21 @@ static void *re_announce_task(const char *arg) {
     return NULL;
 }
 
-static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                  sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                  sle_disc_reason_t disc_reason) {
-    osal_printk("%s conn id:%u state:%d pair:%d disc:0x%x\r\n", DECOY_LOG, conn_id, conn_state,
-                pair_state, disc_reason);
+static void conn_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "%s conn id:%u state:%d pair:%d disc:0x%x\r\n",
+        DECOY_LOG,
+        conn_id,
+        conn_state,
+        pair_state,
+        disc_reason
+    );
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         osal_printk("%s *** dongle connected ***\r\n", DECOY_LOG);
         decoy_mark_connected();
@@ -154,21 +173,36 @@ static void decoy_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
     }
 }
 
-static void decoy_param_update_req_cb(uint16_t conn_id, errcode_t status,
-                                      const sle_connection_param_update_req_t *param) {
-    osal_printk("%s param update REQ: conn=%u status=0x%x min=%u max=%u lat=%u to=%u\r\n",
-                DECOY_LOG, conn_id, status, param->interval_min, param->interval_max,
-                param->max_latency, param->supervision_timeout);
+static void decoy_param_update_req_cb(
+    uint16_t conn_id, errcode_t status, const sle_connection_param_update_req_t *param
+) {
+    osal_printk(
+        "%s param update REQ: conn=%u status=0x%x min=%u max=%u lat=%u to=%u\r\n",
+        DECOY_LOG,
+        conn_id,
+        status,
+        param->interval_min,
+        param->interval_max,
+        param->max_latency,
+        param->supervision_timeout
+    );
 }
 
-static void decoy_param_update_cb(uint16_t conn_id, errcode_t status,
-                                  const sle_connection_param_update_evt_t *param) {
-    osal_printk("%s param update: conn=%u status=0x%x interval=%u\r\n", DECOY_LOG, conn_id, status,
-                param->interval);
+static void decoy_param_update_cb(
+    uint16_t conn_id, errcode_t status, const sle_connection_param_update_evt_t *param
+) {
+    osal_printk(
+        "%s param update: conn=%u status=0x%x interval=%u\r\n",
+        DECOY_LOG,
+        conn_id,
+        status,
+        param->interval
+    );
 }
 
-static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
-                             const sle_auth_info_evt_t *evt) {
+static void auth_complete_cb(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status, const sle_auth_info_evt_t *evt
+) {
     osal_printk("%s auth complete id:%u status:0x%x\r\n", DECOY_LOG, conn_id, status);
     if (status != ERRCODE_SUCC || evt == NULL) {
         return;

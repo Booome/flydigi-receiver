@@ -77,22 +77,86 @@ void __wrap_cs_pdu_tl_send(void *a0, void *a1, void *a2, void *a3) {
     if (in_ram((uint32_t)a0)) {
         const uint8_t *h = (const uint8_t *)a0;
         if (h[0] != 0 || h[1] != 0 || h[2] != 0 || h[3] != 0) {
-            osal_printk("%s tx a0=%p head: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-                        "%02x %02x %02x %02x %02x %02x\r\n",
-                        HOOK_LOG, a0, h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8], h[9],
-                        h[10], h[11], h[12], h[13], h[14], h[15]);
+            osal_printk(
+                "%s tx a0=%p head: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+                "%02x %02x %02x %02x %02x %02x\r\n",
+                HOOK_LOG,
+                a0,
+                h[0],
+                h[1],
+                h[2],
+                h[3],
+                h[4],
+                h[5],
+                h[6],
+                h[7],
+                h[8],
+                h[9],
+                h[10],
+                h[11],
+                h[12],
+                h[13],
+                h[14],
+                h[15]
+            );
         }
         if (h[0] == 0x16) {
-            osal_printk("%s 0x16 full: %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-                        "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-                        "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-                        "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
-                        "%02x %02x %02x %02x %02x %02x %02x %02x %02x\r\n",
-                        HOOK_LOG, h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8], h[9], h[10],
-                        h[11], h[12], h[13], h[14], h[15], h[16], h[17], h[18], h[19], h[20], h[21],
-                        h[22], h[23], h[24], h[25], h[26], h[27], h[28], h[29], h[30], h[31], h[32],
-                        h[33], h[34], h[35], h[36], h[37], h[38], h[39], h[40], h[41], h[42], h[43],
-                        h[44], h[45], h[46], h[47]);
+            osal_printk(
+                "%s 0x16 full: %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+                "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+                "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+                "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x "
+                "%02x %02x %02x %02x %02x %02x %02x %02x %02x\r\n",
+                HOOK_LOG,
+                h[0],
+                h[1],
+                h[2],
+                h[3],
+                h[4],
+                h[5],
+                h[6],
+                h[7],
+                h[8],
+                h[9],
+                h[10],
+                h[11],
+                h[12],
+                h[13],
+                h[14],
+                h[15],
+                h[16],
+                h[17],
+                h[18],
+                h[19],
+                h[20],
+                h[21],
+                h[22],
+                h[23],
+                h[24],
+                h[25],
+                h[26],
+                h[27],
+                h[28],
+                h[29],
+                h[30],
+                h[31],
+                h[32],
+                h[33],
+                h[34],
+                h[35],
+                h[36],
+                h[37],
+                h[38],
+                h[39],
+                h[40],
+                h[41],
+                h[42],
+                h[43],
+                h[44],
+                h[45],
+                h[46],
+                h[47]
+            );
         }
     }
 
@@ -116,8 +180,13 @@ void __wrap_cs_pdu_tl_send(void *a0, void *a1, void *a2, void *a3) {
         pb[p + 1] = 0x03;
         memmove(pb + p + 2, pb + p + 4, move_len);
         r = 1;
-        osal_printk("%s fix: p=%d sub=0x%02x fmt 0b->03, dropped 00 8x (shift %d)\r\n", HOOK_LOG, p,
-                    pb[p + 3], move_len);
+        osal_printk(
+            "%s fix: p=%d sub=0x%02x fmt 0b->03, dropped 00 8x (shift %d)\r\n",
+            HOOK_LOG,
+            p,
+            pb[p + 3],
+            move_len
+        );
     }
 
     if (r == 0) {

@@ -25,9 +25,19 @@ static void scan_seek_result_cb(sle_seek_result_info_t *result) {
     }
     osal_printk(
         "%s phy=0x%x adv %02x:%02x:%02x:%02x:%02x:%02x evt:0x%02x rssi:%d dstat:%d len:%d data: ",
-        SCAN_LOG, PHY_CYCLE[g_phy_idx], result->addr.addr[0], result->addr.addr[1],
-        result->addr.addr[2], result->addr.addr[3], result->addr.addr[4], result->addr.addr[5],
-        result->event_type, result->rssi, result->data_status, result->data_length);
+        SCAN_LOG,
+        PHY_CYCLE[g_phy_idx],
+        result->addr.addr[0],
+        result->addr.addr[1],
+        result->addr.addr[2],
+        result->addr.addr[3],
+        result->addr.addr[4],
+        result->addr.addr[5],
+        result->event_type,
+        result->rssi,
+        result->data_status,
+        result->data_length
+    );
     scan_print_hex(result->data, result->data_length);
     osal_printk("\r\n");
 }

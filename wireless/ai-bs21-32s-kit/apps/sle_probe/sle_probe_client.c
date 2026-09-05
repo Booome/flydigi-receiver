@@ -102,8 +102,16 @@ static const uint8_t *raw_uuid_lookup(uint16_t start_hdl, uint16_t *out_len) {
 #define CB_CHK()                                                                                   \
     do {                                                                                           \
         if (client_id != g_client_id || conn_id != g_conn_id) {                                    \
-            osal_printk("%s CB MISMATCH c=%u/%u conn=%u/%u at %s:%u\r\n", PROBE_LOG, client_id,    \
-                        g_client_id, conn_id, g_conn_id, __FILE__, __LINE__);                      \
+            osal_printk(                                                                           \
+                "%s CB MISMATCH c=%u/%u conn=%u/%u at %s:%u\r\n",                                  \
+                PROBE_LOG,                                                                         \
+                client_id,                                                                         \
+                g_client_id,                                                                       \
+                conn_id,                                                                           \
+                g_conn_id,                                                                         \
+                __FILE__,                                                                          \
+                __LINE__                                                                           \
+            );                                                                                     \
         }                                                                                          \
     } while (0)
 
@@ -115,8 +123,9 @@ static void probe_start_scan(void);
 static void probe_connect_best(void);
 static void probe_sle_enable_cb(uint8_t status);
 static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status);
-static void ssapc_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param,
-                                   errcode_t status);
+static void ssapc_exchange_info_cb(
+    uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status
+);
 static void start_next_find(void);
 
 /* *****************************************************************************
@@ -187,9 +196,17 @@ static void probe_sle_enable_cb(uint8_t status) {
     if (status == 0) {
         sle_addr_t la = {0};
         if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
-            osal_printk("%s local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n", PROBE_LOG,
-                        la.addr[0], la.addr[1], la.addr[2], la.addr[3], la.addr[4], la.addr[5],
-                        la.type);
+            osal_printk(
+                "%s local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
+                PROBE_LOG,
+                la.addr[0],
+                la.addr[1],
+                la.addr[2],
+                la.addr[3],
+                la.addr[4],
+                la.addr[5],
+                la.type
+            );
         }
         sle_setup_set_local_addr();
         probe_start_scan();
@@ -217,9 +234,17 @@ static void probe_seek_result_cb(sle_seek_result_info_t *result) {
         return;
     dev->count++;
     dev->rssi = result->rssi;
-    osal_printk("%s seek: %02x:%02x:%02x:%02x:%02x:%02x rssi=%d data=", PROBE_LOG,
-                result->addr.addr[0], result->addr.addr[1], result->addr.addr[2],
-                result->addr.addr[3], result->addr.addr[4], result->addr.addr[5], result->rssi);
+    osal_printk(
+        "%s seek: %02x:%02x:%02x:%02x:%02x:%02x rssi=%d data=",
+        PROBE_LOG,
+        result->addr.addr[0],
+        result->addr.addr[1],
+        result->addr.addr[2],
+        result->addr.addr[3],
+        result->addr.addr[4],
+        result->addr.addr[5],
+        result->rssi
+    );
     for (uint16_t i = 0; i < result->data_length && i < 31; i++) {
         osal_printk("%02x ", result->data[i]);
     }
@@ -248,9 +273,13 @@ static void probe_seek_disable_cb(errcode_t status) {
  * Connection callbacks — drive the chain forward
  * *****************************************************************************/
 
-static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                           sle_acb_state_t state, sle_pair_state_t pair_state,
-                                           sle_disc_reason_t reason) {
+static void probe_connect_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t reason
+) {
     g_conn_id = conn_id;
     osal_printk("%s conn state: %d pair:%d reason:0x%x\r\n", PROBE_LOG, state, pair_state, reason);
     if (state == SLE_ACB_STATE_CONNECTED) {
@@ -293,8 +322,9 @@ static void probe_connect_state_changed_cb(uint16_t conn_id, const sle_addr_t *a
 }
 
 static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status) {
-    osal_printk("%s pair complete: c=%u conn=%u status=0x%x\r\n", PROBE_LOG, g_client_id, conn_id,
-                status);
+    osal_printk(
+        "%s pair complete: c=%u conn=%u status=0x%x\r\n", PROBE_LOG, g_client_id, conn_id, status
+    );
     if (status != ERRCODE_SUCC) {
         osal_printk("%s pair failed, rescan\r\n", PROBE_LOG);
         scan_table_reset();
@@ -315,20 +345,27 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
  * SSAP discovery callbacks — drive the chain forward
  * *****************************************************************************/
 
-static void ssapc_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param,
-                                   errcode_t status) {
+static void ssapc_exchange_info_cb(
+    uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status
+) {
     g_client_id = client_id;
     CB_CHK();
     if (status != ERRCODE_SUCC || param == NULL) {
-        osal_printk("%s exchange info failed: c=%u conn=%u status=0x%x\r\n", PROBE_LOG, client_id,
-                    conn_id, status);
+        osal_printk(
+            "%s exchange info failed: c=%u conn=%u status=0x%x\r\n",
+            PROBE_LOG,
+            client_id,
+            conn_id,
+            status
+        );
         osal_printk("%s exchange info failed, rescan\r\n", PROBE_LOG);
         scan_table_reset();
         probe_start_scan();
         return;
     }
-    osal_printk("%s exchange info: c=%u conn=%u mtu=%u\r\n", PROBE_LOG, client_id, conn_id,
-                param->mtu_size);
+    osal_printk(
+        "%s exchange info: c=%u conn=%u mtu=%u\r\n", PROBE_LOG, client_id, conn_id, param->mtu_size
+    );
     g_find_idx = 0;
     g_service_idx = 0;
     g_sub_idx = 0;
@@ -336,15 +373,23 @@ static void ssapc_exchange_info_cb(uint8_t client_id, uint16_t conn_id, ssap_exc
     start_next_find();
 }
 
-static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
-                                    ssapc_find_service_result_t *service, errcode_t status) {
+static void ssapc_find_structure_cb(
+    uint8_t client_id, uint16_t conn_id, ssapc_find_service_result_t *service, errcode_t status
+) {
     CB_CHK();
     if (status != ERRCODE_SUCC || service == NULL)
         return;
-    osal_printk("%s find_structure_cb: c=%u conn=%u status=0x%x cur_type=%u start=0x%x "
-                "end=0x%x",
-                PROBE_LOG, client_id, conn_id, status, g_cur_find_type, service->start_hdl,
-                service->end_hdl);
+    osal_printk(
+        "%s find_structure_cb: c=%u conn=%u status=0x%x cur_type=%u start=0x%x "
+        "end=0x%x",
+        PROBE_LOG,
+        client_id,
+        conn_id,
+        status,
+        g_cur_find_type,
+        service->start_hdl,
+        service->end_hdl
+    );
     if (service->uuid.len > 0) {
         osal_printk(" UUID=");
         for (uint8_t i = 0; i < service->uuid.len && i < SLE_UUID_LEN; i++) {
@@ -358,8 +403,14 @@ static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
         ssapc_find_service_result_t *dst = &g_primary_services[g_primary_cnt];
         dst->start_hdl = service->start_hdl;
         dst->end_hdl = service->end_hdl;
-        osal_printk("%s   raw_uuid lookup sh=0x%x cnt=%u found=%u len=%u\r\n", PROBE_LOG,
-                    service->start_hdl, g_raw_uuid_cnt, (unsigned)(raw_uuid != NULL), raw_len);
+        osal_printk(
+            "%s   raw_uuid lookup sh=0x%x cnt=%u found=%u len=%u\r\n",
+            PROBE_LOG,
+            service->start_hdl,
+            g_raw_uuid_cnt,
+            (unsigned)(raw_uuid != NULL),
+            raw_len
+        );
         if (raw_uuid != NULL && raw_len > 0) {
             dst->uuid.len = raw_len;
             for (uint8_t i = 0; i < raw_len && i < SLE_UUID_LEN; i++) {
@@ -380,15 +431,22 @@ static void ssapc_find_structure_cb(uint8_t client_id, uint16_t conn_id,
     }
 }
 
-static void ssapc_find_property_cbk(uint8_t client_id, uint16_t conn_id,
-                                    ssapc_find_property_result_t *property, errcode_t status) {
+static void ssapc_find_property_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_find_property_result_t *property, errcode_t status
+) {
     CB_CHK();
     if (status != ERRCODE_SUCC || property == NULL)
         return;
-    osal_printk("%s find_property: c=%u conn=%u hdl=0x%x oper=0x%x "
-                "desc_cnt=%u types=[",
-                PROBE_LOG, client_id, conn_id, property->handle, property->operate_indication,
-                property->descriptors_count);
+    osal_printk(
+        "%s find_property: c=%u conn=%u hdl=0x%x oper=0x%x "
+        "desc_cnt=%u types=[",
+        PROBE_LOG,
+        client_id,
+        conn_id,
+        property->handle,
+        property->operate_indication,
+        property->descriptors_count
+    );
     for (uint8_t i = 0; i < property->descriptors_count && i < 4; i++) {
         osal_printk("%s%02x", (i > 0) ? "," : "", property->descriptors_type[i]);
     }
@@ -423,11 +481,18 @@ static void ssapc_find_property_cbk(uint8_t client_id, uint16_t conn_id,
     }
 }
 
-static void ssapc_find_structure_cmp_cb(uint8_t client_id, uint16_t conn_id,
-                                        ssapc_find_structure_result_t *result, errcode_t status) {
+static void ssapc_find_structure_cmp_cb(
+    uint8_t client_id, uint16_t conn_id, ssapc_find_structure_result_t *result, errcode_t status
+) {
     CB_CHK();
-    osal_printk("%s find_cmp: c=%u conn=%u status=0x%x type=%u\r\n", PROBE_LOG, client_id, conn_id,
-                status, g_cur_find_type);
+    osal_printk(
+        "%s find_cmp: c=%u conn=%u status=0x%x type=%u\r\n",
+        PROBE_LOG,
+        client_id,
+        conn_id,
+        status,
+        g_cur_find_type
+    );
     start_next_find();
 }
 
@@ -435,19 +500,29 @@ static void ssapc_find_structure_cmp_cb(uint8_t client_id, uint16_t conn_id,
  * SSAP data callbacks — log only
  * *****************************************************************************/
 
-static void ssapc_write_cfm_cb(uint8_t client_id, uint16_t conn_id,
-                               ssapc_write_result_t *write_result, errcode_t status) {
+static void ssapc_write_cfm_cb(
+    uint8_t client_id, uint16_t conn_id, ssapc_write_result_t *write_result, errcode_t status
+) {
     CB_CHK();
-    osal_printk("%s write_cfm: c=%u conn=%u status=0x%x handle=0x%x type=0x%02x\r\n", PROBE_LOG,
-                client_id, conn_id, status, write_result->handle, write_result->type);
+    osal_printk(
+        "%s write_cfm: c=%u conn=%u status=0x%x handle=0x%x type=0x%02x\r\n",
+        PROBE_LOG,
+        client_id,
+        conn_id,
+        status,
+        write_result->handle,
+        write_result->type
+    );
 }
 
-static void ssapc_read_cfm_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *read_data,
-                              errcode_t status) {
+static void ssapc_read_cfm_cb(
+    uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *read_data, errcode_t status
+) {
     CB_CHK();
     if (status != ERRCODE_SUCC || read_data == NULL) {
-        osal_printk("%s read_cfm: c=%u conn=%u fail status=0x%x\r\n", PROBE_LOG, client_id, conn_id,
-                    status);
+        osal_printk(
+            "%s read_cfm: c=%u conn=%u fail status=0x%x\r\n", PROBE_LOG, client_id, conn_id, status
+        );
         g_read_idx++;
         start_next_read();
         return;
@@ -468,16 +543,19 @@ static void ssapc_read_cfm_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_
     start_next_read();
 }
 
-static void ssapc_notification_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data,
-                                  errcode_t status) {
+static void ssapc_notification_cb(
+    uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data, errcode_t status
+) {
     CB_CHK();
-    osal_printk("%s notification: c=%u conn=%u status=0x%x ", PROBE_LOG, client_id, conn_id,
-                status);
+    osal_printk(
+        "%s notification: c=%u conn=%u status=0x%x ", PROBE_LOG, client_id, conn_id, status
+    );
     probe_log_frame("notification", data);
 }
 
-static void ssapc_indication_cb(uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data,
-                                errcode_t status) {
+static void ssapc_indication_cb(
+    uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data, errcode_t status
+) {
     CB_CHK();
     osal_printk("%s indication: c=%u conn=%u status=0x%x ", PROBE_LOG, client_id, conn_id, status);
     probe_log_frame("indication", data);
@@ -512,9 +590,17 @@ static void probe_connect_best(void) {
         return;
     }
     memcpy_s(&g_target_addr, sizeof(sle_addr_t), &best->addr, sizeof(sle_addr_t));
-    osal_printk("%s pick best: %02x:%02x:%02x:%02x:%02x:%02x rssi=%d\r\n", PROBE_LOG,
-                best->addr.addr[0], best->addr.addr[1], best->addr.addr[2], best->addr.addr[3],
-                best->addr.addr[4], best->addr.addr[5], best->rssi);
+    osal_printk(
+        "%s pick best: %02x:%02x:%02x:%02x:%02x:%02x rssi=%d\r\n",
+        PROBE_LOG,
+        best->addr.addr[0],
+        best->addr.addr[1],
+        best->addr.addr[2],
+        best->addr.addr[3],
+        best->addr.addr[4],
+        best->addr.addr[5],
+        best->rssi
+    );
     errcode_t ret = sle_remove_paired_remote_device(&g_target_addr);
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s remove paired failed 0x%x (non-fatal)\r\n", PROBE_LOG, ret);
@@ -523,8 +609,9 @@ static void probe_connect_best(void) {
     if (ret != ERRCODE_SUCC) {
         osal_printk("%s connect req failed 0x%x\r\n", PROBE_LOG, ret);
         /* Simulate disconnect to trigger rescan */
-        probe_connect_state_changed_cb(g_conn_id, &g_target_addr, SLE_ACB_STATE_DISCONNECTED,
-                                       SLE_PAIR_NONE, 0x0);
+        probe_connect_state_changed_cb(
+            g_conn_id, &g_target_addr, SLE_ACB_STATE_DISCONNECTED, SLE_PAIR_NONE, 0x0
+        );
     }
 }
 
@@ -545,8 +632,9 @@ static void start_next_find(void) {
     fp.end_hdl = 0;
     ret = ssapc_find_structure(g_client_id, g_conn_id, &fp);
     if (ret == ERRCODE_SUCC) {
-        osal_printk("%s find type=%u (single-shot, will stop after response)\r\n", PROBE_LOG,
-                    fp.type);
+        osal_printk(
+            "%s find type=%u (single-shot, will stop after response)\r\n", PROBE_LOG, fp.type
+        );
         return;
     }
     osal_printk("%s find type=%u REJECTED err=0x%x (SDK)\r\n", PROBE_LOG, fp.type, ret);
