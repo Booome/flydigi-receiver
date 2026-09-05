@@ -36,6 +36,7 @@
 - `apps/hello_world/main/main.c` — hello world source (renamed from `examples/get-started/hello_world/main/hello_world_main.c`)
 - `apps/hello_world/sdkconfig.defaults` — `CONFIG_IDF_TARGET="esp32"`
 - `apps/hello_world/README.md` — app doc
+- `components/.gitkeep` — reserved directory for **app-shared components** (e.g. `bt_common/`, `tlv_format/`); auto-discovered by ESP-IDF (`project.cmake:500`). Created now to avoid future restructuring; stays empty in M9.
 - `tools/build.py` — `idf.py` build wrapper
 - `tools/burn.py` — `idf.py` flash wrapper
 
@@ -60,6 +61,7 @@
 - Create: `bluetooth/esp32-wroom-32e/README.md`
 - Create: `bluetooth/esp32-wroom-32e/docs/development.md` (stub, will be filled in Task 6)
 - Create: `bluetooth/esp32-wroom-32e/apps/.gitkeep` (empty)
+- Create: `bluetooth/esp32-wroom-32e/components/.gitkeep` (empty — reserved for future app-shared code, see File Structure note)
 - Create: `bluetooth/esp32-wroom-32e/tools/.gitkeep` (empty)
 - Modify: `.gitignore` (add bluetooth build patterns)
 
@@ -82,13 +84,17 @@ Expected: `idf.py` path under `/opt/esp-idf/tools/idf.py`; version string contai
 Run (from project root):
 ```bash
 mkdir -p bluetooth/esp32-wroom-32e/apps
+mkdir -p bluetooth/esp32-wroom-32e/components
 mkdir -p bluetooth/esp32-wroom-32e/tools
 mkdir -p bluetooth/esp32-wroom-32e/docs
 touch bluetooth/esp32-wroom-32e/apps/.gitkeep
+touch bluetooth/esp32-wroom-32e/components/.gitkeep
 touch bluetooth/esp32-wroom-32e/tools/.gitkeep
 ls -la bluetooth/esp32-wroom-32e/
 ```
-Expected output shows `apps/  docs/  tools/` each containing `.gitkeep`. No error.
+Expected output shows `apps/  components/  docs/  tools/` each containing `.gitkeep`. No error.
+
+Note: `components/` is created empty for M9 but reserved for future **app-shared components** (e.g. `bt_common/`, `tlv_format/`). ESP-IDF auto-discovers components under this directory (`project.cmake:500`).
 
 - [ ] **Step 3: Update `.gitignore`**
 
@@ -145,6 +151,7 @@ python3 ../../tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts
 bluetooth/esp32-wroom-32e/
 ├── apps/                # 每个 app 一个独立 ESP-IDF 项目
 │   └── hello_world/
+├── components/          # 跨 app 共享的组件（ESP-IDF 自动发现，M9 暂空）
 ├── build/               # 编译产物（不入库）
 └── tools/
     ├── build.py
@@ -888,6 +895,7 @@ flydigi-receiver/
 │       │       │   └── main.c
 │       │       ├── sdkconfig.defaults
 │       │       └── README.md
+│       ├── components/            # 跨 app 共享的 ESP-IDF 组件（自动发现）
 │       ├── build/                 # 编译产物（不入库）
 │       └── tools/                 # build.py / burn.py
 ├── .env                           # 顶层串口 + ctrl pin（不入库）
@@ -949,6 +957,28 @@ cp -r /opt/esp-idf/examples/bluetooth/blufi bluetooth/esp32-wroom-32e/apps/blufi
 python3 tools/build.py --app blufi
 python3 tools/burn.py --app blufi
 ```
+
+## 添加共享 component（跨 app 复用代码）
+
+```bash
+# 例：BT 通用工具组件（被 hello_world / bt_inquiry / 后续 app 都依赖）
+mkdir -p bluetooth/esp32-wroom-32e/components/bt_common/include
+```
+
+`components/<name>/` 下标准结构：
+
+```
+components/bt_common/
+├── CMakeLists.txt       # idf_component_register(SRCS "bt_common.c" REQUIRES bt driver)
+├── include/             # 公开头文件（其他组件 #include "bt_common.h" 用）
+│   └── bt_common.h
+├── bt_common.c
+└── bt_common.h          # 私有头文件（仅本组件内）
+```
+
+ESP-IDF 自动发现 `components/<name>/`（`project.cmake:500`），无需在根 `CMakeLists.txt` 写 `EXTRA_COMPONENT_DIRS`。
+
+其他组件 / app 通过 `idf_component_register(... REQUIRES bt_common)` 引用；头文件用 `#include "bt_common.h"`（公开头在 `include/` 子目录里，ESP-IDF 自动加进 include 路径）。
 
 ## 故障排查
 
