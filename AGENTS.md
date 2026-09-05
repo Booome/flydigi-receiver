@@ -79,6 +79,8 @@ ESP32 (`apps/bt_scan`) 实测扫到（手柄在 BT 模式 + 配对状态）：
 
   `apps/default/` 的候选筛选**按名字白名单**（`g_gamepad_names`），当前含 Xbox + Pro Controller 两个实测身份；**后期出现新名字再加**（不排除变其它名）。按 `strcasecmp` 全名匹配 + `transport==BT`。
 
+- **手柄配对/bond 须自动处理**：手柄 factory-reset 或切到新设备后，ESP32 NVS 仍留旧 bond → 鉴权失败(`esp_hidh_dev_open` 返 `0xffffffff`)。**固件需在启动/配对失败时自动清除/覆写旧 bond**(`esp_bt_gap_remove_bond_device` 或 `nvs_flash_erase_partition` bt bond 区),不要依赖手工 `esptool erase_flash`。具体方案(回调里 fail-detect + remove,或周期性 stale-check)后续 Task 收。
+
 ## 平台
 
 ### BS21 开发板（已挂起）
