@@ -143,6 +143,7 @@ idf.py -C apps/hello_world -B ../../build/hello_world -p "$BOARD_A_PORT" flash
 ## 九、风险与决策
 
 - **ESP-IDF v6.0 与 ESP32（原始）支持**：v6.0 release notes 中 ESP32 仍在 `Supported Targets`（已确认），但 v6.x 主推 S2/S3/C3/C6 等。**决策**：用 v6.0.2；若未来 v6.x 移除 ESP32，降级 v5.4 LTS（v5.4 仍支持 ESP32）。
+- **ESP32-WROOM-32E 是 BR/EDR 主机的唯一对口选择**：Espressif 家族中**只有原版 ESP32（Xtensa LX6）带 BT4.2 BR/EDR**。S2/S3/C3/C5/C6/H2/C61/E22 全部 BLE-only（E22 是 ESP-Hosted 共处理器，非独立 SoC）。原版 ESP32 在新设计中不被推荐（BluedR 维护模式，主推 S3/C6 等），但 BR/EDR 主机场景下**没替代**——本项目仅原型/研究，v6.0.2 仍完整支持，无影响。
 - **AUR 包升级破坏环境**：AUR `esp-idf` 大版本升级可能改 `/opt/esp-idf` 路径或 Python 依赖。**决策**：版本号钉在 v6.0.2；升级前冻结。
 - **`-B ../../build/<app>` 相对路径**：ESP-IDF 支持自定义 build 目录，但 `-B` 解析依赖 `pwd`。`tools/build.py` 必须 `cd apps/<app>` 后再调 `idf.py -B ../../build/<app>`。
 - **DevKitC USB-UART 驱动**：常见 CP2102/CH340。如系统无驱动（极少，Linux 内核通常含），需装对应驱动。**决策**：验证 step 3 失败时再排查。
