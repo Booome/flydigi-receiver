@@ -180,9 +180,20 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
                 transport_str(transport),
                 (unsigned)param->open.status
             );
+            /* Root-cause fix: clear the stale NVS bond so the next scan+open
+             * starts a fresh pairing instead of repeating auth failure
+             * (status=0xffffffff). esp_hidh_dev_free must precede removal.
+             * bda from esp_hidh_dev_bda_get is const; copy to non-const
+             * esp_bd_addr_t for the gap API. */
             if (param->open.dev) {
                 esp_hidh_dev_free(param->open.dev);
             }
+            esp_bd_addr_t peer;
+            memcpy(peer, bda, sizeof(esp_bd_addr_t));
+            esp_bt_gap_remove_bond_device(peer);
+            printf("[hid] stale bond removed for ");
+            print_bda(bda);
+            printf("\n");
             backoff_to_scan();
         }
         break;
