@@ -118,8 +118,8 @@ static void reset_to_scan(void) {
     g_scan_start_ms = esp_timer_get_time() / 1000;
 }
 
-static void hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id,
-                               void *event_data) {
+static void
+hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
     const uint8_t *bda = NULL;
     esp_hid_transport_t transport = ESP_HID_TRANSPORT_BT;
@@ -136,8 +136,11 @@ static void hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         } else {
             printf("[hid] open FAIL: addr=");
             print_bda(bda);
-            printf(" transport=%s status=0x%x\n", transport_str(transport),
-                   (unsigned)param->open.status);
+            printf(
+                " transport=%s status=0x%x\n",
+                transport_str(transport),
+                (unsigned)param->open.status
+            );
             reset_to_scan();
         }
         break;
@@ -157,8 +160,9 @@ static void hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_i
         transport = esp_hidh_dev_transport_get(param->close.dev);
         printf("[hid] close: addr=");
         print_bda(bda);
-        printf(" transport=%s status=0x%x\n", transport_str(transport),
-               (unsigned)param->close.status);
+        printf(
+            " transport=%s status=0x%x\n", transport_str(transport), (unsigned)param->close.status
+        );
         if (param->close.dev) {
             esp_hidh_dev_free(param->close.dev);
         }
