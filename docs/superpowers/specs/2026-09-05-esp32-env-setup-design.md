@@ -39,7 +39,7 @@ flydigi-receiver/
 ├── .env                               # 顶层共享：SLE + BT 串口 + ctrl pin（已存在，扩展 ESP32 键）
 ├── tools/                             # 跨平台共享
 │   ├── notify.sh                      # 提示音（已存在）
-│   └── capture_uart.py                # 原 wireless/tools/capture_uart.py，上移；新增 --board-esp32
+│   └── capture_uart.py                # 原 wireless/tools/capture_uart.py，上移；CLI 不变
 ├── wireless/                          # SLE 工程专用（不动）
 │   ├── ai-bs21-32s-kit/
 │   ├── bearpi-pico-h3863/
@@ -65,23 +65,16 @@ flydigi-receiver/
 
 ## 四、共享工具调整：`capture_uart.py` 上移
 
-**操作**：将 `wireless/tools/capture_uart.py` **移动到顶层 `tools/capture_uart.py`**（与 `tools/notify.sh` 同级）。移动后：
+**操作**：将 `wireless/tools/capture_uart.py` **移动到顶层 `tools/capture_uart.py`**（与 `tools/notify.sh` 同级）。
 
-1. **新增 ESP32 支持**：
-   - CLI 增 `--board-esp32` / `--rst-esp32` 标志（风格对齐 SLE 的 `--board-a/--board-b/--rst-a/--rst-b`）
-   - 从顶层 `.env` 读 `ESP32_PORT`（必填，串口路径）与 `ESP32_RST_PIN`（可选，默认复用 `CTRL_PIN`）
-2. **行为**：与 SLE 版完全一致——连串口、可选复位脉冲、落盘、时间戳、`Ctrl+C` 优雅保存
-3. **不动 SLE 路径**：现有 `--board-a/--board-b/--rst-a/--rst-b` 行为不变
+**关键**：**不**改 CLI 接口、不增键。理由：
+- ESP32 DevKitC 接入位置与 board_a/board_b 同位置（同 `BOARD_A_PORT` / `BOARD_B_PORT`，同 ctrl 板 reset pin）
+- 现有 `--board-a/--board-b/--rst-a/--rst-b` 标志对 SLE 与 ESP32 **通用**——抓哪路串口、要不要脉冲复位都走同一套
+- 顶层 `.env` **不动**（现有 `BOARD_A_PORT`、`BOARD_B_PORT`、`CTRL_PIN` 已覆盖）
 
-**`.env` 增补键**（顶层，不入库）：
-```
-# 现有 SLE 键保留：BOARD_A_PORT, BOARD_B_PORT, CTRL_PIN
-# 新增：
-ESP32_PORT=/dev/serial/by-path/pci-...port0
-ESP32_RST_PIN=<同 CTRL_PIN，可省>
-```
+移动后行为完全一致：连串口、可选复位脉冲、落盘、时间戳、`Ctrl+C` 优雅保存。
 
-`wireless/tools/burn.py`（SLE 专用 ws63flash）**保留**不动。
+`wireless/tools/burn.py`（SLE 专用 ws63flash）**保留**不动。**`bluetooth/esp32-wroom-32e/tools/burn.py`** 用 `idf.py flash`，端口从 `.env` 的 `BOARD_A_PORT` / `BOARD_B_PORT` 读（CLI 选哪个 board）。
 
 ## 五、第一个 app：hello_world
 
@@ -110,9 +103,9 @@ idf.py -C apps/hello_world -B ../../build/hello_world build
 
 **烧录**（`tools/burn.py hello_world`）：
 ```bash
-idf.py -C apps/hello_world -B ../../build/hello_world -p "$ESP32_PORT" flash
+idf.py -C apps/hello_world -B ../../build/hello_world -p "$BOARD_A_PORT" flash
 ```
-端口从顶层 `.env` 读。
+端口从顶层 `.env` 读（`BOARD_A_PORT` 或 `BOARD_B_PORT`，由 `burn.py` CLI 参数选）；ESP32 复用 SLE 的同名键，不增 `.env` 项。
 
 ## 六、范围外（明确不做）
 
@@ -132,9 +125,9 @@ idf.py -C apps/hello_world -B ../../build/hello_world -p "$ESP32_PORT" flash
 | `apps/hello_world/README.md` | 新增：app 用途、构建命令 |
 | `AGENTS.md` | "项目状态"增 ESP32/BT 方向；"共享工具"段更新：`capture_uart.py` 路径改顶层，`burn.py` 仍 `wireless/tools/`，新增 ESP32 专用 `bluetooth/esp32-wroom-32e/tools/{build,burn}.py` |
 | 顶层 `README.md` | 项目结构图加 `bluetooth/`；硬件表加 ESP32-WROOM-32E |
-| `tools/capture_uart.py` | 从 `wireless/tools/` 移到顶层；新增 `--board-esp32` |
+| `tools/capture_uart.py` | 从 `wireless/tools/` 移到顶层；CLI 不变 |
 | `wireless/tools/` | 删除 `capture_uart.py`（移动到顶层后） |
-| `.env`（顶层） | 新增 `ESP32_PORT`（不入库；`.env.example` 模板同步） |
+| `.env` / `.env.example` | **不增键**；ESP32 复用 `BOARD_A_PORT` / `BOARD_B_PORT` / `CTRL_PIN` |
 
 ## 八、验证里程碑
 
@@ -142,8 +135,8 @@ idf.py -C apps/hello_world -B ../../build/hello_world -p "$ESP32_PORT" flash
 |---|---|---|
 | 1 | `source /opt/esp-idf/export.sh && which idf.py` | 存在；`idf.py --version` 输出 `ESP-IDF v6.0.2` |
 | 2 | `cd bluetooth/esp32-wroom-32e && python3 tools/build.py`（默认 hello_world） | `build/hello_world/` 下生成 `hello_world.bin`；零 error |
-| 3 | `python3 tools/burn.py`（默认 hello_world） | DevKitC 上电、`idf.py -p "$ESP32_PORT" flash` 报 `Hash of data verified. Leaving... Hard resetting via RTS pin...` |
-| 4 | `python3 ../../tools/capture_uart.py --board-esp32 --duration 10 --odir /tmp --ts` | 看到 `Hello world!` + ESP32 启动日志（含 `rst:0x1 (POWERON)` 等） |
+| 3 | `python3 tools/burn.py`（默认 hello_world） | DevKitC 上电、`idf.py -p "$BOARD_A_PORT" flash` 报 `Hash of data verified. Leaving... Hard resetting via RTS pin...` |
+| 4 | `python3 ../../tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts` | 看到 `Hello world!` + ESP32 启动日志（含 `rst:0x1 (POWERON)` 等） |
 
 任一失败：按 `docs/development.md` 排障段处理；不阻塞其他模块。
 
@@ -159,7 +152,7 @@ idf.py -C apps/hello_world -B ../../build/hello_world -p "$ESP32_PORT" flash
 
 - `bluetooth/esp32-wroom-32e/` 存在，`README.md` + `docs/development.md` 完整
 - `apps/hello_world/` 可 `build` + `flash` + 串口看到输出
-- 顶层 `tools/capture_uart.py` 上移 + `--board-esp32` 工作
+- 顶层 `tools/capture_uart.py` 上移，CLI 不变（ESP32 复用 `--board-a/--board-b/--rst-a/--rst-b`）
 - `wireless/tools/` 删 `capture_uart.py` 后 SLE 路径不破
 - `.env` / `.env.example` 增 ESP32 键
 - AGENTS.md + 顶层 README 更新
