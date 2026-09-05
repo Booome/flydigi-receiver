@@ -164,6 +164,7 @@ static void backoff_to_scan(void) {
 #define CONNECT_FAIL_HINT_AFTER 3
 static esp_bd_addr_t g_fail_bda = {0};
 static int g_fail_count = 0;
+static void remove_bond_of(const uint8_t *bda);
 
 static void note_connect_fail(const uint8_t *bda) {
     if (bda && memcmp(bda, g_fail_bda, sizeof(esp_bd_addr_t)) == 0) {
@@ -173,9 +174,13 @@ static void note_connect_fail(const uint8_t *bda) {
         g_fail_count = 1;
     }
     if (g_fail_count == CONNECT_FAIL_HINT_AFTER) {
+        /* A peer that repeatedly won't complete is either absent (keep the bond,
+         * it may return) or stale (drop it). After a few silent failures give up
+         * on the bond so a re-paired pad can be reached fresh. */
         printf("[hid] %d connect fails to ", g_fail_count);
         print_bda(g_fail_bda);
-        printf(" - pad may hold a stale bond, re-enter PAIRING on the pad\n");
+        printf(" - dropping bond, re-pair if needed\n");
+        remove_bond_of(g_fail_bda);
         g_rescan_at_ms = esp_timer_get_time() / 1000 + RETRY_BACKOFF_MS * 4;
     }
 }
@@ -200,6 +205,37 @@ static void remove_bond_of(const uint8_t *bda) {
     printf("[hid] bond removed for ");
     print_bda(bda);
     printf(" (bond_num=%d)\n", esp_bt_gap_get_bond_device_num());
+}
+
+/* If we hold a BR/EDR bond, proactively page that peer instead of only
+ * inquiring. A bonded pad doing its own reconnect is page-scannable but NOT
+ * inquiry-scannable, so an inquiry-only loop can never reach it (the "stuck
+ * 连接中" symptom). On success the OPEN event connects; on a stale key the
+ * attempt hangs -> the CONNECTING timeout clears the bond -> next round falls
+ * back to inquiry for a fresh Just Works pairing. Returns true if a page was
+ * started (caller should skip scanning this round). */
+static bool try_open_bonded(void) {
+    int nb = esp_bt_gap_get_bond_device_num();
+    if (nb <= 0) {
+        return false;
+    }
+    esp_bd_addr_t list[8];
+    int want = nb > 8 ? 8 : nb;
+    if (esp_bt_gap_get_bond_device_list(&want, list) != ESP_OK || want <= 0) {
+        return false;
+    }
+    int64_t t = esp_timer_get_time() / 1000;
+    memcpy(g_candidate.bda, list[0], sizeof(esp_bd_addr_t));
+    g_candidate.transport = ESP_HID_TRANSPORT_BT;
+    g_candidate.smoothed = 0;
+    g_candidate.active = true;
+    g_candidate.set_at_ms = t;
+    set_state(ST_CONNECTING, t);
+    printf("[hid] outbound page bonded ");
+    print_bda(g_candidate.bda);
+    printf(" (bonds=%d)\n", want);
+    esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
+    return true;
 }
 
 static void
@@ -307,42 +343,10 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(esp_hidh_init(&hidh_cfg));
 
-    /* Diagnostic: what BR/EDR links keys do we already have at boot? A stale
-     * entry for the pad is what makes a repaired pad fail to re-pair quickly. */
-    {
-        int nb = esp_bt_gap_get_bond_device_num();
-        printf("[hid] boot bonds=%d", nb);
-        if (nb > 0) {
-            esp_bd_addr_t list[8];
-            int want = nb > 8 ? 8 : nb;
-            if (esp_bt_gap_get_bond_device_list(&want, list) == ESP_OK) {
-                for (int i = 0; i < want; i++) {
-                    printf(" ");
-                    print_bda(list[i]);
-                }
-                /* Root cause of "pad stuck 连接中 / pairing while we idle in
-                 * inquiry": the pad's bonded reconnect state is page-scannable
-                 * but not inquiry-scannable. Our scan-only loop would never
-                 * find it. If we have any bonded BR/EDR peer, seed an
-                 * OUTBOUND page now so we can (a) reconnect a matching pad and
-                 * (b) on auth failure hit the timeout/fail path that clears
-                 * the stale bond, then fall back to inquiry for fresh pairing.
-                 */
-                memcpy(g_candidate.bda, list[0], sizeof(esp_bd_addr_t));
-                g_candidate.transport = ESP_HID_TRANSPORT_BT;
-                g_candidate.smoothed = 0;
-                g_candidate.active = true;
-                int64_t t = esp_timer_get_time() / 1000;
-                g_candidate.set_at_ms = t;
-                set_state(ST_CONNECTING, t);
-                printf("\n[hid] boot: outbound page bonded ");
-                print_bda(g_candidate.bda);
-                printf("\n");
-                esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
-            }
-        }
-        printf("\n");
-    }
+    /* Boot bond diagnostic. Actual reconnect (outbound page of a bonded peer)
+     * is done by try_open_bonded() inside the scan loop, so it also covers a
+     * peer that bonds later while we keep running. */
+    printf("[hid] boot bonds=%d\n", esp_bt_gap_get_bond_device_num());
 
     g_scan_start_ms = esp_timer_get_time() / 1000;
 
@@ -363,10 +367,9 @@ void app_main(void) {
                 esp_bd_addr_t tried;
                 memcpy(tried, g_candidate.bda, sizeof(tried));
                 reset_to_scan();
-                /* A hung attempt (no OPEN event) usually means a stale link key
-                 * on our side vs a re-paired pad: clear it so the next try does
-                 * fresh Just Works instead of a doomed encrypted reconnect. */
-                remove_bond_of(tried);
+                /* Do NOT drop the bond yet: a bare timeout usually means the
+                 * peer is simply absent (powered off). note_connect_fail clears
+                 * it only after several silent failures (likely stale key). */
                 note_connect_fail(tried);
             } else {
                 vTaskDelay(pdMS_TO_TICKS(200));
@@ -376,6 +379,13 @@ void app_main(void) {
         /* ST_SCANNING but still inside a post-fail/backoff window: idle. */
         if (now < g_rescan_at_ms) {
             vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
+        /* If we hold a bond, page that peer directly: a bonded pad in its
+         * reconnect state is not visible to inquiry. Falls back to inquiry
+         * below once the bond is gone (fresh pairing). */
+        if (try_open_bonded()) {
             continue;
         }
 
