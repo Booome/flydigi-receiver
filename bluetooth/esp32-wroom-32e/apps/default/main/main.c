@@ -21,7 +21,6 @@
 #include <strings.h>
 #include <inttypes.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -218,7 +217,6 @@ static int64_t note_connect_fail(const uint8_t *bda) {
 }
 
 static void note_connect_ok(const uint8_t *bda) {
-    (void)bda;
     g_fail_count = 0;
     memset(g_fail_bda, 0, sizeof(g_fail_bda));
 }
@@ -254,15 +252,16 @@ static void open_candidate(void) {
     esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
 }
 
-static void open_bonded(void) {
+/* Returns true when a bonded page was actually issued; false = no usable bond. */
+static bool open_bonded(void) {
     int nb = esp_bt_gap_get_bond_device_num();
     if (nb <= 0) {
-        return;
+        return false;
     }
     esp_bd_addr_t list[8];
     int want = nb > 8 ? 8 : nb;
     if (esp_bt_gap_get_bond_device_list(&want, list) != ESP_OK || want <= 0) {
-        return;
+        return false;
     }
     memcpy(g_candidate.bda, list[0], sizeof(esp_bd_addr_t));
     g_candidate.smoothed = 0;
@@ -275,12 +274,13 @@ static void open_bonded(void) {
     print_bda(g_candidate.bda);
     printf(" (bonds=%d)\n", want);
     esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
+    return true;
 }
 
 /* Resume after boot / fail / close: page the bonded peer if any, else scan. */
 static void resume_scan(void) {
-    if (esp_bt_gap_get_bond_device_num() > 0) {
-        open_bonded();
+    if (esp_bt_gap_get_bond_device_num() > 0 && open_bonded()) {
+        /* paging */
     } else {
         begin_scan_round();
     }
@@ -533,6 +533,7 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
 
 void app_main(void) {
     ESP_ERROR_CHECK(nvs_flash_init());
+    g_app_mutex = xSemaphoreCreateMutex();
     ESP_ERROR_CHECK(bt_stack_start());
 
     ESP_ERROR_CHECK(esp_bt_gap_register_callback(bt_gap_cb));
@@ -543,8 +544,6 @@ void app_main(void) {
         .callback_arg = NULL,
     };
     ESP_ERROR_CHECK(esp_hidh_init(&hidh_cfg));
-
-    g_app_mutex = xSemaphoreCreateMutex();
 
     const esp_timer_create_args_t tick_args = {
         .callback = lock_tick_cb,
