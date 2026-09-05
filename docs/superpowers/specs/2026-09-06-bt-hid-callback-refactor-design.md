@@ -239,3 +239,24 @@ backoff_to_scan(): reset_to_scan(); arm rescan_backoff(RETRY_BACKOFF_MS, 单次)
 | ③ 手柄侧残留旧 bond | `outbound page +49` → `open FAIL 0xffffffff` → `bond removed` → `candidate +49.7` → `connecting` → `connect timeout +56.8` → `3 connect fails … dropping bond, re-pair if needed` → `bond_num=0 +79.25` | ~30s 内自动清键、回到可全新配对态 |
 
 结论：行为与轮询版等价（首配快、bonded page 重连快、stale-key 自动清键、close→回扫），且 `app_main` 起步即返回、无 `while(1)`。③ 的卡住根因是 **bond 残留于手柄侧、主机不可远程清除**（BT 配对本质，非本次重构引入，固件已打印可执行提示）。`[hid] state` 全按钮/`lx=-32513` 为上一里程碑未实测校正的按钮位映射，本次未触碰解码。
+
+## 十三、续：bonded-probe 启发式修复（让第 3+ 次重配对行为一致）
+
+**问题**（用户实测，原 §十二 之外）：1、2 次重配对快，第 3+ 次卡住（手柄 "连接中" 永久不连）。
+- 根因：板子有 bond 时先 `outbound page`，对手柄在"全新配对（可被发现）"分支会用旧加密请求 ACL，控制器产生**半死 ACL 槽**。v6.0.2 Bluedroid 没有公开的经典 BT disconnect API（`esp_bt_gap_disconnect` 已移除），唯一能拆 ACL 的 `esp_bt_hid_host_disconnect` 与 `esp_bt_gap_remove_bond_device` 互动在 v6.0.2 上触发了**重启循环**（实测，已回滚）。
+- 结论：那条路不安全。改**不产生半死 ACL**——bond>0 时先做短探询。
+
+**修法**：`resume_scan` 检测到 `bond_num > 0` 时，先发起一段 `INQ_LENGTH_BONDED = 2`（~2.56s）的 inquiry（不启动 lock_tick）。
+- 若在这段 inquiry 里命中**与 bond[0] 同 BDA 且名字在白名单** → 手柄在全新配对（可被发现）→ 立刻 `remove_bond_of` + `dev_open` 走全新 SSP（不走 outbound page，无半死 ACL 风险），**清掉 ACL 槽再干净 Just Works**。
+- 若 inquiry 自然结束未命中 → 手柄在 page-only bonded-reconnect 态 → 回退到 `open_bonded()` 走原 outbound page 快路径。
+
+`g_probe` 标志 + `g_probe_bda` 缓存，全程在 `g_app_mutex` 内。`DISC_STATE=STOPPED` 在 probe 模式下触发回退；probe 命中路径 `issue_connect()` 内 `halt_scanning_side_effects()` 自动 cancel discovery + stop tick。
+
+**真机验证**（commit `241277d`，120s 抓取）：7 次成功连接，0 死锁，0 重启。
+| 路径 | 时延 | 备注 |
+|---|---|---|
+| 全新首配（无 bond） | ~3s | 不变 |
+| bonded 回连（probe 探不到 → 回退 outbound page） | ~5.7s | +~2.5s 探询等待 |
+| 探询命中 → 全新 SSP（**修复点**） | ~1.5s | 原 30s+ 死锁，现 ~1.5s |
+
+用户视角：每次重配对行为一致（~1.5–6s 内连上，不再有"第 3 次卡死"）。代价仅 bonded 回连多 ~2.5s 探询。
