@@ -227,3 +227,15 @@ backoff_to_scan(): reset_to_scan(); arm rescan_backoff(RETRY_BACKOFF_MS, 单次)
 - `main.c` 显著瘦身（扫描批处理块消失，改为逐事件函数）；文件分节顺序合规、全部格式化。
 - `AGENTS.md`/`README` 同步该架构说明；提交在 `bt-hid-callback-refactor` 分支，**未合并**
   （等用户指令）。
+
+## 十二、验证记录（2026-09-06 真机，host 起始 bonds=0）
+
+回调链三场景全部纯事件/定时器驱动跑通，无轮询节拍：
+
+| 场景 | 事件时间线（相对复位后 ms 前缀 `[+s]`）| 时延 |
+|---|---|---|
+| ① 全新首配 | `candidate +16.33` → `connecting +16.43` → `[gap] AUTH_CMPL … stat=0 OK lk=4 +18.71` → `[hid] open: +18.77` → `[hid] state:` | candidate→open ≈ **2.4s** |
+| ② bonded 重连 | `[hid] close +33.4` → `outbound page bonded +33.7` → `[hid] open: +35.2` | page→open ≈ **1.5s** |
+| ③ 手柄侧残留旧 bond | `outbound page +49` → `open FAIL 0xffffffff` → `bond removed` → `candidate +49.7` → `connecting` → `connect timeout +56.8` → `3 connect fails … dropping bond, re-pair if needed` → `bond_num=0 +79.25` | ~30s 内自动清键、回到可全新配对态 |
+
+结论：行为与轮询版等价（首配快、bonded page 重连快、stale-key 自动清键、close→回扫），且 `app_main` 起步即返回、无 `while(1)`。③ 的卡住根因是 **bond 残留于手柄侧、主机不可远程清除**（BT 配对本质，非本次重构引入，固件已打印可执行提示）。`[hid] state` 全按钮/`lx=-32513` 为上一里程碑未实测校正的按钮位映射，本次未触碰解码。
