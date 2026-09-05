@@ -17,8 +17,9 @@ static void *hello_task(const char *arg) {
 static void hello_entry(void) {
     osal_task *task_handle = NULL;
     osal_kthread_lock();
-    task_handle = osal_kthread_create((osal_kthread_handler)hello_task, 0, "HelloTask",
-                                      HELLO_TASK_STACK_SIZE);
+    task_handle = osal_kthread_create(
+        (osal_kthread_handler)hello_task, 0, "HelloTask", HELLO_TASK_STACK_SIZE
+    );
     if (task_handle != NULL) {
         osal_kthread_set_priority(task_handle, HELLO_TASK_PRIORITY);
     }

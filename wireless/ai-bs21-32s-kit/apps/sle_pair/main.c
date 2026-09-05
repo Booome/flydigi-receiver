@@ -69,11 +69,20 @@ static void *scan_task(const char *arg) {
     return NULL;
 }
 
-static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                  sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                  sle_disc_reason_t disc_reason) {
-    osal_printk("[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n", conn_id, conn_state, pair_state,
-                disc_reason);
+static void conn_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n",
+        conn_id,
+        conn_state,
+        pair_state,
+        disc_reason
+    );
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         if (pair_state == SLE_PAIR_NONE) {
             g_conn_state = CONN_STATE_PAIRING;
@@ -108,8 +117,9 @@ static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
     }
 }
 
-static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
-                             const sle_auth_info_evt_t *evt) {
+static void auth_complete_cb(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status, const sle_auth_info_evt_t *evt
+) {
     osal_printk("[conn] auth complete: id:%u status:0x%x\r\n", conn_id, status);
     if (status != ERRCODE_SUCC || evt == NULL) {
         return;
@@ -127,12 +137,18 @@ static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
     osal_printk("[conn] smp keys saved\r\n");
 }
 
-static void conn_param_update_cb(uint16_t conn_id, errcode_t status,
-                                 const sle_connection_param_update_evt_t *param) {
-    osal_printk("[conn] param update result: id:%u status:0x%x interval:%u "
-                "latency:%u superv:%u\r\n",
-                conn_id, status, (param ? param->interval : 0), (param ? param->latency : 0),
-                (param ? param->supervision : 0));
+static void conn_param_update_cb(
+    uint16_t conn_id, errcode_t status, const sle_connection_param_update_evt_t *param
+) {
+    osal_printk(
+        "[conn] param update result: id:%u status:0x%x interval:%u "
+        "latency:%u superv:%u\r\n",
+        conn_id,
+        status,
+        (param ? param->interval : 0),
+        (param ? param->latency : 0),
+        (param ? param->supervision : 0)
+    );
 }
 
 static void seek_disable_cb(errcode_t status) {
@@ -165,8 +181,16 @@ static void sle_enable_cb(uint8_t status) {
     sle_addr_t la;
     osal_printk("sle enable: %d\r\n", status);
     if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
-        osal_printk("[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n", la.addr[0],
-                    la.addr[1], la.addr[2], la.addr[3], la.addr[4], la.addr[5], la.type);
+        osal_printk(
+            "[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
+            la.addr[0],
+            la.addr[1],
+            la.addr[2],
+            la.addr[3],
+            la.addr[4],
+            la.addr[5],
+            la.type
+        );
     }
     memset(&la, 0, sizeof(la));
     la.type = SLE_ADDRESS_TYPE_PUBLIC;

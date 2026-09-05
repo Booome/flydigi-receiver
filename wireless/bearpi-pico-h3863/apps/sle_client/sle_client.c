@@ -60,18 +60,26 @@ static void sle_client_seek_result_cbk(sle_seek_result_info_t *seek_result_data)
         return;
     }
 
-    osal_printk("%s scan addr:%02x:%02x:%02x:%02x:%02x:%02x rssi:%d len:%d data:", SLE_CLIENT_LOG,
-                seek_result_data->addr.addr[0], seek_result_data->addr.addr[1],
-                seek_result_data->addr.addr[2], seek_result_data->addr.addr[3],
-                seek_result_data->addr.addr[4], seek_result_data->addr.addr[5],
-                seek_result_data->rssi, seek_result_data->data_length);
+    osal_printk(
+        "%s scan addr:%02x:%02x:%02x:%02x:%02x:%02x rssi:%d len:%d data:",
+        SLE_CLIENT_LOG,
+        seek_result_data->addr.addr[0],
+        seek_result_data->addr.addr[1],
+        seek_result_data->addr.addr[2],
+        seek_result_data->addr.addr[3],
+        seek_result_data->addr.addr[4],
+        seek_result_data->addr.addr[5],
+        seek_result_data->rssi,
+        seek_result_data->data_length
+    );
     for (uint8_t i = 0; i < seek_result_data->data_length; i++) {
         osal_printk("%02x ", seek_result_data->data[i]);
     }
     osal_printk("\r\n");
 
-    if (sle_client_has_name(seek_result_data->data, seek_result_data->data_length,
-                            SLE_TARGET_NAME)) {
+    if (sle_client_has_name(
+            seek_result_data->data, seek_result_data->data_length, SLE_TARGET_NAME
+        )) {
         osal_printk("%s found target, stopping scan...\r\n", SLE_CLIENT_LOG);
         memcpy_s(&g_remote_addr, sizeof(sle_addr_t), &seek_result_data->addr, sizeof(sle_addr_t));
         sle_stop_seek();
@@ -87,12 +95,20 @@ static void sle_client_seek_disable_cbk(errcode_t status) {
     }
 }
 
-static void sle_client_connect_state_changed_cbk(uint16_t conn_id, const sle_addr_t *addr,
-                                                 sle_acb_state_t conn_state,
-                                                 sle_pair_state_t pair_state,
-                                                 sle_disc_reason_t disc_reason) {
-    osal_printk("%s conn_state conn_id:0x%02x, state:0x%x, pair:0x%x\r\n", SLE_CLIENT_LOG, conn_id,
-                conn_state, pair_state);
+static void sle_client_connect_state_changed_cbk(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "%s conn_state conn_id:0x%02x, state:0x%x, pair:0x%x\r\n",
+        SLE_CLIENT_LOG,
+        conn_id,
+        conn_state,
+        pair_state
+    );
 
     g_conn_id = conn_id;
 
@@ -110,8 +126,8 @@ static void sle_client_connect_state_changed_cbk(uint16_t conn_id, const sle_add
     }
 }
 
-static void sle_client_pair_complete_cbk(uint16_t conn_id, const sle_addr_t *addr,
-                                         errcode_t status) {
+static void
+sle_client_pair_complete_cbk(uint16_t conn_id, const sle_addr_t *addr, errcode_t status) {
     osal_printk("%s pair_complete conn_id:%d, status:%x\r\n", SLE_CLIENT_LOG, conn_id, status);
     if (status == 0) {
         ssap_exchange_info_t info = {0};
@@ -122,10 +138,16 @@ static void sle_client_pair_complete_cbk(uint16_t conn_id, const sle_addr_t *add
     }
 }
 
-static void sle_client_exchange_info_cbk(uint8_t client_id, uint16_t conn_id,
-                                         ssap_exchange_info_t *param, errcode_t status) {
-    osal_printk("%s exchange_info mtu:%d, ver:%d, status:%x\r\n", SLE_CLIENT_LOG, param->mtu_size,
-                param->version, status);
+static void sle_client_exchange_info_cbk(
+    uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status
+) {
+    osal_printk(
+        "%s exchange_info mtu:%d, ver:%d, status:%x\r\n",
+        SLE_CLIENT_LOG,
+        param->mtu_size,
+        param->version,
+        status
+    );
 
     ssapc_find_structure_param_t find_param = {0};
     find_param.type = SSAP_FIND_TYPE_PROPERTY;
@@ -135,26 +157,35 @@ static void sle_client_exchange_info_cbk(uint8_t client_id, uint16_t conn_id,
     osal_printk("%s start find structure...\r\n", SLE_CLIENT_LOG);
 }
 
-static void sle_client_find_structure_cbk(uint8_t client_id, uint16_t conn_id,
-                                          ssapc_find_service_result_t *service, errcode_t status) {
-    osal_printk("%s find_structure start_hdl:0x%02x, end_hdl:0x%02x, status:%x\r\n", SLE_CLIENT_LOG,
-                service->start_hdl, service->end_hdl, status);
+static void sle_client_find_structure_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_find_service_result_t *service, errcode_t status
+) {
+    osal_printk(
+        "%s find_structure start_hdl:0x%02x, end_hdl:0x%02x, status:%x\r\n",
+        SLE_CLIENT_LOG,
+        service->start_hdl,
+        service->end_hdl,
+        status
+    );
 }
 
-static void sle_client_find_property_cbk(uint8_t client_id, uint16_t conn_id,
-                                         ssapc_find_property_result_t *property, errcode_t status) {
-    osal_printk("%s find_property handle:%d, status:%x\r\n", SLE_CLIENT_LOG, property->handle,
-                status);
+static void sle_client_find_property_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_find_property_result_t *property, errcode_t status
+) {
+    osal_printk(
+        "%s find_property handle:%d, status:%x\r\n", SLE_CLIENT_LOG, property->handle, status
+    );
     if (status == ERRCODE_SUCC) {
         g_property_handle = property->handle;
     }
 }
 
-static void sle_client_find_structure_cmp_cbk(uint8_t client_id, uint16_t conn_id,
-                                              ssapc_find_structure_result_t *result,
-                                              errcode_t status) {
-    osal_printk("%s find_structure_cmp type:%d, status:%x\r\n", SLE_CLIENT_LOG, result->type,
-                status);
+static void sle_client_find_structure_cmp_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_find_structure_result_t *result, errcode_t status
+) {
+    osal_printk(
+        "%s find_structure_cmp type:%d, status:%x\r\n", SLE_CLIENT_LOG, result->type, status
+    );
     osal_printk("%s service discovery complete\r\n", SLE_CLIENT_LOG);
 
     if (g_property_handle != 0) {
@@ -163,10 +194,16 @@ static void sle_client_find_structure_cmp_cbk(uint8_t client_id, uint16_t conn_i
     }
 }
 
-static void sle_client_read_cfm_cbk(uint8_t client_id, uint16_t conn_id,
-                                    ssapc_handle_value_t *read_data, errcode_t status) {
-    osal_printk("%s read_cfm handle:0x%04x, len:%d, status:%x\r\n", SLE_CLIENT_LOG,
-                read_data->handle, read_data->data_len, status);
+static void sle_client_read_cfm_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *read_data, errcode_t status
+) {
+    osal_printk(
+        "%s read_cfm handle:0x%04x, len:%d, status:%x\r\n",
+        SLE_CLIENT_LOG,
+        read_data->handle,
+        read_data->data_len,
+        status
+    );
     if (status == ERRCODE_SUCC && read_data->data_len > 0) {
         osal_printk("%s data:");
         for (uint16_t i = 0; i < read_data->data_len; i++) {
@@ -176,16 +213,20 @@ static void sle_client_read_cfm_cbk(uint8_t client_id, uint16_t conn_id,
     }
 }
 
-static void sle_client_write_cfm_cbk(uint8_t client_id, uint16_t conn_id,
-                                     ssapc_write_result_t *write_result, errcode_t status) {
-    osal_printk("%s write_cfm handle:0x%04x, status:%x\r\n", SLE_CLIENT_LOG, write_result->handle,
-                status);
+static void sle_client_write_cfm_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_write_result_t *write_result, errcode_t status
+) {
+    osal_printk(
+        "%s write_cfm handle:0x%04x, status:%x\r\n", SLE_CLIENT_LOG, write_result->handle, status
+    );
 }
 
-static void sle_client_notification_cbk(uint8_t client_id, uint16_t conn_id,
-                                        ssapc_handle_value_t *data, errcode_t status) {
-    osal_printk("%s notification handle:0x%04x, len:%d\r\n", SLE_CLIENT_LOG, data->handle,
-                data->data_len);
+static void sle_client_notification_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data, errcode_t status
+) {
+    osal_printk(
+        "%s notification handle:0x%04x, len:%d\r\n", SLE_CLIENT_LOG, data->handle, data->data_len
+    );
     if (data->data_len > 0) {
         osal_printk("%s data:");
         for (uint16_t i = 0; i < data->data_len; i++) {
@@ -195,10 +236,12 @@ static void sle_client_notification_cbk(uint8_t client_id, uint16_t conn_id,
     }
 }
 
-static void sle_client_indication_cbk(uint8_t client_id, uint16_t conn_id,
-                                      ssapc_handle_value_t *data, errcode_t status) {
-    osal_printk("%s indication handle:0x%04x, len:%d\r\n", SLE_CLIENT_LOG, data->handle,
-                data->data_len);
+static void sle_client_indication_cbk(
+    uint8_t client_id, uint16_t conn_id, ssapc_handle_value_t *data, errcode_t status
+) {
+    osal_printk(
+        "%s indication handle:0x%04x, len:%d\r\n", SLE_CLIENT_LOG, data->handle, data->data_len
+    );
 }
 
 static errcode_t sle_client_register_seek_cbks(void) {

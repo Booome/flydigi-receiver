@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
 
-
 #ifndef _ESP_HID_GAP_H_
 #define _ESP_HID_GAP_H_
 
@@ -62,9 +61,9 @@ typedef struct esp_hidh_scan_result_s {
     const char *name;
     int8_t rssi;
     esp_hid_usage_t usage;
-    esp_hid_transport_t transport; //BT, BLE or USB
+    esp_hid_transport_t transport; // BT, BLE or USB
     union {
-    #if !CONFIG_BT_NIMBLE_ENABLED
+#if !CONFIG_BT_NIMBLE_ENABLED
         struct {
             esp_bt_cod_t cod;
             esp_bt_uuid_t uuid;
@@ -73,12 +72,12 @@ typedef struct esp_hidh_scan_result_s {
             esp_ble_addr_type_t addr_type;
             uint16_t appearance;
         } ble;
-    #else
+#else
         struct {
             uint8_t addr_type;
             uint16_t appearance;
         } ble;
-    #endif
+#endif
     };
 } esp_hid_scan_result_t;
 

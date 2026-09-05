@@ -29,8 +29,16 @@ static void sle_enable_cb(uint8_t status) {
     if (status == 0) {
         sle_addr_t la = {0};
         if (sle_get_local_addr(&la) == ERRCODE_SUCC) {
-            osal_printk("[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n", la.addr[0],
-                        la.addr[1], la.addr[2], la.addr[3], la.addr[4], la.addr[5], la.type);
+            osal_printk(
+                "[conn] local addr: %02x:%02x:%02x:%02x:%02x:%02x type:%d\r\n",
+                la.addr[0],
+                la.addr[1],
+                la.addr[2],
+                la.addr[3],
+                la.addr[4],
+                la.addr[5],
+                la.type
+            );
         }
         sle_setup_set_local_addr();
         conn_mgr_start();
@@ -49,9 +57,13 @@ static void seek_disable_cb(errcode_t status) {
     conn_mgr_seek_disable(status);
 }
 
-static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                  sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                  sle_disc_reason_t disc_reason) {
+static void conn_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
     conn_mgr_state_changed(conn_id, addr, conn_state, pair_state, disc_reason);
 }
 
@@ -59,13 +71,15 @@ static void pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t
     conn_mgr_pair_complete(conn_id, addr, status);
 }
 
-static void conn_param_update_cb(uint16_t conn_id, errcode_t status,
-                                 const sle_connection_param_update_evt_t *param) {
+static void conn_param_update_cb(
+    uint16_t conn_id, errcode_t status, const sle_connection_param_update_evt_t *param
+) {
     conn_mgr_param_update(conn_id, status, param);
 }
 
-static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
-                             const sle_auth_info_evt_t *evt) {
+static void auth_complete_cb(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status, const sle_auth_info_evt_t *evt
+) {
     conn_mgr_auth_complete(conn_id, addr, status, evt);
 }
 

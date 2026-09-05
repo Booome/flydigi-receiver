@@ -216,10 +216,20 @@ void conn_mgr_seek_result(sle_seek_result_info_t *result) {
     }
 }
 
-void conn_mgr_state_changed(uint16_t conn_id, const sle_addr_t *addr, sle_acb_state_t conn_state,
-                            sle_pair_state_t pair_state, sle_disc_reason_t disc_reason) {
-    osal_printk("[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n", conn_id, conn_state, pair_state,
-                disc_reason);
+void conn_mgr_state_changed(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n",
+        conn_id,
+        conn_state,
+        pair_state,
+        disc_reason
+    );
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         if (addr != NULL) {
             memcpy_s(&g_peer_addr, sizeof(g_peer_addr), addr, sizeof(g_peer_addr));
@@ -272,16 +282,23 @@ void conn_mgr_pair_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t 
     }
 }
 
-void conn_mgr_param_update(uint16_t conn_id, errcode_t status,
-                           const sle_connection_param_update_evt_t *param) {
-    osal_printk("[conn] param update result: id:%u status:0x%x interval:%u "
-                "latency:%u superv:%u\r\n",
-                conn_id, status, (param ? param->interval : 0), (param ? param->latency : 0),
-                (param ? param->supervision : 0));
+void conn_mgr_param_update(
+    uint16_t conn_id, errcode_t status, const sle_connection_param_update_evt_t *param
+) {
+    osal_printk(
+        "[conn] param update result: id:%u status:0x%x interval:%u "
+        "latency:%u superv:%u\r\n",
+        conn_id,
+        status,
+        (param ? param->interval : 0),
+        (param ? param->latency : 0),
+        (param ? param->supervision : 0)
+    );
 }
 
-void conn_mgr_auth_complete(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
-                            const sle_auth_info_evt_t *evt) {
+void conn_mgr_auth_complete(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status, const sle_auth_info_evt_t *evt
+) {
     osal_printk("[conn] auth complete: id:%u status:0x%x\r\n", conn_id, status);
     if (status != ERRCODE_SUCC || evt == NULL) {
         return;
@@ -335,9 +352,15 @@ void conn_mgr_init(led_t led_red, led_t led_blue, button_t btn) {
         return;
     }
     if (g_record_valid) {
-        osal_printk("[conn] record: %02x:%02x:%02x:%02x:%02x:%02x\r\n", g_record_addr[0],
-                    g_record_addr[1], g_record_addr[2], g_record_addr[3], g_record_addr[4],
-                    g_record_addr[5]);
+        osal_printk(
+            "[conn] record: %02x:%02x:%02x:%02x:%02x:%02x\r\n",
+            g_record_addr[0],
+            g_record_addr[1],
+            g_record_addr[2],
+            g_record_addr[3],
+            g_record_addr[4],
+            g_record_addr[5]
+        );
     } else {
         osal_printk("[conn] no record, search\r\n");
     }

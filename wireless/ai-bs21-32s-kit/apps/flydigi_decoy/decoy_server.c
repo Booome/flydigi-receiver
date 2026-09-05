@@ -34,8 +34,9 @@
 /* Default values captured from the real controller (experiment N). */
 static uint8_t g_val_11[VAL11_LEN];
 static uint8_t g_cccd_11[2] = {0x02, 0x00}; /* controller preset: indication mode */
-static uint8_t g_val_12[VAL12_LEN] = {0x01, 0x01, 0x11, 0x00,
-                                      0x00, 0x00, 0x00, 0x00}; /* last read back (exp N) */
+static uint8_t g_val_12[VAL12_LEN] = {
+    0x01, 0x01, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00
+}; /* last read back (exp N) */
 static uint8_t g_val_14[VAL14_LEN] = {0x06, 0x00};
 
 /* Report map captured from the real controller. First 51 bytes known from
@@ -93,8 +94,9 @@ static attr_entry_t *decoy_find_attr(uint16_t handle) {
  * uuid_val is little-endian (e.g. 0x3c10 -> uuid[14]=0x10, uuid[15]=0x3c). */
 static errcode_t decoy_add_uuid16(sle_uuid_t *uuid, uint16_t uuid_val) {
     uuid->len = 16;
-    static const uint8_t base[14] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-                                     0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B};
+    static const uint8_t base[14] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B
+    };
     for (uint8_t i = 0; i < 14; i++) {
         uuid->uuid[i] = base[i];
     }
@@ -115,8 +117,15 @@ static errcode_t decoy_add_uuid2(sle_uuid_t *uuid, uint8_t b0, uint8_t b1) {
 /* Register one property and record its handle in the lookup table.
  * uuid_val is the 2-byte short uuid (LE u16) that appears as the xx field
  * in the find response — must match the real controller per property. */
-static errcode_t decoy_add_property(uint16_t svc_hdl, uint32_t oper, uint16_t perms, uint8_t *buf,
-                                    uint16_t len, uint16_t uuid_val, uint16_t *hdl_out) {
+static errcode_t decoy_add_property(
+    uint16_t svc_hdl,
+    uint32_t oper,
+    uint16_t perms,
+    uint8_t *buf,
+    uint16_t len,
+    uint16_t uuid_val,
+    uint16_t *hdl_out
+) {
     ssaps_property_info_t prop = {0};
     errcode_t ret = decoy_add_uuid16(&prop.uuid, uuid_val);
     if (ret != ERRCODE_SUCC) {
@@ -139,8 +148,15 @@ static errcode_t decoy_add_property(uint16_t svc_hdl, uint32_t oper, uint16_t pe
         g_attrs[g_attr_cnt].len = len;
         g_attr_cnt++;
     }
-    osal_printk("%s   property @0x%02x oper=0x%x len=%u uuid=0x%02x%02x\r\n", DECOY_LOG, hdl, oper,
-                len, prop.uuid.uuid[1], prop.uuid.uuid[0]);
+    osal_printk(
+        "%s   property @0x%02x oper=0x%x len=%u uuid=0x%02x%02x\r\n",
+        DECOY_LOG,
+        hdl,
+        oper,
+        len,
+        prop.uuid.uuid[1],
+        prop.uuid.uuid[0]
+    );
     if (hdl_out != NULL) {
         *hdl_out = hdl;
     }
@@ -151,49 +167,93 @@ static errcode_t decoy_add_property(uint16_t svc_hdl, uint32_t oper, uint16_t pe
  * SSAP callbacks — full behavior logging
  * *****************************************************************************/
 
-static void decoy_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle,
-                                 errcode_t status) {
-    osal_printk("%s add_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id, handle,
-                status);
+static void
+decoy_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status) {
+    osal_printk(
+        "%s add_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id, handle, status
+    );
 }
 
-static void decoy_add_property_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
-                                  uint16_t property_handle, errcode_t status) {
-    osal_printk("%s add_property cb: sid=%u svc=0x%x prop=0x%x status=0x%x\r\n", DECOY_LOG,
-                server_id, service_handle, property_handle, status);
+static void decoy_add_property_cb(
+    uint8_t server_id,
+    sle_uuid_t *uuid,
+    uint16_t service_handle,
+    uint16_t property_handle,
+    errcode_t status
+) {
+    osal_printk(
+        "%s add_property cb: sid=%u svc=0x%x prop=0x%x status=0x%x\r\n",
+        DECOY_LOG,
+        server_id,
+        service_handle,
+        property_handle,
+        status
+    );
 }
 
-static void decoy_add_descriptor_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t service_handle,
-                                    uint16_t desc_handle, errcode_t status) {
-    osal_printk("%s add_desc cb: sid=%u svc=0x%x desc=0x%x status=0x%x\r\n", DECOY_LOG, server_id,
-                service_handle, desc_handle, status);
+static void decoy_add_descriptor_cb(
+    uint8_t server_id,
+    sle_uuid_t *uuid,
+    uint16_t service_handle,
+    uint16_t desc_handle,
+    errcode_t status
+) {
+    osal_printk(
+        "%s add_desc cb: sid=%u svc=0x%x desc=0x%x status=0x%x\r\n",
+        DECOY_LOG,
+        server_id,
+        service_handle,
+        desc_handle,
+        status
+    );
 }
 
 static void decoy_start_service_cb(uint8_t server_id, uint16_t handle, errcode_t status) {
-    osal_printk("%s start_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id,
-                handle, status);
+    osal_printk(
+        "%s start_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id, handle, status
+    );
 }
 
-static void decoy_indicate_cfm_cb(uint8_t server_id, uint16_t conn_id,
-                                  sle_indication_cfm_result_t cfm_result, errcode_t status) {
-    osal_printk("%s indicate cfm: sid=%u conn=%u cfm=%d status=0x%x\r\n", DECOY_LOG, server_id,
-                conn_id, cfm_result, status);
+static void decoy_indicate_cfm_cb(
+    uint8_t server_id, uint16_t conn_id, sle_indication_cfm_result_t cfm_result, errcode_t status
+) {
+    osal_printk(
+        "%s indicate cfm: sid=%u conn=%u cfm=%d status=0x%x\r\n",
+        DECOY_LOG,
+        server_id,
+        conn_id,
+        cfm_result,
+        status
+    );
 }
 
 /* *****************************************************************************
  * SSAP callbacks — full behavior logging
  * *****************************************************************************/
 
-static void decoy_mtu_changed_cb(uint8_t server_id, uint16_t conn_id, ssap_exchange_info_t *info,
-                                 errcode_t status) {
-    osal_printk("%s mtu changed: sid=%u conn=%u mtu=%u status=0x%x\r\n", DECOY_LOG, server_id,
-                conn_id, info->mtu_size, status);
+static void decoy_mtu_changed_cb(
+    uint8_t server_id, uint16_t conn_id, ssap_exchange_info_t *info, errcode_t status
+) {
+    osal_printk(
+        "%s mtu changed: sid=%u conn=%u mtu=%u status=0x%x\r\n",
+        DECOY_LOG,
+        server_id,
+        conn_id,
+        info->mtu_size,
+        status
+    );
 }
 
-static void decoy_read_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_read_cb_t *read_para,
-                          errcode_t status) {
-    osal_printk("%s READ conn=%u hdl=0x%x type=0x%02x\r\n", DECOY_LOG, conn_id, read_para->handle,
-                read_para->type);
+static void decoy_read_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_read_cb_t *read_para, errcode_t status
+) {
+    osal_printk(
+        "%s READ conn=%u hdl=0x%x type=0x%02x\r\n",
+        DECOY_LOG,
+        conn_id,
+        read_para->handle,
+        read_para->type
+    );
     attr_entry_t *attr = decoy_find_attr(read_para->handle);
     if (attr == NULL) {
         osal_printk("%s READ unknown handle\r\n", DECOY_LOG);
@@ -212,21 +272,35 @@ static void decoy_read_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_read_cb
     }
 }
 
-static void decoy_write_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_write_cb_t *write_para,
-                           errcode_t status) {
+static void decoy_write_cb(
+    uint8_t server_id, uint16_t conn_id, ssaps_req_write_cb_t *write_para, errcode_t status
+) {
     /* CCCD writes carry the descriptor type; log them prominently. */
     if (write_para->type == SSAP_DESCRIPTOR_CLIENT_CONFIGURATION && write_para->length == 2 &&
         write_para->value != NULL) {
-        osal_printk("%s *** CCC WRITE conn=%u hdl=0x%x value=%02x %02x\r\n", DECOY_LOG, conn_id,
-                    write_para->handle, write_para->value[0], write_para->value[1]);
+        osal_printk(
+            "%s *** CCC WRITE conn=%u hdl=0x%x value=%02x %02x\r\n",
+            DECOY_LOG,
+            conn_id,
+            write_para->handle,
+            write_para->value[0],
+            write_para->value[1]
+        );
         if (memcpy_s(g_cccd_11, sizeof(g_cccd_11), write_para->value, 2) != EOK) {
             osal_printk("%s cccd store fail\r\n", DECOY_LOG);
         }
         return;
     }
 
-    osal_printk("%s WRITE conn=%u hdl=0x%x type=0x%02x need_rsp=%d len=%u\r\n", DECOY_LOG, conn_id,
-                write_para->handle, write_para->type, write_para->need_rsp, write_para->length);
+    osal_printk(
+        "%s WRITE conn=%u hdl=0x%x type=0x%02x need_rsp=%d len=%u\r\n",
+        DECOY_LOG,
+        conn_id,
+        write_para->handle,
+        write_para->type,
+        write_para->need_rsp,
+        write_para->length
+    );
     if (write_para->length > 0 && write_para->value != NULL) {
         decoy_print_hex("WRITE payload:", write_para->value, write_para->length);
     }
@@ -258,8 +332,8 @@ static void decoy_write_cb(uint8_t server_id, uint16_t conn_id, ssaps_req_write_
  * stack aborts the link (disc 0x7). Mirrors the official air-mouse flow.
  * *****************************************************************************/
 
-static uint8_t *decoy_hid_data_cb(uint8_t *length, uint16_t *ssap_handle, uint8_t *data_type,
-                                  uint16_t co_handle) {
+static uint8_t *
+decoy_hid_data_cb(uint8_t *length, uint16_t *ssap_handle, uint8_t *data_type, uint16_t co_handle) {
     static uint8_t ll_buf[VAL11_LEN];
     memset_s(ll_buf, sizeof(ll_buf), 0, sizeof(ll_buf));
     if (length != NULL) {
@@ -354,9 +428,15 @@ void decoy_services_add(void) {
         return;
     }
     for (uint8_t i = 0; i < sizeof(g_pad_vals); i++) {
-        ret = decoy_add_property(h_pad, SSAP_OPERATE_INDICATION_BIT_READ,
-                                 SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, &g_pad_vals[i], 1,
-                                 0xBF00, NULL);
+        ret = decoy_add_property(
+            h_pad,
+            SSAP_OPERATE_INDICATION_BIT_READ,
+            SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+            &g_pad_vals[i],
+            1,
+            0xBF00,
+            NULL
+        );
         if (ret != ERRCODE_SUCC) {
             osal_printk("%s add pad property %u fail 0x%x\r\n", DECOY_LOG, i, ret);
             return;
@@ -378,8 +458,15 @@ void decoy_services_add(void) {
      * 0x30d (781); the stack's check_property_info cap at 0x100 is lifted
      * by the byte patch in tools/patch_gle_decoy.py. */
     uint16_t h_11 = 0;
-    ret = decoy_add_property(h_svc0, 0x30D, SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_11,
-                             VAL11_LEN, 0x3C10, &h_11);
+    ret = decoy_add_property(
+        h_svc0,
+        0x30D,
+        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+        g_val_11,
+        VAL11_LEN,
+        0x3C10,
+        &h_11
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }
@@ -404,26 +491,44 @@ void decoy_services_add(void) {
 
     /* 0x12: output report, 8 bytes. Real controller oper = 0x5 (READ|WRITE). */
     ret = decoy_add_property(
-        h_svc0, SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE,
-        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_val_12, VAL12_LEN, 0x3B10, NULL);
+        h_svc0,
+        SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE,
+        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+        g_val_12,
+        VAL12_LEN,
+        0x3B10,
+        NULL
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }
 
     /* 0x13: report map, 69 bytes. Real controller oper = 0xd
      * (READ|WRITE|NOTIFY). */
-    ret = decoy_add_property(h_svc0,
-                             SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
-                                 SSAP_OPERATE_INDICATION_BIT_NOTIFY,
-                             SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE, g_map_13, MAP13_LEN,
-                             0x3910, NULL);
+    ret = decoy_add_property(
+        h_svc0,
+        SSAP_OPERATE_INDICATION_BIT_READ | SSAP_OPERATE_INDICATION_BIT_WRITE |
+            SSAP_OPERATE_INDICATION_BIT_NOTIFY,
+        SSAP_PERMISSION_READ | SSAP_PERMISSION_WRITE,
+        g_map_13,
+        MAP13_LEN,
+        0x3910,
+        NULL
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }
 
     /* 0x14: write-only control, 2 bytes. */
-    ret = decoy_add_property(h_svc0, SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP,
-                             SSAP_PERMISSION_WRITE, g_val_14, VAL14_LEN, 0x3A10, NULL);
+    ret = decoy_add_property(
+        h_svc0,
+        SSAP_OPERATE_INDICATION_BIT_WRITE_NO_RSP,
+        SSAP_PERMISSION_WRITE,
+        g_val_14,
+        VAL14_LEN,
+        0x3A10,
+        NULL
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }
@@ -448,18 +553,39 @@ void decoy_services_add(void) {
     }
     osal_printk("%s svc1 @0x%02x\r\n", DECOY_LOG, h_svc1);
 
-    ret = decoy_add_property(h_svc1, SSAP_OPERATE_INDICATION_BIT_READ, SSAP_PERMISSION_READ,
-                             g_val_16, (uint16_t)(sizeof(g_val_16) - 1), 0x3F10, NULL);
+    ret = decoy_add_property(
+        h_svc1,
+        SSAP_OPERATE_INDICATION_BIT_READ,
+        SSAP_PERMISSION_READ,
+        g_val_16,
+        (uint16_t)(sizeof(g_val_16) - 1),
+        0x3F10,
+        NULL
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }
-    ret = decoy_add_property(h_svc1, SSAP_OPERATE_INDICATION_BIT_READ, SSAP_PERMISSION_READ,
-                             g_val_17, sizeof(g_val_17), 0x4010, NULL);
+    ret = decoy_add_property(
+        h_svc1,
+        SSAP_OPERATE_INDICATION_BIT_READ,
+        SSAP_PERMISSION_READ,
+        g_val_17,
+        sizeof(g_val_17),
+        0x4010,
+        NULL
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }
-    ret = decoy_add_property(h_svc1, SSAP_OPERATE_INDICATION_BIT_READ, SSAP_PERMISSION_READ,
-                             g_val_18, (uint16_t)(sizeof(g_val_18) - 1), 0x2E10, NULL);
+    ret = decoy_add_property(
+        h_svc1,
+        SSAP_OPERATE_INDICATION_BIT_READ,
+        SSAP_PERMISSION_READ,
+        g_val_18,
+        (uint16_t)(sizeof(g_val_18) - 1),
+        0x2E10,
+        NULL
+    );
     if (ret != ERRCODE_SUCC) {
         return;
     }

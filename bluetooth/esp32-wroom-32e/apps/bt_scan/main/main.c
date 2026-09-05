@@ -41,9 +41,18 @@ static void print_scan_results(esp_hid_scan_result_t *results, size_t n) {
             mode = "USB"; /* not expected on ESP32 */
         }
 
-        printf("[bt_scan] mode=%-5s addr=%02x:%02x:%02x:%02x:%02x:%02x "
-               "name=\"%s\"",
-               mode, r->bda[0], r->bda[1], r->bda[2], r->bda[3], r->bda[4], r->bda[5], name);
+        printf(
+            "[bt_scan] mode=%-5s addr=%02x:%02x:%02x:%02x:%02x:%02x "
+            "name=\"%s\"",
+            mode,
+            r->bda[0],
+            r->bda[1],
+            r->bda[2],
+            r->bda[3],
+            r->bda[4],
+            r->bda[5],
+            name
+        );
 
         if (r->transport == ESP_HID_TRANSPORT_BT) {
             printf(" cod(major=%u minor=%u srv=0x%03x)", major, minor, service);

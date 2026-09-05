@@ -48,8 +48,9 @@ static uint16_t sle_beacon_set_adv_data(uint8_t *adv_data) {
     idx += len;
 
     /* NearLink system service UUID 0x0B06 (complete 16-bit UUID list). */
-    const uint8_t svc_uuid[] = {0x02, SLE_ADV_DATA_TYPE_COMPLETE_LIST_OF_16BIT_SERVICE_UUIDS, 0x06,
-                                0x0B};
+    const uint8_t svc_uuid[] = {
+        0x02, SLE_ADV_DATA_TYPE_COMPLETE_LIST_OF_16BIT_SERVICE_UUIDS, 0x06, 0x0B
+    };
     ret = memcpy_s(&adv_data[idx], SLE_ADV_DATA_LEN_MAX - idx, svc_uuid, sizeof(svc_uuid));
     if (ret != EOK) {
         return 0;

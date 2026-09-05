@@ -93,8 +93,9 @@ static int set_announce_data(void) {
         .length = sizeof(struct adv_common_value) - 1,
         .value = ADV_TX_POWER,
     };
-    if (memcpy_s(&seek_rsp_data[rsp_idx], ADV_DATA_LEN_MAX - rsp_idx, &tx_power,
-                 sizeof(tx_power)) != EOK) {
+    if (memcpy_s(
+            &seek_rsp_data[rsp_idx], ADV_DATA_LEN_MAX - rsp_idx, &tx_power, sizeof(tx_power)
+        ) != EOK) {
         return -1;
     }
     rsp_idx += sizeof(tx_power);

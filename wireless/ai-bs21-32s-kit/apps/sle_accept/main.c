@@ -95,8 +95,9 @@ static int set_announce_data(void) {
         .length = sizeof(struct adv_common_value) - 1,
         .value = ADV_TX_POWER,
     };
-    if (memcpy_s(&seek_rsp_data[rsp_idx], ADV_DATA_LEN_MAX - rsp_idx, &tx_power,
-                 sizeof(tx_power)) != EOK) {
+    if (memcpy_s(
+            &seek_rsp_data[rsp_idx], ADV_DATA_LEN_MAX - rsp_idx, &tx_power, sizeof(tx_power)
+        ) != EOK) {
         return -1;
     }
     rsp_idx += sizeof(tx_power);
@@ -153,11 +154,16 @@ static void *re_announce_task(const char *arg) {
     return NULL;
 }
 
-static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                  sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                  sle_disc_reason_t disc_reason) {
-    osal_printk("[conn] id:%u state:%d pair:%d disc:0x%x\r\n", conn_id, conn_state, pair_state,
-                disc_reason);
+static void conn_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "[conn] id:%u state:%d pair:%d disc:0x%x\r\n", conn_id, conn_state, pair_state, disc_reason
+    );
     if (conn_state == SLE_ACB_STATE_DISCONNECTED && disc_reason != SLE_DISCONNECT_BY_LOCAL) {
         osal_task *t =
             osal_kthread_create((osal_kthread_handler)re_announce_task, 0, "reann", 0x1000);
@@ -167,8 +173,9 @@ static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
     }
 }
 
-static void auth_complete_cb(uint16_t conn_id, const sle_addr_t *addr, errcode_t status,
-                             const sle_auth_info_evt_t *evt) {
+static void auth_complete_cb(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status, const sle_auth_info_evt_t *evt
+) {
     osal_printk("[conn] auth complete: id:%u status:0x%x\r\n", conn_id, status);
     if (status != ERRCODE_SUCC || evt == NULL) {
         return;

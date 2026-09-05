@@ -69,11 +69,20 @@ static void *scan_task(const char *arg) {
     return NULL;
 }
 
-static void conn_state_changed_cb(uint16_t conn_id, const sle_addr_t *addr,
-                                  sle_acb_state_t conn_state, sle_pair_state_t pair_state,
-                                  sle_disc_reason_t disc_reason) {
-    osal_printk("[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n", conn_id, conn_state, pair_state,
-                disc_reason);
+static void conn_state_changed_cb(
+    uint16_t conn_id,
+    const sle_addr_t *addr,
+    sle_acb_state_t conn_state,
+    sle_pair_state_t pair_state,
+    sle_disc_reason_t disc_reason
+) {
+    osal_printk(
+        "[conn] conn id:%u state:%d pair:%d disc:0x%x\r\n",
+        conn_id,
+        conn_state,
+        pair_state,
+        disc_reason
+    );
     if (conn_state == SLE_ACB_STATE_CONNECTED) {
         g_conn_state = CONN_STATE_ACTIVE;
     } else {

@@ -29,9 +29,16 @@ static void seek_result_cb(sle_seek_result_info_t *result) {
     if (result == NULL) {
         return;
     }
-    osal_printk("adv %02x:%02x:%02x:%02x:%02x:%02x rssi:%d\r\n", result->addr.addr[0],
-                result->addr.addr[1], result->addr.addr[2], result->addr.addr[3],
-                result->addr.addr[4], result->addr.addr[5], result->rssi);
+    osal_printk(
+        "adv %02x:%02x:%02x:%02x:%02x:%02x rssi:%d\r\n",
+        result->addr.addr[0],
+        result->addr.addr[1],
+        result->addr.addr[2],
+        result->addr.addr[3],
+        result->addr.addr[4],
+        result->addr.addr[5],
+        result->rssi
+    );
     for (uint8_t i = 0; i < result->data_length; i++) {
         osal_printk("%02x ", result->data[i]);
     }
