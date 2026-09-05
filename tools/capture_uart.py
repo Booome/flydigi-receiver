@@ -179,8 +179,15 @@ def open_streams(ports):
 
 
 def project_root():
-    return os.path.dirname(os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))))
+    # Walk up from __file__ until we find .git (or .env), so the script works
+    # from any checkout (main, worktree, ...) without hard-coded depth.
+    cur = os.path.dirname(os.path.abspath(__file__))
+    while cur != os.path.dirname(cur):
+        if os.path.isdir(os.path.join(cur, ".git")) or os.path.isfile(
+                os.path.join(cur, ".env")):
+            return cur
+        cur = os.path.dirname(cur)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def main(argv=None, env=None):

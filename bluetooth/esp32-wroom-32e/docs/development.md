@@ -1,0 +1,79 @@
+# ESP32-WROOM-32E 开发笔记（M9 / 蓝牙方向）
+
+## 环境前提
+
+- ESP-IDF v6.0.2 已通过 yay AUR 安装：`yay -S esp-idf`
+- 工具链在 `~/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/`
+- 激活：`source /opt/esp-idf/export.sh`（idempotent，可放 `.bashrc`）
+- 验证：`idf.py --version` → `ESP-IDF v6.0.2`
+- ESP32 在 ESP-IDF v6.0 仍受支持（`examples/get-started/hello_world/README.md` 的 Supported Targets 含 `ESP32`）
+
+## 项目布局
+
+- `apps/<app>/` — 每个 app 一个独立 ESP-IDF 项目（顶层 `CMakeLists.txt` + 源文件 + `sdkconfig.defaults`）
+- `build/<app>/` — 编译产物，通过 `idf.py -B ../../build/<app>` 落到 board 顶层
+- `tools/build.py` — `idf.py set-target && build` 包装；`--app <n>`、 `--clean`、 `--no-set-target`
+- `tools/burn.py` — `idf.py flash` 包装；端口从顶层 `.env` 的 `BOARD_A_PORT` / `BOARD_B_PORT` 读
+- `docs/` — 平台专属文档
+
+## 串口抓取
+
+与 SLE 共用顶层 `tools/capture_uart.py`：
+
+```bash
+python3 tools/capture_uart.py --board-a --duration 10 --odir /tmp --ts
+```
+
+不需要新增 `.env` 键——ESP32 复用 SLE 的 `BOARD_A_PORT` / `BOARD_B_PORT` / `CTRL_PIN`。
+
+## 添加新 app
+
+```bash
+# 1. 从 ESP-IDF example 复制（不修改原 example）
+cp -r /opt/esp-idf/examples/bluetooth/blufi bluetooth/esp32-wroom-32e/apps/blufi
+
+# 2. 保留 example 自带的 main/ 子目录（ESP-IDF 自动发现为 main 组件）
+# 3. 写 apps/blufi/sdkconfig.defaults（如需）
+# 4. 构建 + 烧录
+python3 tools/build.py --app blufi
+python3 tools/burn.py --app blufi
+```
+
+## 添加共享 component（跨 app 复用代码）
+
+```bash
+# 例：BT 通用工具组件（被 hello_world / bt_inquiry / 后续 app 都依赖）
+mkdir -p bluetooth/esp32-wroom-32e/components/bt_common/include
+```
+
+`components/<name>/` 下标准结构：
+
+```
+components/bt_common/
+├── CMakeLists.txt       # idf_component_register(SRCS "bt_common.c" REQUIRES bt driver)
+├── include/             # 公开头文件（其他组件 #include "bt_common.h" 用）
+│   └── bt_common.h
+├── bt_common.c
+└── bt_common.h          # 私有头文件（仅本组件内）
+```
+
+ESP-IDF 自动发现 `components/<name>/`（`project.cmake:500`），无需在根 `CMakeLists.txt` 写 `EXTRA_COMPONENT_DIRS`。
+
+其他组件 / app 通过 `idf_component_register(... REQUIRES bt_common)` 引用；头文件用 `#include "bt_common.h"`（公开头在 `include/` 子目录里，ESP-IDF 自动加进 include 路径）。
+
+## 故障排查
+
+| 症状 | 可能原因 | 处理 |
+|---|---|---|
+| `idf.py: command not found` | export.sh 未 source | `source /opt/esp-idf/export.sh` |
+| 烧录卡在 `Connecting...` | 端口错 / 模块未上电 | 查 `.env` 的 `BOARD_A_PORT`；检查 DevKitC USB；`lsusb` 看 CP2102/CH340 |
+| 烧录后串口无输出 | GPIO 不对 / 波特率不对 | DevKitC UART0 默认 GPIO1/3、115200；`idf.py monitor` 验证 |
+| `Hard resetting via RTS pin` 后无 log | USB-UL 桥未触发 boot | 按 DevKitC 上的 EN 按钮手动复位；或确认 CP2102 DTR/RTS 接对 |
+| `main` 组件找不到 | `main/CMakeLists.txt` 缺失或 `add_subdirectory(main)` 误删 | 恢复 `main/CMakeLists.txt`（含 `idf_component_register(SRCS ...)`） |
+| `.env` 找不到 | worktree 创建时未带过来 | 从主仓库 `cp .env <worktree>/.env`；`capture_uart.py` 用 walk-up 自动找根 |
+
+## 后续里程碑（不在 M9 范围）
+
+- M10：BT inquiry（经典 BT 扫描，看到手柄）
+- M11+：BluedR HID 主机连接手柄（`esp_hid_host`）
+- HID 报告 TLV 化（复用现有 `formatter`）

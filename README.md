@@ -10,6 +10,7 @@
 |------|------|------|
 | 手柄 | 飞智八爪鱼5 (Flydigi Apex 5) | 被逆向的目标设备 |
 | H3863 开发板 | BearPi-Pico H3863 | **星闪 SLE 接收器开发（主平台）** |
+| ESP32-WROOM-32E | DevKitC | 蓝牙方向（BR/EDR HID）研究（与 SLE 独立） |
 | 电脑 | Arch Linux | 开发和调试 |
 
 ## 关键发现
@@ -30,15 +31,30 @@ flydigi-receiver/
 │   ├── sle-chip-comparison.md     # 芯片规格对比
 │   ├── reference/                 # 官方文档存档
 │   └── superpowers/               # 历史计划/设计（按日期）
-├── wireless/                      # 无线接收器
+├── tools/                         # 跨平台共享工具
+│   ├── notify.sh                  # 提示音
+│   └── capture_uart.py            # 串口抓取（SLE + BT 共享）
+├── wireless/                      # 无线接收器（SLE 专用）
 │   ├── ai-bs21-32s-kit/           # BS21 平台（已挂起）
-│   │   ├── README.md              # 平台概览
-│   │   └── docs/                  # 平台专属文档
 │   ├── bearpi-pico-h3863/         # H3863 平台（主平台）
-│   │   ├── README.md              # 平台概览
-│   │   └── docs/                  # 平台专属文档
-│   └── tools/                     # 共享工具（burn.py, capture_uart.py）
-├── tools/                         # 项目工具（notify.sh）
+│   └── tools/
+│       └── burn.py                # SLE 烧录（ws63flash）
+├── bluetooth/                     # 蓝牙方向（与 wireless/ 平级）
+│   └── esp32-wroom-32e/
+│       ├── README.md              # 平台概览
+│       ├── docs/development.md    # ESP-IDF 流程
+│       ├── apps/                  # 各 app（hello_world 等）
+│       │   └── hello_world/
+│       │       ├── CMakeLists.txt
+│       │       ├── main/
+│       │       │   ├── CMakeLists.txt
+│       │       │   └── main.c
+│       │       ├── sdkconfig.defaults
+│       │       └── README.md
+│       ├── components/            # 跨 app 共享的 ESP-IDF 组件（自动发现）
+│       ├── build/                 # 编译产物（不入库）
+│       └── tools/                 # build.py / burn.py
+├── .env                           # 顶层串口 + ctrl pin（不入库）
 └── AGENTS.md                      # 工程记忆
 ```
 
@@ -46,6 +62,7 @@ flydigi-receiver/
 
 - **H3863（主平台）**：开发环境打通（Hello World 验证），SLE 接收器功能待迁移
 - **BS21（已挂起）**：因 SDK 限制后期可能废弃
+- **ESP32-WROOM-32E（蓝牙方向）**：M9 环境搭建完成，hello_world 编译/烧录/串口验证通过；M10+ 起做 BT inquiry、HID 主机连接
 
 ## 快速上手
 

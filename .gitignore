@@ -18,3 +18,8 @@ __pycache__/
 
 # Git worktrees
 .worktrees/
+
+# Bluetooth project build outputs
+bluetooth/*/build/
+bluetooth/*/apps/*/sdkconfig
+bluetooth/*/apps/*/sdkconfig.old
