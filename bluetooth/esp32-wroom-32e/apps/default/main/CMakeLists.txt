@@ -1,4 +1,9 @@
-set(srcs "main.c" "esp_hid_gap.c" "hid_report.c")
+set(srcs
+    "main.c"
+    "esp_hid_gap.c"
+    "hid_report.c"
+    "bt_stack.c"
+)
 set(include_dirs ".")
 
 idf_component_register(
