@@ -2,11 +2,16 @@
 """capture_uart: capture board serial output with optional delayed reset.
 
 Usage:
-    python3 wireless/tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
+    python3 tools/capture_uart.py --board-a --board-b --rst-a --duration 60 --odir /tmp
 
 Board/serial mapping is read from the project .env file:
-    BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN
-    BOARD_B_PORT / BOARD_B_RST_PORT / BOARD_B_RST_PIN
+    BOARD_A_PORT / BOARD_A_RST_PORT / BOARD_A_RST_PIN / BOARD_A_TYPE
+    BOARD_B_PORT / BOARD_B_RST_PORT / BOARD_B_RST_PIN / BOARD_B_TYPE
+
+BOARD_*_TYPE selects the reset mechanism when --rst-a/--rst-b is given:
+    sle   (default) -> uart-gpio pulse via ctrl board pin (BS21/WS63)
+    esp32           -> DTR toggle via open serial port (ESP32 DevKitC, with
+                       onboard USB-UART bridge wiring DTR->EN)
 """
 
 import argparse
@@ -26,7 +31,7 @@ RESET_PULSE_MS = 2000
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="Capture BS21 board serial output")
+    p = argparse.ArgumentParser(description="Capture BS21/ESP32 board serial output")
     p.add_argument("--board-a", action="store_true", help="capture board_a")
     p.add_argument("--board-b", action="store_true", help="capture board_b")
     p.add_argument("--rst-a", action="store_true", help="reset board_a after connect")
@@ -45,6 +50,7 @@ def parse_args(argv=None):
         p.error("--rst-a requires --board-a")
     if args.rst_b and not args.board_b:
         p.error("--rst-b requires --board-b")
+    return args
     return args
 
 
@@ -146,7 +152,8 @@ def board_key(board):
     return board.split("_", 1)[-1].upper()
 
 
-def pulse_reset(board, env):
+def pulse_reset_sle(board, env):
+    """External uart-gpio reset for BS21/WS63 (reset pin wired to ctrl board)."""
     key = board_key(board)
     port = env.get("BOARD_%s_RST_PORT" % key)
     pin = env.get("BOARD_%s_RST_PIN" % key)
@@ -158,11 +165,44 @@ def pulse_reset(board, env):
                    check=True)
 
 
-def reset_plan(args, env):
+def pulse_reset_esp32(stream):
+    """DTR toggle for ESP32 DevKitC (DTR->EN wiring on the onboard USB-UART).
+
+    Toggles DTR line — works regardless of DTR polarity (active-high vs
+    active-low EN). ESP32 sees a reset pulse and boots normally.
+    """
+    stream.dtr = not stream.dtr
+    time.sleep(0.1)
+    stream.dtr = not stream.dtr
+    time.sleep(0.5)
+
+
+def reset_plan(args, env, streams):
+    """Return list of zero-arg reset callables, one per requested board.
+
+    Board type is read from .env (BOARD_A_TYPE / BOARD_B_TYPE, default 'sle'):
+      - sle   -> uart-gpio pulse via ctrl board (BS21/WS63)
+      - esp32 -> DTR toggle via the open serial stream (ESP32 DevKitC)
+    """
     plan = []
+    board_to_stream = {b: s for s, b in streams.items()}
     for board, flag in (("board_a", args.rst_a), ("board_b", args.rst_b)):
-        if flag:
-            plan.append(lambda board=board: pulse_reset(board, env))
+        if not flag:
+            continue
+        key = board_key(board)
+        btype = env.get("BOARD_%s_TYPE" % key, "sle").lower()
+        if btype not in ("sle", "esp32"):
+            print("[WARN] unknown BOARD_%s_TYPE=%r, falling back to 'sle'" %
+                  (key, btype), file=sys.stderr)
+            btype = "sle"
+        if btype == "esp32":
+            stream = board_to_stream.get(board)
+            if stream is None:
+                raise RuntimeError("BOARD_%s_TYPE=esp32 but %s not open" %
+                                   (key, board))
+            plan.append(lambda s=stream: pulse_reset_esp32(s))
+        else:
+            plan.append(lambda b=board: pulse_reset_sle(b, env))
     return plan
 
 
@@ -221,7 +261,8 @@ def main(argv=None, env=None):
     try:
         totals, interrupted = capture(streams, outs, args.duration, args.ts,
                                       not args.no_echo,
-                                      reset_plan(args, env), args.reset_delay)
+                                      reset_plan(args, env, streams),
+                                      args.reset_delay)
     finally:
         for f in outs.values():
             f.close()
