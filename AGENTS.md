@@ -31,6 +31,19 @@
 - **BT HID 主机连接 + 原始报告采集**（`apps/default/` ——项目主 app，后续迭代都更新它）✓
   三层候选算法（COD gamepad 过滤 + EWMA 平滑 + 迟滞/8s 兜底）连上 Apex5，稳定收 15 字节
   Xbox 风格 HID 报告（~36/s，实测 60s 2190 条），原始 hex 打串口。HID 反格式 / 震动输出留后续
+- **回调链重构（`bt-hid-callback-refactor`，2026-09-06 实机验证通过）** ✓
+  `apps/default/` 连接/重连/超时/退避全部由 **GAP/HID 回调 + 三个 esp_timer** 推进，去掉
+  `app_main` 的 `while(1)` 轮询与阻塞 `esp_hid_scan`；`esp_hid_gap.{c,h}` 已删，新增
+  `bt_stack.{c,h}` 承接底层 BTDM bring-up（`bt_stack_start()` 不注册 GAP 回调、不启动
+  discovery）。三层算法判定逻辑与常量不变，触发改为「每条 `DISC_RES_EVT` 即时 + 250ms tick
+  重评」，行为等价、实时性更好。三场景实机时延：fresh Just Works 首配 candidate→open ≈
+  **2.4s**、bonded page→open ≈ **1.5s**、手柄侧 stale-key ~30s 内自动清键 + 提示重新配对 + 回
+  `bonds=0`。**易误删**：`esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)`
+  是 `esp_hidh_init` 内部 BLE 分支的强制初始化管道（`gattc_app_register(0)` + `WAIT_CB()`），
+  不注册则启动卡在 `[hid] boot bonds` 之前，与本里程碑跑不跑 BLE 业务无关——保留。详细架构
+  与设计选择见 `docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md`，
+  实测时延表见 spec §十二。HID 解码模块（`hid_report.{c,h}`）未触碰，按钮位映射的实测校正仍
+  留后续任务。
 - 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md` / `2026-09-05-bt-scan-design.md` / `2026-09-05-bt-hid-host-capture-design.md`
 
 #### **里程碑命名约定（2026-09 修订）**
