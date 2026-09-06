@@ -206,9 +206,9 @@ static void halt_scanning_side_effects(void) {
     }
     /* Lock_tick should be armed here (we came from begin_scan_round), but if
      * it's not (e.g. failed-start path), INVALID_STATE is benign. */
-    esp_err_t stop_err = esp_timer_stop(g_lock_tick);
-    if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE) {
-        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)stop_err);
+    err = esp_timer_stop(g_lock_tick);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
     }
 }
 
@@ -240,11 +240,11 @@ static void begin_scan_round(void) {
     /* Idempotent stop: lock_tick may already be armed (e.g. on DISC_STATE
      * auto-restart after INQ_LENGTH). INVALID_STATE here means "not armed",
      * which is benign. ESP_ERROR_CHECK would crash on that benign case. */
-    esp_err_t stop_err = esp_timer_stop(g_lock_tick);
-    if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE) {
-        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)stop_err);
+    esp_err_t err = esp_timer_stop(g_lock_tick);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
     }
-    esp_err_t err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+    err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
     if (err != ESP_OK) {
         printf("[hid] start_discovery FAIL err=0x%x, arm rescan\n", (unsigned)err);
         arm_rescan(RETRY_BACKOFF_MS);
