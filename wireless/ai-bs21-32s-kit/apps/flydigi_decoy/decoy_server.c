@@ -167,8 +167,9 @@ static errcode_t decoy_add_property(
  * SSAP callbacks — full behavior logging
  * *****************************************************************************/
 
-static void
-decoy_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status) {
+static void decoy_add_service_cb(
+    uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status
+) {
     osal_printk(
         "%s add_service cb: sid=%u hdl=0x%x status=0x%x\r\n", DECOY_LOG, server_id, handle, status
     );
@@ -332,8 +333,9 @@ static void decoy_write_cb(
  * stack aborts the link (disc 0x7). Mirrors the official air-mouse flow.
  * *****************************************************************************/
 
-static uint8_t *
-decoy_hid_data_cb(uint8_t *length, uint16_t *ssap_handle, uint8_t *data_type, uint16_t co_handle) {
+static uint8_t *decoy_hid_data_cb(
+    uint8_t *length, uint16_t *ssap_handle, uint8_t *data_type, uint16_t co_handle
+) {
     static uint8_t ll_buf[VAL11_LEN];
     memset_s(ll_buf, sizeof(ll_buf), 0, sizeof(ll_buf));
     if (length != NULL) {

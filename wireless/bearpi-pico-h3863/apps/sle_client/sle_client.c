@@ -126,8 +126,9 @@ static void sle_client_connect_state_changed_cbk(
     }
 }
 
-static void
-sle_client_pair_complete_cbk(uint16_t conn_id, const sle_addr_t *addr, errcode_t status) {
+static void sle_client_pair_complete_cbk(
+    uint16_t conn_id, const sle_addr_t *addr, errcode_t status
+) {
     osal_printk("%s pair_complete conn_id:%d, status:%x\r\n", SLE_CLIENT_LOG, conn_id, status);
     if (status == 0) {
         ssap_exchange_info_t info = {0};

@@ -433,8 +433,9 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
 
 /* HID callback (esp_hidh event task). */
 
-static void
-hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
+static void hidh_event_handler(
+    void *arg, esp_event_base_t base, int32_t event_id, void *event_data
+) {
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
     const uint8_t *bda = NULL;
 

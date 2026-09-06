@@ -8,4 +8,5 @@ AlignAfterOpenBracket: BlockIndent
 BinPackArguments: false
 BinPackParameters: false
 SortIncludes: false
+PenaltyReturnTypeOnItsOwnLine: 100000
 ...
