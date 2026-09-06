@@ -95,6 +95,10 @@ static const char *const g_gamepad_names[] = {
     "Pro Controller",           /* Nintendo Switch (NS) mode */
 };
 
+/* Forward decls for mutually recursive helpers (begin_scan_round <-> arm_rescan). */
+static void begin_scan_round(void);
+static void arm_rescan(int64_t delay_ms);
+
 static void lock(void) {
     xSemaphoreTake(g_app_mutex, portMAX_DELAY);
 }
@@ -196,8 +200,16 @@ static void candidate_update(const uint8_t *bda, float smoothed, int64_t t) {
 }
 
 static void halt_scanning_side_effects(void) {
-    esp_bt_gap_cancel_discovery();
-    esp_timer_stop(g_lock_tick);
+    esp_err_t err = esp_bt_gap_cancel_discovery();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        printf("[hid] cancel_discovery err=0x%x\n", (unsigned)err);
+    }
+    /* Lock_tick should be armed here (we came from begin_scan_round), but if
+     * it's not (e.g. failed-start path), INVALID_STATE is benign. */
+    esp_err_t stop_err = esp_timer_stop(g_lock_tick);
+    if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)stop_err);
+    }
 }
 
 static void reset_scan_state(void) {
@@ -207,12 +219,11 @@ static void reset_scan_state(void) {
     g_state = ST_SCANNING;
 }
 
-static void issue_connect(const uint8_t *bda)
-{
+static void issue_connect(const uint8_t *bda) {
     esp_bd_addr_t peer;
     memcpy(peer, bda, sizeof(peer));
     halt_scanning_side_effects();
-    esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000);
+    ESP_ERROR_CHECK(esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000));
     g_state = ST_CONNECTING;
     esp_hidh_dev_open(peer, ESP_HID_TRANSPORT_BT, 0);
 }
@@ -226,12 +237,39 @@ static void open_candidate(void) {
 
 static void begin_scan_round(void) {
     reset_scan_state();
-    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
-    esp_timer_start_periodic(g_lock_tick, (uint64_t)LOCK_TICK_MS * 1000);
+    /* Idempotent stop: lock_tick may already be armed (e.g. on DISC_STATE
+     * auto-restart after INQ_LENGTH). INVALID_STATE here means "not armed",
+     * which is benign. ESP_ERROR_CHECK would crash on that benign case. */
+    esp_err_t stop_err = esp_timer_stop(g_lock_tick);
+    if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)stop_err);
+    }
+    esp_err_t err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+    if (err != ESP_OK) {
+        printf("[hid] start_discovery FAIL err=0x%x, arm rescan\n", (unsigned)err);
+        arm_rescan(RETRY_BACKOFF_MS);
+        return;
+    }
+    err = esp_timer_start_periodic(g_lock_tick, (uint64_t)LOCK_TICK_MS * 1000);
+    if (err != ESP_OK) {
+        printf(
+            "[hid] lock_tick start FAIL err=0x%x, cancel discovery, arm rescan\n", (unsigned)err
+        );
+        esp_bt_gap_cancel_discovery();
+        arm_rescan(RETRY_BACKOFF_MS);
+        return;
+    }
 }
 
 static void arm_rescan(int64_t delay_ms) {
-    esp_timer_start_once(g_rescan_backoff, (uint64_t)delay_ms * 1000);
+    esp_err_t err = esp_timer_start_once(g_rescan_backoff, (uint64_t)delay_ms * 1000);
+    if (err == ESP_ERR_INVALID_STATE) {
+        return;
+    }
+    if (err != ESP_OK) {
+        printf("[hid] rescan_backoff start FAIL err=0x%x, immediate rescan\n", (unsigned)err);
+        begin_scan_round();
+    }
 }
 
 /* esp_timer callbacks run in the esp_timer task. */
@@ -331,13 +369,22 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         break;
     case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
         /* Continuous inquiry: Bluedroid stops inquiry after INQ_LENGTH; restart
-         * immediately while still scanning (keeps candidate/EWMA clocks). */
+         * immediately. Only inquiry needs restarting — lock_tick is periodic
+         * and already armed from begin_scan_round(), so re-arming would fail
+         * with INVALID_STATE. Keep this path minimal. */
+        printf("[gap] DISC_STATE state=%d\n", (int)param->disc_st_chg.state);
         if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
             lock();
-            if (g_state == ST_SCANNING) {
-                esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
-            }
+            bool should_restart = (g_state == ST_SCANNING);
             unlock();
+            if (should_restart) {
+                esp_err_t err =
+                    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+                if (err != ESP_OK) {
+                    printf("[hid] restart discovery FAIL err=0x%x, arm rescan\n", (unsigned)err);
+                    arm_rescan(RETRY_BACKOFF_MS);
+                }
+            }
         }
         break;
     case ESP_BT_GAP_CFM_REQ_EVT:
@@ -394,7 +441,14 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
     switch (event_id) {
     case ESP_HIDH_OPEN_EVENT:
         bda = esp_hidh_dev_bda_get(param->open.dev);
-        esp_timer_stop(g_conn_timeout);
+        /* conn_timeout may not be armed if OPEN came from inbound page (no
+         * issue_connect on that path); INVALID_STATE is benign. */
+        {
+            esp_err_t stop_err = esp_timer_stop(g_conn_timeout);
+            if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE) {
+                printf("[hid] conn_timeout stop FAIL err=0x%x\n", (unsigned)stop_err);
+            }
+        }
         if (param->open.status == ESP_OK) {
             lock();
             halt_scanning_side_effects();
