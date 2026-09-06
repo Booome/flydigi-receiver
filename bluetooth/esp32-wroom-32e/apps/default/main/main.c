@@ -3,84 +3,104 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  *
- * default: BT HID host connect + raw HID report capture.
+ * default: BT HID host, event/callback-driven (no polling loop).
  *
- * 三层候选算法（spec §四）：
- *   层1 语义过滤：只保留 gamepad-class BR/EDR（COD major=5 minor=2）
- *   层2 EWMA 平滑：0.3*新 + 0.7*旧，去除 ±3~5dB RSSI 抖动
- *   层3 迟滞 + 兜底：3dB 迟滞，3s 稳定或 8s 强制连
+ * app_main brings the stack up, registers the GAP + HID callbacks + timers,
+ * makes ONE start decision (page a bonded peer, else continuous inquiry), then
+ * returns. Thereafter every transition is driven by GAP DISC_RES/DISC_STATE,
+ * HID OPEN/INPUT/CLOSE, and three esp_timer ticks. No polling loop, no blocking scan.
+ *
+ * Selection (unchanged 3-layer): gamepad name allowlist -> EWMA(0.3) ->
+ * hysteresis 3dB -> lock when stable>=3s or total>=8s. Re-evaluated on a 250ms
+ * tick so a quiet link still locks on schedule. See
+ * docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
-#include <time.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_event.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_bt.h"
 #include "esp_gap_bt_api.h"
-#include "esp_hid_gap.h"
 #include "esp_hidh.h"
 #include "esp_hidh_gattc.h"
+#include "bt_stack.h"
 #include "hid_report.h"
 
 #define TAG "default"
-#define SCAN_DURATION_SEC 3
+
+/* Windows/constants unchanged from the polling implementation. */
 #define HYSTERESIS_DB 3
 #define LOCK_WAIT_MS 3000
 #define MAX_WAIT_MS 8000
-#define CONNECT_TIMEOUT_MS                                                                         \
-    4000 /* open() issued but no OPEN/CLOSE event for this long -> give up, rescan */
-#define RETRY_BACKOFF_MS 300 /* pause after a failed/disconnected attempt before rescanning */
-#define EWMA_ALPHA_NUM 3     /* /10 → alpha=0.3 */
+#define CONNECT_TIMEOUT_MS 4000 /* open() with no OPEN/CLOSE event -> give up */
+#define RETRY_BACKOFF_MS 300    /* pause after a fail/close before resuming */
+#define CANDIDATE_GONE_MS 6000  /* candidate not sighted this long -> drop it */
+#define LOCK_TICK_MS 250        /* periodic re-evaluation cadence */
+#define INQ_LENGTH 8            /* esp_bt_gap_start_discovery length (8*1.28s) */
+#define INQ_LENGTH_BONDED 2     /* bonded-probe length (2*1.28s ~2.56s) */
+#define EWMA_ALPHA_NUM 3        /* /10 -> alpha=0.3 */
 #define EWMA_ALPHA_DEN 10
-#define CANDIDATE_GONE_ROUNDS 2
 #define EWMA_MAX 16
+#define CONNECT_FAIL_HINT_AFTER 3
 
-/* Per-device EWMA RSSI: key = (bda, transport) */
 typedef struct {
     uint8_t bda[6];
-    esp_hid_transport_t transport;
     bool used;
     float smoothed;
+    int64_t last_seen_ms;
 } ewma_entry_t;
 
-/* Candidate state */
 typedef struct {
     bool active;
     uint8_t bda[6];
-    esp_hid_transport_t transport;
     float smoothed;
     int64_t set_at_ms;
 } candidate_t;
 
-/* Connection lifecycle. Only ST_SCANNING may scan or issue a new open;
- * ST_CONNECTING/CONNECTED must NOT run inquiry (it disturbs the ACL link)
- * nor re-open. Events drive SCANNING<->CONNECTING<->CONNECTED. */
+/* Guard only (which side-effects are allowed); transitions are event-driven. */
 typedef enum { ST_SCANNING, ST_CONNECTING, ST_CONNECTED } app_state_t;
 
 static ewma_entry_t g_ewma[EWMA_MAX];
 static candidate_t g_candidate = {0};
-static int g_not_seen_count = 0;
 static int64_t g_scan_start_ms = 0;
 static volatile app_state_t g_state = ST_SCANNING;
-static int64_t g_state_since_ms = 0;
-static int64_t g_rescan_at_ms = 0; /* backoff gate before next scan after fail/close */
+/* Bonded-probe: when bonds>0, run a short inquiry to detect whether the bonded
+ * peer is currently in inquiry-discoverable mode (=fresh-pairing, keyless).
+ * If we see it, we drop the bond and dev_open fresh instead of outbound-page
+ * (the outbound-page path can leave a half-dead ACL slot that deadlocks the
+ * next dev_open for tens of seconds in v6.0.2). All probe access under lock. */
+static bool g_probe;
+static uint8_t g_probe_bda[6];
+static esp_bd_addr_t g_fail_bda = {0};
+static int g_fail_count = 0;
+static SemaphoreHandle_t g_app_mutex = NULL;
 
-static const char *transport_str(esp_hid_transport_t t) {
-    switch (t) {
-    case ESP_HID_TRANSPORT_BLE:
-        return "BLE";
-    case ESP_HID_TRANSPORT_BT:
-        return "BR_EDR";
-    default:
-        return "?";
-    }
+static esp_timer_handle_t g_lock_tick = NULL;      /* periodic, SCANNING only */
+static esp_timer_handle_t g_conn_timeout = NULL;   /* one-shot, armed on open */
+static esp_timer_handle_t g_rescan_backoff = NULL; /* one-shot */
+
+/* Known Apex5 BT identities (BR/EDR advertised name). Extend as new names appear. */
+static const char *const g_gamepad_names[] = {
+    "Xbox Wireless Controller", /* PC>Bluetooth / Android / iOS = X-input */
+    "Pro Controller",           /* Nintendo Switch (NS) mode             */
+};
+
+static void lock(void) {
+    xSemaphoreTake(g_app_mutex, portMAX_DELAY);
+}
+static void unlock(void) {
+    xSemaphoreGive(g_app_mutex);
+}
+
+static int64_t now_ms(void) {
+    return esp_timer_get_time() / 1000;
 }
 
 static void print_bda(const uint8_t *bda) {
@@ -91,110 +111,89 @@ static uint8_t bda_eq(const uint8_t *a, const uint8_t *b) {
     return memcmp(a, b, 6) == 0;
 }
 
-/* Known Apex5 BT identities (BR/EDR advertised name) seen so far. The pad
- * presents a different name per its onboard connection mode, and unknown new
- * names are possible — extend this list as they appear. */
-static const char *const g_gamepad_names[] = {
-    "Xbox Wireless Controller", /* PC>Bluetooth / Android / iOS = X-input */
-    "Pro Controller",           /* Nintendo Switch (NS) mode             */
-};
-
-static bool is_gamepad(const esp_hid_scan_result_t *r) {
-    /* Match by BT transport + name in the known-identity allowlist
-     * (case-insensitive). Add new names to g_gamepad_names as seen. */
-    if (r->transport != ESP_HID_TRANSPORT_BT)
+static bool is_gamepad(const char *name) {
+    if (!name) {
         return false;
-    if (!r->name)
-        return false;
+    }
     for (size_t i = 0; i < sizeof(g_gamepad_names) / sizeof(g_gamepad_names[0]); i++) {
-        if (strcasecmp(r->name, g_gamepad_names[i]) == 0)
+        if (strcasecmp(name, g_gamepad_names[i]) == 0) {
             return true;
+        }
     }
     return false;
 }
 
-static float *ewma_get_or_create(const uint8_t *bda, esp_hid_transport_t t) {
+static void ewma_clear(void) {
     for (int i = 0; i < EWMA_MAX; i++) {
-        if (g_ewma[i].used && bda_eq(g_ewma[i].bda, bda) && g_ewma[i].transport == t) {
-            return &g_ewma[i].smoothed;
-        }
+        g_ewma[i].used = false;
     }
+}
+
+static ewma_entry_t *ewma_find(const uint8_t *bda) {
     for (int i = 0; i < EWMA_MAX; i++) {
-        if (!g_ewma[i].used) {
-            memcpy(g_ewma[i].bda, bda, 6);
-            g_ewma[i].transport = t;
-            g_ewma[i].used = true;
-            g_ewma[i].smoothed = -127.0f;
-            return &g_ewma[i].smoothed;
+        if (g_ewma[i].used && bda_eq(g_ewma[i].bda, bda)) {
+            return &g_ewma[i];
         }
     }
     return NULL;
 }
 
-static void ewma_clear(void) {
-    for (int i = 0; i < EWMA_MAX; i++)
-        g_ewma[i].used = false;
+static ewma_entry_t *ewma_get_or_create(const uint8_t *bda) {
+    ewma_entry_t *e = ewma_find(bda);
+    if (e) {
+        return e;
+    }
+    for (int i = 0; i < EWMA_MAX; i++) {
+        if (!g_ewma[i].used) {
+            memcpy(g_ewma[i].bda, bda, 6);
+            g_ewma[i].used = true;
+            g_ewma[i].smoothed = -127.0f;
+            return &g_ewma[i];
+        }
+    }
+    return NULL;
 }
 
-static void set_state(app_state_t s, int64_t now_ms) {
-    g_state = s;
-    g_state_since_ms = now_ms;
-}
-
-/* Go back to scanning: clear candidate/ewma, restart the lock clock. */
-static void reset_to_scan(void) {
-    memset(&g_candidate, 0, sizeof(g_candidate));
-    ewma_clear();
-    g_not_seen_count = 0;
-    g_scan_start_ms = esp_timer_get_time() / 1000;
-    set_state(ST_SCANNING, g_scan_start_ms);
-}
-
-/* Called after a failed open or a close: rescan, but back off briefly so we
- * don't hammer the controller while it is still in a transient state. */
-static void backoff_to_scan(void) {
-    reset_to_scan();
-    g_rescan_at_ms = esp_timer_get_time() / 1000 + RETRY_BACKOFF_MS;
-}
-
-/* Track consecutive connect failures to one address. After a few, the cause is
- * usually a stale bond on the PAD side (which a host cannot clear remotely), so
- * surface an actionable hint and back off longer instead of silently thrashing.
- * Cleared on a successful connect. */
-#define CONNECT_FAIL_HINT_AFTER 3
-static esp_bd_addr_t g_fail_bda = {0};
-static int g_fail_count = 0;
-static void remove_bond_of(const uint8_t *bda);
-
-static void note_connect_fail(const uint8_t *bda) {
-    if (bda && memcmp(bda, g_fail_bda, sizeof(esp_bd_addr_t)) == 0) {
-        g_fail_count++;
+/* 层2 EWMA + record sighting time. Returns the smoothed value. */
+static float ewma_update(const uint8_t *bda, int8_t rssi, int64_t t) {
+    ewma_entry_t *e = ewma_get_or_create(bda);
+    if (!e) {
+        return -127.0f;
+    }
+    if (e->smoothed == -127.0f) {
+        e->smoothed = (float)rssi;
     } else {
-        memcpy(g_fail_bda, bda ? bda : g_fail_bda, sizeof(esp_bd_addr_t));
-        g_fail_count = 1;
+        e->smoothed = (float)rssi * EWMA_ALPHA_NUM / EWMA_ALPHA_DEN +
+                      e->smoothed * (EWMA_ALPHA_DEN - EWMA_ALPHA_NUM) / EWMA_ALPHA_DEN;
     }
-    if (g_fail_count == CONNECT_FAIL_HINT_AFTER) {
-        /* A peer that repeatedly won't complete is either absent (keep the bond,
-         * it may return) or stale (drop it). After a few silent failures give up
-         * on the bond so a re-paired pad can be reached fresh. */
-        printf("[hid] %d connect fails to ", g_fail_count);
-        print_bda(g_fail_bda);
-        printf(" - dropping bond, re-pair if needed\n");
-        remove_bond_of(g_fail_bda);
-        g_rescan_at_ms = esp_timer_get_time() / 1000 + RETRY_BACKOFF_MS * 4;
-    }
+    e->last_seen_ms = t;
+    return e->smoothed;
 }
 
-static void note_connect_ok(const uint8_t *bda) {
-    (void)bda;
-    g_fail_count = 0;
-    memset(g_fail_bda, 0, sizeof(g_fail_bda));
+/* 层3 迟滞 + 候选计时 (no lock decision here; lock_tick decides). */
+static void candidate_update(const uint8_t *bda, float smoothed, int64_t t) {
+    if (!g_candidate.active) {
+        g_candidate.active = true;
+        memcpy(g_candidate.bda, bda, 6);
+        g_candidate.smoothed = smoothed;
+        g_candidate.set_at_ms = t;
+        printf("[hid] candidate: addr=");
+        print_bda(bda);
+        printf(" smoothed=%.1f\n", smoothed);
+    } else if (bda_eq(bda, g_candidate.bda)) {
+        /* same candidate; lock clock keeps running */
+    } else if (smoothed >= g_candidate.smoothed + HYSTERESIS_DB) {
+        g_candidate.active = true;
+        memcpy(g_candidate.bda, bda, 6);
+        g_candidate.smoothed = smoothed;
+        g_candidate.set_at_ms = t;
+        printf("[hid] candidate replace: addr=");
+        print_bda(bda);
+        printf(" smoothed=%.1f\n", smoothed);
+    }
+    /* else: near-tie, keep existing candidate + clock */
 }
 
-/* Drop our stored link key for a peer. Needed when the pad re-pairs (it forgot
- * us) but we keep an old key: esp_hidh_dev_open then attempts an ENCRYPTED
- * reconnect the repaired pad won't honor, so it hangs until timeout with no
- * OPEN event -> without clearing here too, we retry the same stale key forever. */
 static void remove_bond_of(const uint8_t *bda) {
     if (!bda) {
         return;
@@ -207,14 +206,82 @@ static void remove_bond_of(const uint8_t *bda) {
     printf(" (bond_num=%d)\n", esp_bt_gap_get_bond_device_num());
 }
 
-/* If we hold a BR/EDR bond, proactively page that peer instead of only
- * inquiring. A bonded pad doing its own reconnect is page-scannable but NOT
- * inquiry-scannable, so an inquiry-only loop can never reach it (the "stuck
- * 连接中" symptom). On success the OPEN event connects; on a stale key the
- * attempt hangs -> the CONNECTING timeout clears the bond -> next round falls
- * back to inquiry for a fresh Just Works pairing. Returns true if a page was
- * started (caller should skip scanning this round). */
-static bool try_open_bonded(void) {
+/* Count consecutive silent failures to one addr and return the backoff delay
+ * (ms). Bare connect timeouts (peer absent / not yet powered) NEVER drop the
+ * stored bond: a power-off/power-on pad has its own copy of the key and will
+ * page us on power-on; if we cleared our key here, the controller would still
+ * accept the inbound ACL but our app layer has no dev_open in flight, so the
+ * ACL sits idle until the supervision timeout and the pad sits in "连接中"
+ * forever. The bond is only dropped on an OPEN FAIL (0xffffffff), which is
+ * handled directly in hidh_event_handler. Caller holds lock. */
+static int64_t note_connect_fail(const uint8_t *bda) {
+    if (bda && memcmp(bda, g_fail_bda, sizeof(esp_bd_addr_t)) == 0) {
+        g_fail_count++;
+    } else {
+        memcpy(g_fail_bda, bda ? bda : g_fail_bda, sizeof(esp_bd_addr_t));
+        g_fail_count = 1;
+    }
+    if (g_fail_count == CONNECT_FAIL_HINT_AFTER) {
+        printf("[hid] %d connect fails to ", g_fail_count);
+        print_bda(g_fail_bda);
+        printf(" - peer absent; lengthening backoff (bond kept)\n");
+        return RETRY_BACKOFF_MS * 4;
+    }
+    return RETRY_BACKOFF_MS;
+}
+
+static void note_connect_ok(void) {
+    g_fail_count = 0;
+    memset(g_fail_bda, 0, sizeof(g_fail_bda));
+}
+
+/* ---- side-effect helpers (all called with lock held) ---- */
+
+/* Clear selection state and mark scanning (does not touch timers/discovery). */
+static void reset_scan_state(void) {
+    memset(&g_candidate, 0, sizeof(g_candidate));
+    ewma_clear();
+    g_state = ST_SCANNING;
+    g_probe = false;
+}
+
+static void arm_rescan(int64_t delay_ms) {
+    esp_timer_start_once(g_rescan_backoff, (uint64_t)delay_ms * 1000);
+}
+
+/* Stop scanning side-effects: cancel inquiry and pause the lock tick. */
+static void halt_scanning_side_effects(void) {
+    esp_bt_gap_cancel_discovery();
+    esp_timer_stop(g_lock_tick);
+}
+
+/* Take the radio for one open: halt scanning, arm the connect watchdog, mark
+ * CONNECTING, and issue the async open for bda (caller resolved the address). */
+static void issue_connect(const uint8_t *bda) {
+    esp_bd_addr_t peer;
+    memcpy(peer, bda, sizeof(peer));
+    halt_scanning_side_effects();
+    esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000);
+    g_state = ST_CONNECTING;
+    esp_hidh_dev_open(peer, ESP_HID_TRANSPORT_BT, 0);
+}
+
+static void begin_scan_round(void) {
+    reset_scan_state();
+    g_scan_start_ms = now_ms();
+    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+    esp_timer_start_periodic(g_lock_tick, (uint64_t)LOCK_TICK_MS * 1000);
+}
+
+static void open_candidate(void) {
+    printf("[hid] connecting: addr=");
+    print_bda(g_candidate.bda);
+    printf(" transport=BR_EDR\n");
+    issue_connect(g_candidate.bda);
+}
+
+/* Returns true when a bonded page was actually issued; false = no usable bond. */
+static bool open_bonded(void) {
     int nb = esp_bt_gap_get_bond_device_num();
     if (nb <= 0) {
         return false;
@@ -224,54 +291,269 @@ static bool try_open_bonded(void) {
     if (esp_bt_gap_get_bond_device_list(&want, list) != ESP_OK || want <= 0) {
         return false;
     }
-    int64_t t = esp_timer_get_time() / 1000;
     memcpy(g_candidate.bda, list[0], sizeof(esp_bd_addr_t));
-    g_candidate.transport = ESP_HID_TRANSPORT_BT;
     g_candidate.smoothed = 0;
     g_candidate.active = true;
-    g_candidate.set_at_ms = t;
-    set_state(ST_CONNECTING, t);
+    g_candidate.set_at_ms = now_ms();
     printf("[hid] outbound page bonded ");
     print_bda(g_candidate.bda);
     printf(" (bonds=%d)\n", want);
-    esp_hidh_dev_open(g_candidate.bda, ESP_HID_TRANSPORT_BT, 0);
+    issue_connect(g_candidate.bda);
     return true;
 }
+
+/* Bonded-probe: a short inquiry (INQ_LENGTH_BONDED ~2.56s) that runs BEFORE
+ * the outbound-page. If the bonded peer appears in the inquiry results it is
+ * in inquiry-discoverable mode (i.e. freshly pairing, has forgotten our key);
+ * we then drop the bond and dev_open fresh so the controller never has to
+ * deal with a half-dead ACL slot from a doomed encrypted page. If the probe
+ * ends without seeing the bonded peer, the peer is in page-only mode
+ * (bonded-reconnect) and we fall back to outbound page as before. Caller
+ * holds lock. */
+static void probe_then_page_or_pair(void) {
+    esp_bd_addr_t list[8];
+    int want = 8;
+    if (esp_bt_gap_get_bond_device_list(&want, list) != ESP_OK || want <= 0) {
+        /* Cannot read the bonded list even though bond_num>0; fall back. */
+        open_bonded();
+        return;
+    }
+    memcpy(g_probe_bda, list[0], sizeof(g_probe_bda));
+    g_probe = true;
+    reset_scan_state(); /* clears candidate/ewma/g_probe (will be set true above) */
+    g_probe = true;     /* re-assert after reset_scan_state clears it */
+    g_scan_start_ms = now_ms();
+    g_state = ST_SCANNING;
+    esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH_BONDED, 0);
+}
+
+/* Resume after boot / fail / close. If we hold a bond, run the bonded-probe
+ * so a peer currently in fresh-pairing (discoverable) is paired cleanly via
+ * a fresh SSP instead of a doomed outbound page; otherwise the probe falls
+ * back to open_bonded() on inquiry completion. With no bond, just scan. */
+static void resume_scan(void) {
+    if (esp_bt_gap_get_bond_device_num() > 0) {
+        probe_then_page_or_pair();
+    } else {
+        begin_scan_round();
+    }
+}
+
+/* ---- esp_timer callbacks (run in the esp_timer task) ---- */
+
+static void lock_tick_cb(void *arg) {
+    lock();
+    if (g_state != ST_SCANNING) {
+        unlock();
+        return;
+    }
+    int64_t t = now_ms();
+
+    if (g_candidate.active) {
+        ewma_entry_t *e = ewma_find(g_candidate.bda);
+        if (e && (t - e->last_seen_ms) > CANDIDATE_GONE_MS) {
+            printf("[hid] candidate gone\n");
+            memset(&g_candidate, 0, sizeof(g_candidate));
+        }
+    }
+
+    if (g_candidate.active) {
+        int64_t stable = t - g_candidate.set_at_ms;
+        int64_t total = t - g_scan_start_ms;
+        if (stable >= LOCK_WAIT_MS || total >= MAX_WAIT_MS) {
+            open_candidate();
+        }
+    }
+    unlock();
+}
+
+static void conn_timeout_cb(void *arg) {
+    lock();
+    if (g_state != ST_CONNECTING) {
+        unlock();
+        return; /* OPEN/CLOSE already resolved this attempt */
+    }
+    printf("[hid] connect timeout, rescan\n");
+    esp_bd_addr_t tried;
+    memcpy(tried, g_candidate.bda, sizeof(tried));
+    reset_scan_state();
+    int64_t delay = note_connect_fail(tried);
+    arm_rescan(delay);
+    unlock();
+}
+
+static void rescan_backoff_cb(void *arg) {
+    lock();
+    if (g_state == ST_CONNECTED) {
+        unlock();
+        return; /* raced with a successful open; stay connected */
+    }
+    resume_scan();
+    unlock();
+}
+
+/* ---- GAP callback (runs in the BT task) ---- */
+
+static void handle_disc_result(esp_bt_gap_cb_param_t *p) {
+    const uint8_t *bda = p->disc_res.bda;
+    char nm[64] = {0};
+    const char *name = NULL;
+    int8_t rssi = 0;
+
+    for (int i = 0; i < p->disc_res.num_prop; i++) {
+        esp_bt_gap_dev_prop_t *prop = &p->disc_res.prop[i];
+        if (prop->type == ESP_BT_GAP_DEV_PROP_BDNAME) {
+            name = (const char *)prop->val;
+        } else if (prop->type == ESP_BT_GAP_DEV_PROP_RSSI) {
+            rssi = *((int8_t *)prop->val);
+        } else if (prop->type == ESP_BT_GAP_DEV_PROP_EIR) {
+            uint8_t len = 0;
+            uint8_t *d = esp_bt_gap_resolve_eir_data(
+                (uint8_t *)prop->val, ESP_BT_EIR_TYPE_CMPL_LOCAL_NAME, &len
+            );
+            if (!d) {
+                d = esp_bt_gap_resolve_eir_data(
+                    (uint8_t *)prop->val, ESP_BT_EIR_TYPE_SHORT_LOCAL_NAME, &len
+                );
+            }
+            if (d && len && !name) {
+                if (len > sizeof(nm) - 1) {
+                    len = sizeof(nm) - 1;
+                }
+                memcpy(nm, d, len);
+                nm[len] = 0;
+                name = nm;
+            }
+        }
+    }
+
+    if (!is_gamepad(name)) {
+        return;
+    }
+    lock();
+    if (g_probe) {
+        /* Bonded-probe: react only to the bonded BDA in discoverable mode. */
+        if (bda_eq(bda, g_probe_bda)) {
+            g_probe = false;
+            remove_bond_of(bda); /* safe: no ACL yet (probe runs before page) */
+            memcpy(g_candidate.bda, bda, 6);
+            g_candidate.active = true;
+            g_candidate.smoothed = 0;
+            g_candidate.set_at_ms = now_ms();
+            issue_connect(bda); /* halts scan, arms timeout, dev_open */
+        }
+        unlock();
+        return;
+    }
+    if (g_state == ST_SCANNING) {
+        int64_t t = now_ms();
+        float s = ewma_update(bda, rssi, t);
+        if (s != -127.0f) {
+            candidate_update(bda, s, t);
+        }
+    }
+    unlock();
+}
+
+static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param) {
+    switch (event) {
+    case ESP_BT_GAP_DISC_RES_EVT:
+        handle_disc_result(param);
+        break;
+    case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
+        if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
+            lock();
+            if (g_probe && g_state == ST_SCANNING) {
+                /* Probe ended without matching the bonded peer: it must be in
+                 * page-only bonded-reconnect mode. Fall back to outbound page.
+                 * The SCANNING guard makes this a no-op when the STOPPED was
+                 * triggered by our own cancel after OPEN OK (g_probe should be
+                 * cleared there, but be defensive). */
+                g_probe = false;
+                open_bonded();
+            } else if (g_state == ST_SCANNING) {
+                /* Continuous inquiry: restart immediately while still scanning
+                 * (keeps candidate/EWMA clocks). */
+                esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+            }
+            unlock();
+        }
+        break;
+    case ESP_BT_GAP_CFM_REQ_EVT:
+        esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
+        break;
+    case ESP_BT_GAP_KEY_REQ_EVT:
+        /* Headless host: no keyboard. Accept with passkey 0 so SSP never stalls. */
+        esp_bt_gap_ssp_passkey_reply(param->key_req.bda, true, 0);
+        break;
+    case ESP_BT_GAP_KEY_NOTIF_EVT:
+        printf("[gap] KEY_NOTIF passkey=%06" PRIu32 "\n", param->key_notif.passkey);
+        break;
+    case ESP_BT_GAP_PIN_REQ_EVT: {
+        esp_bt_pin_code_t pin = {0};
+        esp_bt_gap_pin_reply(param->pin_req.bda, true, 16, pin);
+        break;
+    }
+    case ESP_BT_GAP_AUTH_CMPL_EVT:
+        printf(
+            "[gap] AUTH_CMPL addr=%02x:%02x:%02x:%02x:%02x:%02x name=%s stat=%d %s lk=%d\n",
+            param->auth_cmpl.bda[0],
+            param->auth_cmpl.bda[1],
+            param->auth_cmpl.bda[2],
+            param->auth_cmpl.bda[3],
+            param->auth_cmpl.bda[4],
+            param->auth_cmpl.bda[5],
+            (const char *)param->auth_cmpl.device_name,
+            (int)param->auth_cmpl.stat,
+            (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) ? "OK" : "FAIL",
+            (int)param->auth_cmpl.lk_type
+        );
+        break;
+    default:
+        break;
+    }
+}
+
+/* ---- HID callback (runs in the esp_hidh event task) ---- */
 
 static void
 hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
     const uint8_t *bda = NULL;
-    esp_hid_transport_t transport = ESP_HID_TRANSPORT_BT;
 
     switch (event_id) {
     case ESP_HIDH_OPEN_EVENT:
         bda = esp_hidh_dev_bda_get(param->open.dev);
-        transport = esp_hidh_dev_transport_get(param->open.dev);
+        esp_timer_stop(g_conn_timeout);
         if (param->open.status == ESP_OK) {
-            set_state(ST_CONNECTED, esp_timer_get_time() / 1000);
+            lock();
+            halt_scanning_side_effects();
+            /* A successful OPEN (esp_hidh_dev_open we issued OR an inbound page
+             * we accepted) makes the bonded-probe irrelevant. Clear it so the
+             * DISC_STATE=STOPPED we just triggered does NOT get misread as
+             * "probe ended without match" and run a spurious open_bonded(). */
+            g_probe = false;
+            g_state = ST_CONNECTED;
+            memset(&g_candidate, 0, sizeof(g_candidate));
+            note_connect_ok();
+            unlock();
             printf("[hid] open: addr=");
             print_bda(bda);
-            printf(" transport=%s\n", transport_str(transport));
+            printf(" transport=BR_EDR\n");
             hid_dump_report_map(param->open.dev);
-            note_connect_ok(bda);
         } else {
             printf("[hid] open FAIL: addr=");
             print_bda(bda);
-            printf(
-                " transport=%s status=0x%x\n",
-                transport_str(transport),
-                (unsigned)param->open.status
-            );
-            /* Stale bond on our side vs a re-paired pad -> auth fails. Free the
-             * dev first, then drop the link key so the next scan+open does a
-             * fresh Just Works pairing instead of repeating the failure. */
+            printf(" transport=BR_EDR status=0x%x\n", (unsigned)param->open.status);
             if (param->open.dev) {
                 esp_hidh_dev_free(param->open.dev);
             }
-            remove_bond_of(bda);
-            backoff_to_scan();
-            note_connect_fail(bda); /* may lengthen backoff + hint after a few */
+            lock();
+            remove_bond_of(bda); /* peer rejected our key -> drop it, next round pairs fresh */
+            int64_t delay = note_connect_fail(bda);
+            reset_scan_state();
+            arm_rescan(delay);
+            unlock();
         }
         break;
     case ESP_HIDH_INPUT_EVENT: {
@@ -280,7 +562,6 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
             break;
         }
 #if HID_DEBUG_DELTA
-        /* bring-up aid: show which raw bytes moved, to map fields in Task 3 */
         static uint8_t raw_prev[64];
         static uint16_t raw_prev_len = 0;
         if (param->input.length <= sizeof(raw_prev)) {
@@ -310,16 +591,16 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
     }
     case ESP_HIDH_CLOSE_EVENT:
         bda = esp_hidh_dev_bda_get(param->close.dev);
-        transport = esp_hidh_dev_transport_get(param->close.dev);
         printf("[hid] close: addr=");
         print_bda(bda);
-        printf(
-            " transport=%s status=0x%x\n", transport_str(transport), (unsigned)param->close.status
-        );
+        printf(" transport=BR_EDR status=0x%x\n", (unsigned)param->close.status);
         if (param->close.dev) {
             esp_hidh_dev_free(param->close.dev);
         }
-        backoff_to_scan();
+        lock();
+        reset_scan_state(); /* bond kept; resume_scan() will page it after backoff */
+        arm_rescan(RETRY_BACKOFF_MS);
+        unlock();
         break;
     default:
         break;
@@ -328,156 +609,41 @@ hidh_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *eve
 
 void app_main(void) {
     ESP_ERROR_CHECK(nvs_flash_init());
-    ESP_ERROR_CHECK(esp_hid_gap_init(ESP_BT_MODE_BTDM));
-    ESP_LOGI(TAG, "BTDM initialized");
+    g_app_mutex = xSemaphoreCreateMutex();
+    ESP_ERROR_CHECK(bt_stack_start());
 
-#if CONFIG_BT_BLE_ENABLED
-    /* esp_hid_scan() blocks on a BLE semaphore; need GATTC callback registered */
-    ESP_ERROR_CHECK(esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler));
-#endif
+    ESP_ERROR_CHECK(esp_bt_gap_register_callback(bt_gap_cb));
 
     esp_hidh_config_t hidh_cfg = {
         .callback = hidh_event_handler,
         .event_stack_size = 4096,
         .callback_arg = NULL,
     };
+#if CONFIG_BT_BLE_ENABLED
+    /* esp_hidh always initializes its BLE host path (esp_ble_hidh_init) which
+     * blocks until a GATTC app-register event is routed; that event needs this
+     * callback even though we use BR/EDR only. Plumbing, not a BLE data flow. */
+    ESP_ERROR_CHECK(esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler));
+#endif
     ESP_ERROR_CHECK(esp_hidh_init(&hidh_cfg));
 
-    /* Boot bond diagnostic. Actual reconnect (outbound page of a bonded peer)
-     * is done by try_open_bonded() inside the scan loop, so it also covers a
-     * peer that bonds later while we keep running. */
+    const esp_timer_create_args_t tick_args = {
+        .callback = lock_tick_cb,
+        .name = "lock_tick",
+    };
+    const esp_timer_create_args_t ct_args = {.callback = conn_timeout_cb, .name = "conn_timeout"};
+    const esp_timer_create_args_t rb_args = {
+        .callback = rescan_backoff_cb,
+        .name = "rescan_backoff",
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&tick_args, &g_lock_tick));
+    ESP_ERROR_CHECK(esp_timer_create(&ct_args, &g_conn_timeout));
+    ESP_ERROR_CHECK(esp_timer_create(&rb_args, &g_rescan_backoff));
+
     printf("[hid] boot bonds=%d\n", esp_bt_gap_get_bond_device_num());
 
-    g_scan_start_ms = esp_timer_get_time() / 1000;
-
-    while (1) {
-        int64_t now = esp_timer_get_time() / 1000;
-
-        /* CONNECTED: do not scan or re-open (inquiry would break the link).
-         * Reports arrive via the event callback. Wait for a close event. */
-        if (g_state == ST_CONNECTED) {
-            vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
-        }
-        /* CONNECTING: a pending open owns the radio; wait for its result,
-         * but bail out to rescan if no event arrives (device vanished). */
-        if (g_state == ST_CONNECTING) {
-            if (now - g_state_since_ms > CONNECT_TIMEOUT_MS) {
-                printf("[hid] connect timeout, rescan\n");
-                esp_bd_addr_t tried;
-                memcpy(tried, g_candidate.bda, sizeof(tried));
-                reset_to_scan();
-                /* Do NOT drop the bond yet: a bare timeout usually means the
-                 * peer is simply absent (powered off). note_connect_fail clears
-                 * it only after several silent failures (likely stale key). */
-                note_connect_fail(tried);
-            } else {
-                vTaskDelay(pdMS_TO_TICKS(200));
-                continue;
-            }
-        }
-        /* ST_SCANNING but still inside a post-fail/backoff window: idle. */
-        if (now < g_rescan_at_ms) {
-            vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
-        }
-
-        /* If we hold a bond, page that peer directly: a bonded pad in its
-         * reconnect state is not visible to inquiry. Falls back to inquiry
-         * below once the bond is gone (fresh pairing). */
-        if (try_open_bonded()) {
-            continue;
-        }
-
-        esp_hid_scan_result_t *results = NULL;
-        size_t n = 0;
-        esp_err_t sr = esp_hid_scan(SCAN_DURATION_SEC, &n, &results);
-        if (sr != ESP_OK) {
-            ESP_LOGE(TAG, "scan failed: %s", esp_err_to_name(sr));
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-
-        /* 层1: 只保留 gamepad-class BR/EDR; count distinct gamepads for
-         * single-candidate fast-connect (no competitor -> no need to wait for
-         * the 3s anti-oscillation window). */
-        esp_hid_scan_result_t *best = NULL;
-        int gp_count = 0;
-        for (size_t i = 0; i < n; i++) {
-            if (is_gamepad(&results[i])) {
-                gp_count++;
-                if (!best || results[i].rssi > best->rssi) {
-                    best = &results[i];
-                }
-            }
-        }
-
-        if (!best) {
-            if (g_candidate.active && g_not_seen_count >= CANDIDATE_GONE_ROUNDS) {
-                printf("[hid] candidate gone\n");
-                memset(&g_candidate, 0, sizeof(g_candidate));
-            }
-            if (g_candidate.active)
-                g_not_seen_count++;
-            esp_hid_scan_results_free(results);
-            continue;
-        }
-
-        /* 层2: EWMA 平滑 */
-        float *smoothed_p = ewma_get_or_create(best->bda, best->transport);
-        if (!smoothed_p) {
-            esp_hid_scan_results_free(results);
-            continue;
-        }
-        if (*smoothed_p == -127.0f) {
-            *smoothed_p = (float)best->rssi; /* 首次采到 */
-        } else {
-            *smoothed_p = (float)best->rssi * EWMA_ALPHA_NUM / EWMA_ALPHA_DEN +
-                          *smoothed_p * (EWMA_ALPHA_DEN - EWMA_ALPHA_NUM) / EWMA_ALPHA_DEN;
-        }
-
-        /* 层3: 迟滞 + 锁定计时 */
-        int64_t now_ms = esp_timer_get_time() / 1000;
-
-        if (!g_candidate.active) {
-            g_candidate.active = true;
-            memcpy(g_candidate.bda, best->bda, 6);
-            g_candidate.transport = best->transport;
-            g_candidate.smoothed = *smoothed_p;
-            g_candidate.set_at_ms = now_ms;
-            g_not_seen_count = 0;
-            printf("[hid] candidate: addr=");
-            print_bda(best->bda);
-            printf(" smoothed=%.1f gp=%d\n", g_candidate.smoothed, gp_count);
-        } else if (bda_eq(best->bda, g_candidate.bda) && best->transport == g_candidate.transport) {
-            /* 同候选: 计时继续朝 LOCK_WAIT_MS 走 */
-            g_not_seen_count = 0;
-        } else if (*smoothed_p >= g_candidate.smoothed + HYSTERESIS_DB) {
-            /* 新候选平滑 RSSI 比候选大 >= 3dB → 明显更强; 替换 + 重置计时 */
-            g_candidate.active = true;
-            memcpy(g_candidate.bda, best->bda, 6);
-            g_candidate.transport = best->transport;
-            g_candidate.smoothed = *smoothed_p;
-            g_candidate.set_at_ms = now_ms;
-            g_not_seen_count = 0;
-            printf("[hid] candidate replace: addr=");
-            print_bda(best->bda);
-            printf(" smoothed=%.1f\n", g_candidate.smoothed);
-        }
-        /* else: 接近打平, 保留, 不重置计时 */
-
-        /* 锁定条件: 稳定 3s 或超 8s 兜底 -> 发起连接并转入 CONNECTING。
-         * 不再 reset_to_scan：连接结果由 OPEN/CLOSE 事件驱动状态迁移。 */
-        int64_t stable_elapsed = now_ms - g_candidate.set_at_ms;
-        int64_t total_elapsed = now_ms - g_scan_start_ms;
-        if (stable_elapsed >= LOCK_WAIT_MS || total_elapsed >= MAX_WAIT_MS) {
-            printf("[hid] connecting: addr=");
-            print_bda(g_candidate.bda);
-            printf(" transport=%s\n", transport_str(g_candidate.transport));
-            set_state(ST_CONNECTING, now_ms);
-            esp_hidh_dev_open(g_candidate.bda, g_candidate.transport, 0);
-        }
-
-        esp_hid_scan_results_free(results);
-    }
+    lock();
+    resume_scan();
+    unlock();
+    /* No loop: GAP/HID callbacks + esp_timer drive everything from here. */
 }
