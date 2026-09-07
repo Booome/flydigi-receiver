@@ -44,6 +44,29 @@
   与设计选择见 `docs/superpowers/specs/2026-09-06-bt-hid-callback-refactor-design.md`，
   实测时延表见 spec §十二。HID 解码模块（`hid_report.{c,h}`）未触碰，按钮位映射的实测校正仍
   留后续任务。
+- **场景 1 重写（`bt-hid-scenario1-freshpair`，2026-09-07 PR #1 合并）** ✓
+  v1 代码被发现混入"掩耳盗铃"式自检不充分的设计，PR #1 是**全部重写**——不参考 v1 的
+  状态机/锁逻辑，从"全新首配"这一最简单场景出发重写 `apps/default/`：
+  - `bt_stack.{c,h}` 极小化（v1 拷贝 + 一行 gattc 修复）；`hid_report.{c,h}` 新写（只 raw 打印）
+  - `main.c` 三个 esp_timer 推进状态机：`lock_tick` 250ms 周期重评候选；
+    `conn_timeout` 4s 单次兜底（dev_open 后无 OPEN_EVT 即 fail）；
+    `rescan_backoff` 300ms 单次延迟（失败/CLOSE 后等 ACL 拆干净再续扫）
+  - 候选算法同上：EWMA α=0.3 + hysteresis 3dB + `stable≥3s||total≥8s` → `esp_hidh_dev_open`
+  - 错误处理分类：关键路径（`timer_create` / `issue_connect` 内 start_once /
+    关键 stop）用 `ESP_ERROR_CHECK`；瞬态失败（start_discovery / start_periodic /
+    idempotent stop / 重复 start_once）走 fallback `arm_rescan` 重试，并补 `(benign)` log
+  - DISC_STATE STOPPED 重启只重启 discovery，不重启 lock_tick（避免周期性 timer 重复
+    start 触发 INVALID_STATE 死循环——本 PR 实测捕获的 168 次/0.2s 死循环即源于此）
+  - **In-scope**：fresh pair（无 bond + pad 进配对态）。**Out-of-scope**：inbound ACL_CONN /
+    bonded reconnect / HID report decode → 场景 2+ 各自一个 PR
+  - 实机验证：`erase_flash` 后 NVS bonds=0 → boot 17s 内首次 open OK → ~60 INPUT/s 稳定；
+    后续 close → 再连 ~3s
+  - 全仓库风格：`PenaltyReturnTypeOnItsOwnLine: 100000` 加进 `.clang-format`，
+    优先 wrap 参数而非拆 `static void`（影响 6 处签名，SLE 老代码同步更新）
+  - 5 个 commit：`2b147b8` 重写 → `d48bdad` 错误处理 → `fce1e5a` err 变量复用
+    → `3052695` clang-format → `db15568` 注释极简 + AGENTS.md 新规则
+  - 后续**禁止**复制 v1 状态机逻辑（v1 的 g_probe / dead-clock / 并发 dev_open 等
+    "卡 30s"症状已被废弃）；下一个 PR 走场景 2（inbound ACL_CONN + bonded reconnect）
 - 设计文档：`docs/superpowers/specs/2026-09-05-esp32-env-setup-design.md` / `2026-09-05-bt-scan-design.md` / `2026-09-05-bt-hid-host-capture-design.md`
 
 #### **里程碑命名约定（2026-09 修订）**
