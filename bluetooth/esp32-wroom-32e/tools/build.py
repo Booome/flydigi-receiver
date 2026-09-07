@@ -24,16 +24,18 @@ BUILD_DIR = PROJECT_ROOT / "build"
 IDF_PATH = Path("/opt/esp-idf")
 
 
-def activate_idf() -> None:
+def idf_env() -> dict[str, str]:
+    """Environment with ESP-IDF activated, or os.environ if idf.py is on PATH."""
     if shutil.which("idf.py") is not None:
-        return
+        return dict(os.environ)
     export_sh = IDF_PATH / "export.sh"
     if not export_sh.exists():
         sys.exit(f"idf.py not on PATH and {export_sh} not found; "
                  "install esp-idf (yay -S esp-idf) or source its env manually")
-    subprocess.run(["bash", "-c", f"source {export_sh} >/dev/null 2>&1 && "
-                                   "which idf.py"],
-                   check=True)
+    res = subprocess.run(
+        ["bash", "-c", f"source {export_sh} >/dev/null && env"],
+        check=True, capture_output=True, text=True)
+    return dict(line.split("=", 1) for line in res.stdout.splitlines() if "=" in line)
 
 
 def app_dir(name: str) -> Path:
@@ -44,9 +46,9 @@ def app_dir(name: str) -> Path:
     return p
 
 
-def run(cmd: list[str], cwd: Path) -> None:
+def run(cmd: list[str], cwd: Path, env: dict[str, str]) -> None:
     print(f"$ {' '.join(cmd)} (cwd={cwd})", flush=True)
-    res = subprocess.run(cmd, cwd=cwd)
+    res = subprocess.run(cmd, cwd=cwd, env=env)
     if res.returncode != 0:
         sys.exit(res.returncode)
 
@@ -60,7 +62,7 @@ def main() -> None:
                     help="skip 'idf.py set-target esp32' (assumes already set)")
     args = ap.parse_args()
 
-    activate_idf()
+    idf = idf_env()
 
     app = app_dir(args.app)
     build = BUILD_DIR / args.app
@@ -72,9 +74,9 @@ def main() -> None:
         shutil.rmtree(build)
 
     if not args.no_set_target:
-        run(["idf.py", "-B", build_rel, "set-target", "esp32"], cwd=app)
+        run(["idf.py", "-B", build_rel, "set-target", "esp32"], cwd=app, env=idf)
 
-    run(["idf.py", "-B", build_rel, "build"], cwd=app)
+    run(["idf.py", "-B", build_rel, "build"], cwd=app, env=idf)
 
 
 if __name__ == "__main__":

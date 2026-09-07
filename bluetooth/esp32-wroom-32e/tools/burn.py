@@ -39,15 +39,18 @@ def load_env() -> dict[str, str]:
     return env
 
 
-def activate_idf() -> None:
+def idf_env() -> dict[str, str]:
+    """Environment with ESP-IDF activated, or os.environ if idf.py is on PATH."""
     if shutil.which("idf.py") is not None:
-        return
+        return dict(os.environ)
     export_sh = IDF_PATH / "export.sh"
     if not export_sh.exists():
         sys.exit("idf.py not on PATH; install esp-idf (yay -S esp-idf) or "
                  "source /opt/esp-idf/export.sh first")
-    subprocess.run(["bash", "-c", f"source {export_sh} >/dev/null 2>&1"],
-                   check=True)
+    res = subprocess.run(
+        ["bash", "-c", f"source {export_sh} >/dev/null && env"],
+        check=True, capture_output=True, text=True)
+    return dict(line.split("=", 1) for line in res.stdout.splitlines() if "=" in line)
 
 
 def app_dir(name: str) -> Path:
@@ -57,9 +60,9 @@ def app_dir(name: str) -> Path:
     return p
 
 
-def run(cmd: list[str], cwd: Path) -> None:
+def run(cmd: list[str], cwd: Path, env: dict[str, str]) -> None:
     print(f"$ {' '.join(cmd)} (cwd={cwd})", flush=True)
-    res = subprocess.run(cmd, cwd=cwd)
+    res = subprocess.run(cmd, cwd=cwd, env=env)
     if res.returncode != 0:
         sys.exit(res.returncode)
 
@@ -90,13 +93,13 @@ def main() -> None:
                      "either add it or pass --port <path>")
         port = env[key]
 
-    activate_idf()
+    idf = idf_env()
 
     app = app_dir(args.app)
     build = BUILD_DIR / args.app
     build_rel = os.path.relpath(build, app)
 
-    run(["idf.py", "-B", build_rel, "-p", port, "flash"], cwd=app)
+    run(["idf.py", "-B", build_rel, "-p", port, "flash"], cwd=app, env=idf)
 
 
 if __name__ == "__main__":
