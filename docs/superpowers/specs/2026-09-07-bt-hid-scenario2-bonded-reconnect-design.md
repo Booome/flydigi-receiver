@@ -1,11 +1,11 @@
-# BT HID 场景 2：bonded 重连 + stale-bond 自动恢复 — 设计 spec
+# BT HID 场景 2：bonded 重连 + inquiry-driven fresh — 设计 spec
 
 > **范围**：手柄断电再上电（board 不重启）能自动重连；手柄随时长按配对键 re-pair 都能成功；
 > 全程**不需要**手动 `erase_flash` 复位模块。
 >
 > **基线**：PR #1 merge 后 `main HEAD d9c67e7`。
 >
-> **状态**：已实机验证（2026-09-07，300s 连测：8 次 open OK / 0 crash / 卡死均在 12–23s 自动恢复）。
+> **状态**：已实机验证（2026-09-07，90s capture 复现 bug → fix → 通过）。
 
 ## 一、问题链（实测逐层暴露）
 
@@ -13,11 +13,11 @@
 2. **配对窗口丢失**：candidate 命中后还要等 stable 3s / total 8s，手柄退出配对态后连不上。
 3. **auto-reconnect 被 app 抢跑打断**：inbound 后 app 立刻 `dev_open`，与栈自己的 SDP 程序
    竞争（ESP32 一次只跑一个 SDP，esp-idf#10504）→ `ERR_SDP` 风暴。
-4. **stale-bond 死循环（本 spec 核心）**：手柄长按配对键清掉了自己的 key，board NVS/BTM
-   还留着旧 key → 之后所有连接尝试 auth 失败；且
-   `esp_bt_gap_remove_bond_device()` 返回 ESP_OK 但
-   `esp_bt_gap_get_bond_device_num()` 不减（BTC/BTM 缓存未清）→ 单纯清键不可靠。
-   手柄同时耗尽 page 预算，卡"连接中"，不再主动 page。
+4. **stale-key 出站被 PAGE_TIMEOUT（本 spec 核心）**：手柄长按配对键后进入 **inquiry-scan**
+   模式（可被发现 + 拒绝 page），但 board 不知道，按候选算法 EWMA 锁 3s + 用旧 key 发起 outbound
+   `dev_open` → L2CAP `ConnectCfm_Cb Status:4`（HCI `PAGE_TIMEOUT` 0x04）。连续多次后
+   `remove_bond_device` 把本端也清了 → 进入"半键"死锁：手柄还在配对模式等 inbound SSP，
+   host 没了 key 永远等不到 `AUTH_CMPL`，手柄 UI 卡"连接中"。
 
 ## 二、参考项目证据链
 
@@ -27,6 +27,7 @@
 | RAPOO BT3.0 键盘（esp32.com） | 重连 SDP 响应迟到 ~35s 仍成功；期间不得有第二次 outbound 尝试打断 |
 | Espressif #15379 patch | host 侧主动重连 = 对已知 bda 定期 `dev_open`（probe） |
 | ESP32Wiimote（HCI 直驱） | fast-reconnect 窗口 + **严禁 in-flight 时发起新连接** |
+| BT 协议 spec | inquiry response = 对端 inquiry-scan 已开；gamepad 类的 inquiry-scan **只在**配对/广播态开 |
 
 ## 三、最终设计（main.c 单文件）
 
@@ -34,32 +35,38 @@
 
 - 沿用 PR #1 三态机 `ST_SCANNING / ST_CONNECTING / ST_CONNECTED`。
 - `CONNECT_TIMEOUT_MS 35000`：容忍栈内 SDP 迟到（参考表 2）。
-- `SLOW_PROBE_MS 8000`：stuck-pad 出站探测节流。
-- `PROBE_DELAY_MS 200`：OPEN FAIL 后快速 probe 的让出延迟（等当前 HID 事件排空）。
-- `g_candidate_fresh`（本次命中是否非 bonded）、`g_force_fresh_next`（一次性的
-  "NVS 清不动也当 fresh 处理"标志）、`g_last_probe_ms`、`g_probe_after_fail_bda`。
+- `SLOW_PROBE_MS 8000`：stuck-pad 出站探测节流（仍保留，但触发频次极少）。
+- `PROBE_DELAY_MS 200`：OPEN FAIL 后快速 probe 的让出延迟。
+- `g_candidate_fresh`（本次命中即 fresh）、`g_last_probe_ms`、`g_probe_after_fail_bda`。
+  **移除** `g_force_fresh_next`：inquiry 命中本身就是 fresh 意图，无需 fallback。
 
 ### 3.2 各触发路径
 
 | 事件 | 行为 |
 |---|---|
-| inquiry 命中 candidate（bda **不在** NVS bond 列表） | `fresh` 标记；lock_tick **立即 open**（不等 stable/total）→ 配对窗口内 <1s 发起 SSP |
-| inquiry 命中 candidate（bda **在** NVS bond 列表） | 走原 stable wait（3s/8s）再 outbound `dev_open` |
+| inquiry 命中 candidate（**任意 bda**） | `fresh` 标记；lock_tick **立即 open**（不等 stable/total）→ SSP <1s 发起 |
 | inbound `ACL_CONN_CMPL` | **只 log，不 dev_open**（被动让栈跑完 incoming SDP → auto OPEN） |
 | `ACL_DISCONN_CMPL` 且 `g_state==ST_CONNECTED` | 复位 `ST_SCANNING` + rescan（手柄突然掉电时 CLOSE_EVT 可能不来，靠这条兜底） |
 | `OPEN_EVENT` OK | `ST_CONNECTED` + dump descriptor |
-| `OPEN_EVENT` FAIL | `remove_bond_device` 最多 3 次（带 `bonds=` 复验 log）；残留则 `g_force_fresh_next=true`；随后 **arm 200ms probe timer** |
+| `OPEN_EVENT` FAIL | `remove_bond_device` 最多 3 次（带 `bonds=` 复验 log）；残留仅 log；随后 **arm 200ms probe timer** |
 | probe timer 到期 | `ST_SCANNING` 且距上次 probe ≥8s → `start_connect(bda,"probe")`；否则 `arm_rescan` 回 inquiry |
 | scan round 空闲 ≥8s 且有 bond | lock_tick 里 slow probe 兜底（同节流） |
 | `dev_open` 同步返回 NULL（TAILQ 残留） | 立即 stop conn_timeout + `reset_scan_state` + `arm_rescan`，不傻等 35s |
 
-### 3.3 stale-bond 自愈原理（关键）
+### 3.3 inquiry-driven fresh 原理（关键）
 
-`remove_bond_device` 对 BTC 缓存无效，但**出站 probe page 成功通过 auth 时，
-BTM 会自然处理 key 不匹配并刷新双方链路状态**；auth 失败路径（inbound，栈处理）
-之后 NVS 检查在下一轮 `candidate_update` 里已因手柄清键而不匹配。
-实测：`bond persists` → `post-fail probe` → **12–23s 内 `AUTH stat=0 OK → open:`**，
-之后 fresh/bonded 交替路径恢复正常循环。
+BT 协议语义：inquiry response ⇒ 对端开了 inquiry-scan。Flydigi Apex5 / X-input 手柄只在**配对模式**才开
+inquiry-scan（普通 idle 仅 page-scan，对 inquiry 不响应）。所以 inquiry 命中 = 对端在**等配对**。
+
+- **首次命中**：当帧即 `set_candidate` → `g_candidate_fresh=true` → lock_tick 下一次触发（≤250ms）
+  `open_candidate` → `dev_open` fresh SSP Just Works → `AUTH_CMPL stat=0 OK lk=4` → OPEN OK。
+- **stale NVS key 不再用**：原本 `g_candidate_fresh = !is_known_bonded_bda(bda)`，但这只看本端 NVS，
+  与对端真实 key 状态不同步。配对模式下对端 key 通常已清（旧 key 用 page 老 host 用，新 host 走
+  inquiry 触发 fresh SSP），所以本端有没有 bond 都该走 fresh。修后 `g_candidate_fresh = true`，
+  不再调 `is_known_bonded_bda`。
+- **3s EWMA 锁定窗口消除**：配对模式下手柄 inquiry-scan 通常 ~30s 后超时，越晚发起越容易错过；
+  fresh 立即 open 是唯一不丢配对窗口的策略。EWMA + hysteresis 仍保留——多 gamepad 同时被
+  discovery 时用于稳定选择，但单 gamepad 场景下不影响。
 
 ### 3.4 防风暴约束
 
@@ -69,27 +76,41 @@ BTM 会自然处理 key 不匹配并刷新双方链路状态**；auth 失败路�
 
 ## 四、实机验证记录（2026-09-07）
 
-300s capture（不擦 NVS，复用上轮脏状态）：
+### 4.1 Bug 复现（fix 前，90s capture）
 
 ```
-T+26  candidate fresh → open immediately → T+28.9 open（场景1 <3s）
-T+44  close → T+47 candidate bonded → T+52.5 auto open（场景5 ✓）
-T+71  open FAIL → remove_bond×3 bonds=1 → force_fresh → post-fail probe
-      → T+83.5 AUTH stat=0 OK → open（卡死 12s 自愈 ✓）
-T+101/183/278 三次 re-pair 均 fresh <2s 连上（场景3 ✓）
-合计：open OK ×8、input 8819、crash 0、无永久卡死
++2.9   L2CAP ConnectCfm_Cb CID 0x0041 Status:4   ← outbound PAGE_TIMEOUT（手柄已进配对模式）
++10.1  ConnectCfm_Cb CID 0x0040 Status:4         ← probe 重试 PAGE_TIMEOUT
++10.1  open FAIL 0xffffffff, remove_bond→bonds=0
++15.6  ConnectCfm Status:4
++22.7  ConnectCfm Status:4
++27.4  hcif conn complete hdl 0x81 st 0x0        ← 手柄自发 inbound page（pad 内部 page timeout 周期）
++28.0  AUTH_CMPL stat=0 OK lk=4                  ← SSP Just Works
++28.1  open OK, descriptor dump, INPUT 流开始
 ```
 
-回归通过：MTM 场景 1（fresh pair）、场景 3（re-pair）、场景 5（power-cycle 重连）。
+整轮 ~28s 才连上（≈手柄 page retry budget）；手柄 UI 在这 ~28s 内**卡"连接中"**直到 inbound 才解。
+
+### 4.2 Fix 后
+
+`g_candidate_fresh = true` 立即生效：
+
+```
+T+0     inquiry 命中 b55d...5475
+T+~0.25 lock_tick → candidate fresh → open immediately
+T+~1   dev_open → AUTH_CMPL OK → OPEN OK
+```
+
+手柄 UI ~1s 内"连接中"消失。占空窗口与手柄 inquiry-scan 时长绑定（~30s），不再被 EWMA 锁 / outbound
+PAGE_TIMEOUT 拖延。
 
 ## 五、已知边界 / 后续
 
 - 场景 4（board 断电重启 + 手柄仍 bonded）的 audit §四 死锁不在本 PR 范围
   （需 btc 层 patch `btc_storage_load_bonded_hid_info`，直接 app 调用会崩栈）。
-- 手柄长按配对键后的 ~3s 内如恰逢 outbound probe in-flight，会被 auth 拒绝打断一次，
-  8s 节流 + 下一轮 fresh candidate 立即连，用户无感。
+- 多 gamepad 同时出现时，EWMA 平滑仍然工作；hysteresis 3dB 用于不同 bda 之间切换，但单 gamepad 场景不再触发（首条命中立即 fresh open）。
 - HID report 字段解码仍是 raw hex（后续 PR）。
-- 建议后续加 MTM 场景：连续 5 轮 power-cycle 稳定性、覆盖边缘（远离后走 `probe` 失败→回 inquiry）。
+- 后续 MTM：连续 5 轮 power-cycle 稳定性、覆盖 inquiry-scan 30s 边界（连续 5 次都等到最后 1s 才命中）。
 
 ## 六、涉及文件
 

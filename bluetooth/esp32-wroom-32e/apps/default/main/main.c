@@ -7,9 +7,12 @@
  *
  * Scope of this milestone:
  *   - Bring up BT (bt_stack.c) + esp_hidh host.
- *   - Scenario 1: continuous inquiry; on gamepad-name match, evaluate the
- *     3-layer candidate (EWMA + hysteresis + stable/total window) and open
- *     the first matching HID device.
+ *   - Scenario 1: continuous inquiry; every name-matched DISC_RES opens
+ *     immediately as a fresh-pair attempt. An inquiry response means the
+ *     peer is in inquiry-scan mode, which on a Flydigi pad only happens
+ *     while it's advertising itself for pairing — so we never use a stale
+ *     NVS key on an outbound page (PAGE_TIMEOUT 0x04, pad UI stuck on
+ *     "connecting"). EWMA + hysteresis still smooth multi-pad RSSI noise.
  *   - Scenario 2 (bonded pad power-cycle): purely passive — the stack
  *     handles device-initiated reconnection end to end (page -> SDP ->
  *     OPEN_EVENT is_orig=false); we only log the inbound ACL and never
@@ -24,15 +27,18 @@
  *     or NVS-only stale bond). HID report field decoding. Both follow-ups.
  *
  * State machine (event-driven, no while(1) loop):
- *   ST_SCANNING   — inquiry running; lock_tick evaluates candidate lock condition
- *                   every LOCK_TICK_MS. On ACL/discovery complete, auto-resume.
+ *   ST_SCANNING   — inquiry running; lock_tick handles the SLOW_PROBE rescue
+ *                   path (no candidate lock window needed).
  *   ST_CONNECTING — dev_open issued; waiting for OPEN_EVENT or connect_timeout.
  *   ST_CONNECTED  — paired, receiving INPUT reports.
  *
- * The 3-layer candidate algorithm (constants unchanged from prior design):
+ * Candidate evaluation:
  *   Layer 1 name allowlist: "Xbox Wireless Controller" / "Pro Controller".
- *   Layer 2 EWMA alpha=0.3 — smooth RSSI jitter.
- *   Layer 3 hysteresis 3 dB + lock when stable>=3s OR total>=8s.
+ *   Layer 2 EWMA alpha=0.3 — smooth RSSI jitter for multi-pad stability.
+ *   Open policy: every name-matched inquiry hit is treated as fresh intent —
+ *     the pad is in pairing mode by definition (only then does it run
+ *     inquiry scan), so any stale NVS key is dropped on the floor instead of
+ *     being used for an outbound page.
  */
 
 #include <stdio.h>
@@ -115,11 +121,6 @@ static int64_t g_last_probe_ms = 0;
  * (bda IS in the bond list) is handled by the auto path on ACL_CONN
  * and skips this flag entirely. */
 static bool g_candidate_fresh = false;
-/* Set after OPEN FAIL with bonded bda even if the NVS clear returned
- * non-OK (some pad clears its key while we keep ours and the removal
- * didn't take effect on the BTC side); the next candidate_update will
- * treat any hit on that bda as fresh and open immediately. */
-static bool g_force_fresh_next = false;
 
 /* Known Apex5 BR/EDR advertised names. Extend as new names appear. */
 static const char *const g_gamepad_names[] = {
@@ -258,11 +259,16 @@ static void set_candidate(const uint8_t *bda, float smoothed, int64_t t, const c
     memcpy(g_candidate.bda, bda, 6);
     g_candidate.smoothed = smoothed;
     g_candidate.set_at_ms = t;
-    g_candidate_fresh = g_force_fresh_next || !is_known_bonded_bda(bda);
-    g_force_fresh_next = false;
+    /* BT spec: an inquiry response means the peer is in inquiry-scan mode,
+     * which on a Flydigi pad only happens while it's advertising itself for
+     * pairing. Treat every inquiry hit as a fresh-pair intent — even if NVS
+     * still has the old key (pad may have cleared its half on long-press),
+     * using the stale key on an outbound page returns PAGE_TIMEOUT 0x04 and
+     * the pad UI stays stuck on the connecting screen. */
+    g_candidate_fresh = true;
     printf("[hid] candidate%s: addr=", action);
     print_bda(bda);
-    printf(" smoothed=%.1f%s\n", smoothed, g_candidate_fresh ? " fresh" : " bonded");
+    printf(" smoothed=%.1f fresh\n", smoothed);
 }
 
 static void candidate_update(const uint8_t *bda, float smoothed, int64_t t) {
@@ -659,14 +665,11 @@ static void hidh_event_handler(
                         }
                     }
                 }
-                /* If our half is still showing in NVS, force the next
-                 * candidate hit to bypass the bonded check. The probe will
-                 * then attempt an outbound page that BTA will run SDP for;
-                 * BTA will run SDP for the in-progress ACL; if SDP still
-                 * fails we reset again. The probe *is* the recovery. */
+                /* Pad may have cleared its key while we keep ours. BTM/NVS
+                 * sometimes ignores the remove — keep the log so hardware
+                 * debugging can see when we don't actually drop our half. */
                 if (is_known_bonded_bda(bda)) {
-                    printf("[hid] bond persists after retries, set force_fresh\n");
-                    g_force_fresh_next = true;
+                    printf("[hid] bond persists after retries\n");
                 }
             }
             lock();
