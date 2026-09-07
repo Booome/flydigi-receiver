@@ -51,7 +51,6 @@
 #include "esp_err.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
-#include "esp_bt.h"
 #include "esp_gap_bt_api.h"
 #include "esp_hidh.h"
 #include "bt_stack.h"
@@ -313,10 +312,6 @@ static void init_hidh_host(void) {
  * dev_open's link-layer auth; auth then runs keyless and the pad drives
  * fresh SSP. */
 static void start_connect(const uint8_t *bda, const char *src, bool wipe_bond) {
-    if (g_state == ST_CONNECTING) {
-        printf("[hid] start_connect: already connecting, ignore\n");
-        return;
-    }
     esp_bd_addr_t peer;
     memcpy(peer, bda, sizeof(peer));
     if (wipe_bond && is_known_bonded_bda(peer)) {
@@ -621,9 +616,10 @@ static void hidh_event_handler(
             printf("[hid] open FAIL: addr=");
             print_bda(bda);
             printf(" transport=BR_EDR status=0x%x\n", (unsigned)param->open.status);
-            if (param->open.dev) {
-                esp_hidh_dev_free(param->open.dev);
-            }
+            /* esp_hidh frees the dev internally on non-SDP failures (the public
+             * dev_free is a no-op in IDF 6.0.2). The SDP-fail dev intentionally
+             * stays: the next dev_open returns NULL for it, which the
+             * stale-TAILQ guard in start_connect already handles. */
             /* Drop our bond half now: the delete defers to link-down while
              * the failing ACL is up, and that matters here because the
              * SLOW_PROBE path opens WITHOUT wiping — a leftover bond would
@@ -659,9 +655,6 @@ static void hidh_event_handler(
         printf("[hid] close: addr=");
         print_bda(bda);
         printf(" transport=BR_EDR status=0x%x\n", (unsigned)param->close.status);
-        if (param->close.dev) {
-            esp_hidh_dev_free(param->close.dev);
-        }
         lock();
         reset_scan_state();
         arm_rescan(RETRY_BACKOFF_MS);
