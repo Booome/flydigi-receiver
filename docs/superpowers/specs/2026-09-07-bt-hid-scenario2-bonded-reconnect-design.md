@@ -5,7 +5,8 @@
 >
 > **基线**：PR #1 merge 后 `main HEAD d9c67e7`。
 >
-> **状态**：已实机验证（2026-09-07，90s capture 复现 bug → fix → 通过）。
+> **状态**：已实机验证（2026-09-07 复现 bug → fix；2026-09-08 死代码清理后 18 轮
+> pair/re-pair/reconnect 回归 0.5~2.6s 全过；half-open 边界挂账，见 §5.1）。
 
 ## 一、问题链（实测逐层暴露）
 
@@ -42,18 +43,19 @@
 - `CONNECT_TIMEOUT_MS 35000`：容忍栈内 SDP 迟到（参考表 2）。
 - `SLOW_PROBE_MS 8000`：stuck-pad 出站探测节流（仍保留，但触发频次极少）。
 - `PROBE_DELAY_MS 200`：OPEN FAIL 后快速 probe 的让出延迟。
-- `g_candidate_fresh`（本次命中即 fresh）、`g_last_probe_ms`、`g_probe_after_fail_bda`。
-  **移除** `g_force_fresh_next`：inquiry 命中本身就是 fresh 意图，无需 fallback。
+- `g_last_probe_ms`、`g_probe_after_fail_bda`。
+  **移除**（后续清理）：`g_candidate_fresh`、`g_force_fresh_next`、3s/8s 锁定窗口常量——
+  inquiry 命中本身即 fresh 意图且必然立即 open，标志与窗口都成了死代码。
 
 ### 3.2 各触发路径
 
 | 事件 | 行为 |
 |---|---|
-| inquiry 命中 candidate（**任意 bda**） | `fresh` 标记；lock_tick **立即 open**（不等 stable/total），open 前 **wipe 该 bda 的 stale bond**（§3.4）→ SSP <1s 发起 |
+| inquiry 命中 candidate（**任意 bda**） | lock_tick **立即 open**（无锁定窗口），open 前 **wipe 该 bda 的 stale bond**（§3.4）→ SSP <1s 发起 |
 | inbound `ACL_CONN_CMPL` | **只 log，不 dev_open**（被动让栈跑完 incoming SDP → auto OPEN） |
 | `ACL_DISCONN_CMPL` 且 `g_state==ST_CONNECTED` | 复位 `ST_SCANNING` + rescan（手柄突然掉电时 CLOSE_EVT 可能不来，靠这条兜底） |
 | `OPEN_EVENT` OK | `ST_CONNECTED` + dump descriptor |
-| `OPEN_EVENT` FAIL | 单次 `remove_bond_device` + arm 异步 `remove_bond_poll`（100ms tick ×10；出 HID callback 后再验 bonds），bonds=0 或放弃后才 arm probe |
+| `OPEN_EVENT` FAIL | 单次 `remove_bond_device`（此刻 ACL 刚断，deferred delete 随即落地）+ arm 200ms probe timer |
 | probe timer 到期 | `ST_SCANNING` 且距上次 probe ≥8s → `start_connect(bda,"probe",wipe)`；post-fail probe wipe=true，slow probe wipe=false；否则 `arm_rescan` 回 inquiry |
 | scan round 空闲 ≥8s 且有 bond | lock_tick 里 slow probe 兜底（同节流） |
 | `dev_open` 同步返回 NULL（TAILQ 残留） | 立即 stop conn_timeout + `reset_scan_state` + `arm_rescan`，不傻等 35s |
@@ -63,12 +65,12 @@
 BT 协议语义：inquiry response ⇒ 对端开了 inquiry-scan。Flydigi Apex5 / X-input 手柄只在**配对模式**才开
 inquiry-scan（普通 idle 仅 page-scan，对 inquiry 不响应）。所以 inquiry 命中 = 对端在**等配对**。
 
-- **首次命中**：当帧即 `set_candidate` → `g_candidate_fresh=true` → lock_tick 下一次触发（≤250ms）
-  `open_candidate` → `dev_open` fresh SSP Just Works → `AUTH_CMPL stat=0 OK lk=4` → OPEN OK。
-- **stale NVS key 不再用**：原本 `g_candidate_fresh = !is_known_bonded_bda(bda)`，但这只看本端 NVS，
-  与对端真实 key 状态不同步。配对模式下对端 key 通常已清（旧 key 用 page 老 host 用，新 host 走
-  inquiry 触发 fresh SSP），所以本端有没有 bond 都该走 fresh。修后 `g_candidate_fresh = true`，
-  不再调 `is_known_bonded_bda`。
+- **首次命中**：当帧 `set_candidate` → lock_tick 下一次触发（≤250ms）`open_candidate` →
+  `dev_open` fresh SSP Just Works → `AUTH_CMPL stat=0 OK lk=4` → OPEN OK。
+- **stale NVS key 不再作为 fresh/bonded 判据**：原 `g_candidate_fresh = !is_known_bonded_bda(bda)`
+  只看本端 NVS，与对端真实 key 状态不同步。配对模式下对端 key 通常已清（旧 key 用 page 老 host
+  用，新 host 走 inquiry 触发 fresh SSP），所以本端有没有 bond 都该走 fresh。
+  key 的正确性改由 open 前的 wipe_bond 保证（§3.4），candidate 路径不再查询 bond 表。
 - **3s EWMA 锁定窗口消除**：配对模式下手柄 inquiry-scan 通常 ~30s 后超时，越晚发起越容易错过；
   fresh 立即 open 是唯一不丢配对窗口的策略。EWMA + hysteresis 仍保留——多 gamepad 同时被
   discovery 时用于稳定选择，但单 gamepad 场景下不影响。
@@ -88,10 +90,11 @@ inquiry-scan（普通 idle 仅 page-scan，对 inquiry 不响应）。所以 inq
 - BTC/BTA 消息队列 FIFO：remove 排在 dev_open 的 auth 之前处理 → auth 无 key → SSP Just
   Works → 与首次成功路径同型。
 
-配套纠错：OPEN-FAIL 里旧的 `remove_bond ×3 同步重试 + bonds 复验` 是误解产物——BT callback
-跑在 BT task 上，自己等的 deferred delete 永远排不到自己后面同步执行，重试只会看到 stale
-count。改为单次 remove + 异步 `remove_bond_poll`（100ms tick，出 callback 后再看计数），
-probe 前 `bonds==0` 才放行。slow probe（`first_bonded_bda` 路径，合法 bonded 探测）不 wipe。
+配套纠错：OPEN-FAIL 里旧的 `remove_bond ×3 同步重试 + bonds 复验` 是误解产物——重试只会看到
+stale count。现状为**单次 remove + 200ms probe**：deferred delete 在链路断开时自动落地，
+且 `start_connect(wipe_bond)` 在每次 open 前独立兜底，无需轮询复验。slow probe（`first_bonded_bda`
+路径，合法 bonded 探测）不 wipe，所以 FAIL 路径的 remove 仍需保留（防止 stale 键被 slow probe
+带回）。
 
 实测（90s capture，连 3 次长按复现流程）：三次均 inquiry 命中 → wipe → 1~2.5s `AUTH_CMPL OK`
 → open，无"连接中"卡死。
@@ -121,7 +124,7 @@ probe 前 `bonds==0` 才放行。slow probe（`first_bonded_bda` 路径，合法
 
 ### 4.2 Fix 后
 
-`g_candidate_fresh = true` 立即生效：
+`g_candidate_fresh`/锁定窗口移除后，命中即 open：
 
 ```
 T+0     inquiry 命中 b55d...5475
@@ -133,6 +136,31 @@ T+~1   dev_open → AUTH_CMPL OK → OPEN OK
 PAGE_TIMEOUT 拖延。
 
 ## 五、已知边界 / 后续
+
+### 5.1 half-open inbound ACL 黑洞（挂账，仅调试操作可达）
+
+三个必要条件**同时**成立才触发（缺一即正常）：
+1. 非对称键：host 无该 bda 的 bond 且对端手柄持旧 key（唯一生产者 = `erase_flash` 时手柄还开着）；
+2. 手柄的 inbound page **先于** host 的 inquiry 命中落地 → ACL 建立但双方都不鉴权，链路
+   "半开挂住"（实测存活 ~47s，手柄自拆）；
+3. 挂住窗口内 host 恰好 fresh open 该 bda → BTM 复用半开链路发 SDP（PSM 1，
+   `BTM_SEC_BEST_EFFORT` 不触发鉴权）→ 手柄装死不应 → 35s conn_timeout + hidh wrapper 泄漏
+   （公开 API 无法回收：`esp_hidh_dev_free` 是 no-op，`dev_close` 要求 connected），
+   后续 open 全被 stale-TAILQ guard 弹回，直到栈自己 ~60s SDP 超时拆链，共 ~40-70s 黑洞。
+
+**常规操作不可达性论证**（2026-09-08，4 轮实验对照）：拔模块电/手柄断电重上电 → 键对称，走
+bonded 被动重连；手柄长按 pair → 手柄清**自己**的键（条件 1 方向反了，无键手柄不会 page 挂链），
+host 侧残留 bond 由 §3.4 wipe_bond 消灭——001916/002718/234337 共 18 轮 pair/重连全部
+0.5~2.6s 成功；FAIL 残留的非对称态也被"FAIL remove + open wipe"双向收敛（001916 +2.572
+inbound 旧键 page → 一次 FAIL → 1.5s 后干净 SSP）。
+
+**复现配方**（如需再取证）：保持手柄 connected 状态直接 `erase-flash` + 重烧 + 立即 capture
+（手柄断链后的 page 风暴会抢先落地），风暴存活期内长按 pair。
+
+**处置**：不修（public API 无强鉴权/拆链手段；候选方案"bonds 计数闸门关 page-scan"经论证对
+"NVS 有其它设备 bond"变体仍漏，且常规操作本就不触发）。AGENTS 测试规范新增：*erase-flash 前先关手柄*。
+
+### 5.2 其它
 
 - 场景 4（board 断电重启 + 手柄仍 bonded）的 audit §四 死锁不在本 PR 范围
   （需 btc 层 patch `btc_storage_load_bonded_hid_info`，直接 app 调用会崩栈）。

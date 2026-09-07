@@ -8,11 +8,10 @@
  * Scope of this milestone:
  *   - Bring up BT (bt_stack.c) + esp_hidh host.
  *   - Scenario 1: continuous inquiry; every name-matched DISC_RES opens
- *     immediately as a fresh-pair attempt. An inquiry response means the
- *     peer is in inquiry-scan mode, which on a Flydigi pad only happens
- *     while it's advertising itself for pairing — so we never use a stale
- *     NVS key on an outbound page (PAGE_TIMEOUT 0x04, pad UI stuck on
- *     "connecting"). EWMA + hysteresis still smooth multi-pad RSSI noise.
+ *     immediately as a fresh-pair attempt, dropping any stale local bond
+ *     first. An inquiry-visible pad has cleared its key (pairing mode);
+ *     presenting ours gets 0x05-rejected and wedges the pad UI on
+ *     "connecting". EWMA + hysteresis still smooth multi-pad RSSI noise.
  *   - Scenario 2 (bonded pad power-cycle): purely passive — the stack
  *     handles device-initiated reconnection end to end (page -> SDP ->
  *     OPEN_EVENT is_orig=false); we only log the inbound ACL and never
@@ -23,8 +22,10 @@
  *     state and resume inquiry.
  *
  * Out of scope (deferred):
- *   - Asymmetric-bond recovery (pad cleared its key while NVS still has one,
- *     or NVS-only stale bond). HID report field decoding. Both follow-ups.
+ *   - HID report field decoding.
+ *   - Half-open inbound ACL (pad pages while we hold no bond): SDP then
+ *     dead-airs, conn_timeout leaks the hidh wrapper, retries bounce on
+ *     "stale TAILQ" until the stack's own ~60s SDP timeout frees it.
  *
  * State machine (event-driven, no while(1) loop):
  *   ST_SCANNING   — inquiry running; lock_tick handles the SLOW_PROBE rescue
@@ -48,7 +49,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_err.h"
-#include "esp_log.h"
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_bt.h"
@@ -57,19 +57,13 @@
 #include "bt_stack.h"
 #include "hid_report.h"
 
-#define TAG "default"
-
 #define HYSTERESIS_DB 3
-#define LOCK_WAIT_MS 3000
-#define MAX_WAIT_MS 8000
 /* Bluedroid's device-initiated reconnect answers SDP late (5-35 s is
  * normal; see esp-idf#10504 and the RAPOO keyboard log on esp32.com), so
  * give an in-flight CONNECTING attempt this long before declaring it dead. */
 #define CONNECT_TIMEOUT_MS 35000
 #define RETRY_BACKOFF_MS 300
 #define PROBE_DELAY_MS 200
-#define REMOVE_BOND_POLL_MS 100
-#define REMOVE_BOND_MAX_ATTEMPTS 10
 #define EWMA_ALPHA_NUM 3
 #define EWMA_ALPHA_DEN 10
 #define MAX_BONDED_DEVICES 8
@@ -94,7 +88,6 @@ typedef struct {
     bool active;
     uint8_t bda[6];
     float smoothed;
-    int64_t set_at_ms;
 } candidate_t;
 
 typedef enum { ST_SCANNING, ST_CONNECTING, ST_CONNECTED } app_state_t;
@@ -109,27 +102,14 @@ static esp_timer_handle_t g_lock_tick = NULL;
 static esp_timer_handle_t g_conn_timeout = NULL;
 static esp_timer_handle_t g_rescan_backoff = NULL;
 static esp_timer_handle_t g_probe_after_fail = NULL;
-static esp_timer_handle_t g_remove_bond_poll = NULL;
 
 /* Pad may have cleared its key while we still have the NVS bond (long-
  * press re-pair). The probe target stored by OPEN FAIL, taken when the
  * one-shot timer fires (after the current HID event fully drains). */
 static esp_bd_addr_t g_probe_after_fail_bda = {0};
-/* Async remove_bond state — esp_bt_gap_remove_bond_device is fire-and-
- * forget (BTC message); the BTC task flushes the cache+NVS erase on its
- * own schedule. We poll bond count via this timer instead of blocking
- * the OPEN FAIL callback (which would stall other HID events). */
-static esp_bd_addr_t g_remove_bond_target_bda = {0};
-static int g_remove_bond_attempt = 0;
 
 /* Rate limit for the stuck-pad rescue probe (see SLOW_PROBE_MS). */
 static int64_t g_last_probe_ms = 0;
-/* A fresh-pair/re-pair candidate (bda NOT in the NVS bond list) should
- * open immediately — pads that are actively in inquiry-scan mode are
- * expected to disappear fast if the host stalls. Bonded reconnection
- * (bda IS in the bond list) is handled by the auto path on ACL_CONN
- * and skips this flag entirely. */
-static bool g_candidate_fresh = false;
 
 /* Known Apex5 BR/EDR advertised names. Extend as new names appear. */
 static const char *const g_gamepad_names[] = {
@@ -137,16 +117,13 @@ static const char *const g_gamepad_names[] = {
     "Pro Controller",           /* Nintendo Switch (NS) mode */
 };
 
-/* Forward decls for mutually recursive helpers (begin_scan_round <-> arm_rescan). */
+/* Forward decls for mutually recursive helpers (begin_scan_round <-> arm_rescan)
+ * and the hidh callback referenced by init_hidh_host. */
 static void begin_scan_round(void);
 static void arm_rescan(int64_t delay_ms);
-/* Forward decls for inbound-ACL handling (scenario 2). */
 static void hidh_event_handler(
     void *arg, esp_event_base_t base, int32_t event_id, void *event_data
 );
-static bool is_known_bonded_bda(const uint8_t *bda);
-static void init_hidh_host(void);
-static void start_connect(const uint8_t *bda, const char *src, bool wipe_bond);
 
 static void lock(void) {
     xSemaphoreTake(g_app_mutex, portMAX_DELAY);
@@ -263,30 +240,22 @@ static float ewma_update(const uint8_t *bda, int8_t rssi) {
     return e->smoothed;
 }
 
-static void set_candidate(const uint8_t *bda, float smoothed, int64_t t, const char *action) {
+static void set_candidate(const uint8_t *bda, float smoothed, const char *action) {
     g_candidate.active = true;
     memcpy(g_candidate.bda, bda, 6);
     g_candidate.smoothed = smoothed;
-    g_candidate.set_at_ms = t;
-    /* BT spec: an inquiry response means the peer is in inquiry-scan mode,
-     * which on a Flydigi pad only happens while it's advertising itself for
-     * pairing. Treat every inquiry hit as a fresh-pair intent — even if NVS
-     * still has the old key (pad may have cleared its half on long-press),
-     * using the stale key on an outbound page returns PAGE_TIMEOUT 0x04 and
-     * the pad UI stays stuck on the connecting screen. */
-    g_candidate_fresh = true;
     printf("[hid] candidate%s: addr=", action);
     print_bda(bda);
     printf(" smoothed=%.1f fresh\n", smoothed);
 }
 
-static void candidate_update(const uint8_t *bda, float smoothed, int64_t t) {
+static void candidate_update(const uint8_t *bda, float smoothed) {
     if (!g_candidate.active) {
-        set_candidate(bda, smoothed, t, "");
+        set_candidate(bda, smoothed, "");
     } else if (bda_eq(bda, g_candidate.bda)) {
-        /* same candidate; lock clock keeps running */
+        /* incumbent's EWMA can drift past its own baseline; keep it */
     } else if (smoothed >= g_candidate.smoothed + HYSTERESIS_DB) {
-        set_candidate(bda, smoothed, t, " replace");
+        set_candidate(bda, smoothed, " replace");
     }
 }
 
@@ -317,7 +286,6 @@ static void reset_scan_state(void) {
     g_state = ST_SCANNING;
 }
 
-/* GAP callback is registered separately and survives hidh deinit/init. */
 static void init_hidh_host(void) {
     esp_hidh_config_t hidh_cfg = {
         .callback = hidh_event_handler,
@@ -370,6 +338,7 @@ static void start_connect(const uint8_t *bda, const char *src, bool wipe_bond) {
 }
 
 static void open_candidate(void) {
+    printf("[hid] candidate fresh: open immediately\n");
     start_connect(g_candidate.bda, "candidate", true);
 }
 
@@ -413,19 +382,7 @@ static void lock_tick_cb(void *arg) {
     }
     int64_t t = now_ms();
     if (g_candidate.active) {
-        /* Fresh pair / re-pair: pad is in inquiry-scan, it disappears
-         * if the host stalls. Open immediately on first valid hit. */
-        if (g_candidate_fresh) {
-            g_candidate_fresh = false;
-            printf("[hid] candidate fresh: open immediately\n");
-            open_candidate();
-        } else {
-            int64_t stable = t - g_candidate.set_at_ms;
-            int64_t total = t - g_scan_start_ms;
-            if (stable >= LOCK_WAIT_MS || total >= MAX_WAIT_MS) {
-                open_candidate();
-            }
-        }
+        open_candidate();
     } else if (t - g_scan_start_ms >= SLOW_PROBE_MS && t - g_last_probe_ms >= SLOW_PROBE_MS) {
         /* Long idle with a bond on file: pad likely exhausted its page
          * budget and sits stuck 'connecting'; poke it outbound. */
@@ -458,40 +415,6 @@ static void rescan_backoff_cb(void *arg) {
         return;
     }
     begin_scan_round();
-    unlock();
-}
-
-/* Async remove_bond state machine — esp_bt_gap_remove_bond_device is
- * fire-and-forget (BTC message); the BTC task flushes its cache + NVS on
- * its own schedule. After multiple re-pair cycles BTC's cache gets sticky
- * and remove_bond returns ESP_OK without actually clearing. We poll bond
- * count here instead of blocking the OPEN FAIL callback. Each step is a
- * 100 ms timer tick; total budget REMOVE_BOND_MAX_ATTEMPTS * 100 ms. */
-static void remove_bond_poll_cb(void *arg) {
-    lock();
-    if (g_state != ST_SCANNING) {
-        printf("[hid] remove_bond poll: state=%d, abort\n", (int)g_state);
-        g_remove_bond_attempt = 0;
-        unlock();
-        return;
-    }
-    int nb = esp_bt_gap_get_bond_device_num();
-    if (nb == 0 || g_remove_bond_attempt >= REMOVE_BOND_MAX_ATTEMPTS) {
-        printf(
-            "[hid] remove_bond done: attempts=%d bonds=%d%s\n",
-            g_remove_bond_attempt,
-            nb,
-            nb ? " (GIVEUP)" : ""
-        );
-        g_remove_bond_attempt = 0;
-        ESP_ERROR_CHECK(esp_timer_start_once(g_probe_after_fail, (uint64_t)PROBE_DELAY_MS * 1000));
-        unlock();
-        return;
-    }
-    esp_err_t err = esp_bt_gap_remove_bond_device(g_remove_bond_target_bda);
-    printf("[hid] remove_bond[%d] err=0x%x\n", g_remove_bond_attempt, (unsigned)err);
-    g_remove_bond_attempt++;
-    ESP_ERROR_CHECK(esp_timer_start_once(g_remove_bond_poll, (uint64_t)REMOVE_BOND_POLL_MS * 1000));
     unlock();
 }
 
@@ -556,10 +479,9 @@ static void handle_disc_result(esp_bt_gap_cb_param_t *p) {
     }
     lock();
     if (g_state == ST_SCANNING) {
-        int64_t t = now_ms();
         float s = ewma_update(bda, rssi);
         if (s != -127.0f) {
-            candidate_update(bda, s, t);
+            candidate_update(bda, s);
         }
     }
     unlock();
@@ -702,24 +624,22 @@ static void hidh_event_handler(
             if (param->open.dev) {
                 esp_hidh_dev_free(param->open.dev);
             }
-            /* Pad may have cleared its key while we still have the NVS
-             * bond (scenario 3 re-pair with long-press). Hand off to the
-             * async remove_bond_poll timer; we must NOT block this HID
-             * callback — blocking stalls CLOSE_EVT processing and any
-             * other queued HID events. */
+            /* Drop our bond half now: the delete defers to link-down while
+             * the failing ACL is up, and that matters here because the
+             * SLOW_PROBE path opens WITHOUT wiping — a leftover bond would
+             * walk straight back into the 0x05 rejection. start_connect's
+             * wipe_bond re-asserts on the candidate path anyway. */
             lock();
             reset_scan_state();
             if (bda != NULL) {
                 memcpy(g_probe_after_fail_bda, bda, sizeof(g_probe_after_fail_bda));
-                memcpy(g_remove_bond_target_bda, bda, sizeof(g_remove_bond_target_bda));
-                g_remove_bond_attempt = 0;
-                esp_err_t start_err =
-                    esp_timer_start_once(g_remove_bond_poll, (uint64_t)REMOVE_BOND_POLL_MS * 1000);
-                if (start_err == ESP_ERR_INVALID_STATE) {
-                    printf("[hid] remove_bond_poll already armed (benign)\n");
-                } else if (start_err != ESP_OK) {
-                    printf("[hid] remove_bond_poll start FAIL err=0x%x\n", (unsigned)start_err);
-                }
+                esp_bd_addr_t mutable_bda;
+                memcpy(mutable_bda, bda, sizeof(mutable_bda));
+                esp_err_t reb_err = esp_bt_gap_remove_bond_device(mutable_bda);
+                printf("[hid] remove_bond err=0x%x\n", (unsigned)reb_err);
+                ESP_ERROR_CHECK(
+                    esp_timer_start_once(g_probe_after_fail, (uint64_t)PROBE_DELAY_MS * 1000)
+                );
             } else {
                 arm_rescan(RETRY_BACKOFF_MS);
             }
@@ -774,15 +694,10 @@ void app_main(void) {
         .callback = probe_after_fail_cb,
         .name = "probe_after_fail",
     };
-    const esp_timer_create_args_t rbpol_args = {
-        .callback = remove_bond_poll_cb,
-        .name = "remove_bond_poll",
-    };
     ESP_ERROR_CHECK(esp_timer_create(&tick_args, &g_lock_tick));
     ESP_ERROR_CHECK(esp_timer_create(&ct_args, &g_conn_timeout));
     ESP_ERROR_CHECK(esp_timer_create(&rb_args, &g_rescan_backoff));
     ESP_ERROR_CHECK(esp_timer_create(&pf_args, &g_probe_after_fail));
-    ESP_ERROR_CHECK(esp_timer_create(&rbpol_args, &g_remove_bond_poll));
 
     init_hidh_host();
     ESP_ERROR_CHECK(esp_bt_gap_register_callback(bt_gap_cb));
