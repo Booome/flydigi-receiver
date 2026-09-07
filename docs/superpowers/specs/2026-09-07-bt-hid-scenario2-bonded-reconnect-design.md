@@ -13,11 +13,16 @@
 2. **配对窗口丢失**：candidate 命中后还要等 stable 3s / total 8s，手柄退出配对态后连不上。
 3. **auto-reconnect 被 app 抢跑打断**：inbound 后 app 立刻 `dev_open`，与栈自己的 SDP 程序
    竞争（ESP32 一次只跑一个 SDP，esp-idf#10504）→ `ERR_SDP` 风暴。
-4. **stale-key 出站被 PAGE_TIMEOUT（本 spec 核心）**：手柄长按配对键后进入 **inquiry-scan**
+4. **stale-key 出站被 PAGE_TIMEOUT**：手柄长按配对键后进入 **inquiry-scan**
    模式（可被发现 + 拒绝 page），但 board 不知道，按候选算法 EWMA 锁 3s + 用旧 key 发起 outbound
    `dev_open` → L2CAP `ConnectCfm_Cb Status:4`（HCI `PAGE_TIMEOUT` 0x04）。连续多次后
    `remove_bond_device` 把本端也清了 → 进入"半键"死锁：手柄还在配对模式等 inbound SSP，
    host 没了 key 永远等不到 `AUTH_CMPL`，手柄 UI 卡"连接中"。
+5. **第三次强制配对卡"连接中"（本 spec 核心之二）**：连续多次成功 re-pair 后，本端 NVS 有
+   有效 bond、手柄清 key 再进配对模式 → outbound auth 带旧 key 被手柄 **0x05 auth-reject**
+   （`ConnectCfm Status:5`）。手柄 auth-reject 后关闭全部 scan，UI 永久卡"连接中"，主机不可
+   触达。且旧 FAIL 处理里的 `remove_bond` 发生在 HID callback（BT task）内，deferred delete
+   永远等不到复验 → key 留在 RAM → 后续每次 outbound 都带 stale key（见 §3.4）。
 
 ## 二、参考项目证据链
 
@@ -44,12 +49,12 @@
 
 | 事件 | 行为 |
 |---|---|
-| inquiry 命中 candidate（**任意 bda**） | `fresh` 标记；lock_tick **立即 open**（不等 stable/total）→ SSP <1s 发起 |
+| inquiry 命中 candidate（**任意 bda**） | `fresh` 标记；lock_tick **立即 open**（不等 stable/total），open 前 **wipe 该 bda 的 stale bond**（§3.4）→ SSP <1s 发起 |
 | inbound `ACL_CONN_CMPL` | **只 log，不 dev_open**（被动让栈跑完 incoming SDP → auto OPEN） |
 | `ACL_DISCONN_CMPL` 且 `g_state==ST_CONNECTED` | 复位 `ST_SCANNING` + rescan（手柄突然掉电时 CLOSE_EVT 可能不来，靠这条兜底） |
 | `OPEN_EVENT` OK | `ST_CONNECTED` + dump descriptor |
-| `OPEN_EVENT` FAIL | `remove_bond_device` 最多 3 次（带 `bonds=` 复验 log）；残留仅 log；随后 **arm 200ms probe timer** |
-| probe timer 到期 | `ST_SCANNING` 且距上次 probe ≥8s → `start_connect(bda,"probe")`；否则 `arm_rescan` 回 inquiry |
+| `OPEN_EVENT` FAIL | 单次 `remove_bond_device` + arm 异步 `remove_bond_poll`（100ms tick ×10；出 HID callback 后再验 bonds），bonds=0 或放弃后才 arm probe |
+| probe timer 到期 | `ST_SCANNING` 且距上次 probe ≥8s → `start_connect(bda,"probe",wipe)`；post-fail probe wipe=true，slow probe wipe=false；否则 `arm_rescan` 回 inquiry |
 | scan round 空闲 ≥8s 且有 bond | lock_tick 里 slow probe 兜底（同节流） |
 | `dev_open` 同步返回 NULL（TAILQ 残留） | 立即 stop conn_timeout + `reset_scan_state` + `arm_rescan`，不傻等 35s |
 
@@ -68,7 +73,30 @@ inquiry-scan（普通 idle 仅 page-scan，对 inquiry 不响应）。所以 inq
   fresh 立即 open 是唯一不丢配对窗口的策略。EWMA + hysteresis 仍保留——多 gamepad 同时被
   discovery 时用于稳定选择，但单 gamepad 场景下不影响。
 
-### 3.4 防风暴约束
+### 3.4 wipe-bond-before-open（v1 修复 241277d 移植，解决"第三次长按卡连接中"）
+
+3.3 的 fresh 判定只控制 open **时机**，不控制 link 层 auth **用什么 key**：只要本端 NVS 还
+有该 bda 的 bond，`dev_open` 触发的鉴权就会带旧 key；手柄清 key 进配对模式后会直接 0x05
+拒绝（`ConnectCfm Status:5`），且手柄 auth-reject 后**会关闭全部 scan**，UI 永久卡"连接中"，
+主机侧无法再触达——所以关键不是事后补救，而是**让 0x05 压根不发生**。
+
+修复：inquiry 命中（=配对意图）或 OPEN-FAIL 后 probe 时，`start_connect(wipe_bond=true)` 在
+`dev_open` 前先 `esp_bt_gap_remove_bond_device`。依据（源码取证）：
+
+- `bta_dm_remove_device`：ACL down 时**立即** `BTM_SecDeleteDevice`（清 RAM link key + NVS）；
+  ACL up 时 defer 到 link-down。outbound open 时必然无该 peer 的 ACL → remove 立即生效。
+- BTC/BTA 消息队列 FIFO：remove 排在 dev_open 的 auth 之前处理 → auth 无 key → SSP Just
+  Works → 与首次成功路径同型。
+
+配套纠错：OPEN-FAIL 里旧的 `remove_bond ×3 同步重试 + bonds 复验` 是误解产物——BT callback
+跑在 BT task 上，自己等的 deferred delete 永远排不到自己后面同步执行，重试只会看到 stale
+count。改为单次 remove + 异步 `remove_bond_poll`（100ms tick，出 callback 后再看计数），
+probe 前 `bonds==0` 才放行。slow probe（`first_bonded_bda` 路径，合法 bonded 探测）不 wipe。
+
+实测（90s capture，连 3 次长按复现流程）：三次均 inquiry 命中 → wipe → 1~2.5s `AUTH_CMPL OK`
+→ open，无"连接中"卡死。
+
+### 3.5 防风暴约束
 
 - probe 全部经 `g_last_probe_ms` 8s 节流；inquiry 在 probe 间隙照常运行（re-pair 需要它）。
 - `start_connect` 有 `ST_CONNECTING` guard，in-flight 期间任何重复 open 直接忽略。

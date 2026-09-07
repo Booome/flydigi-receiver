@@ -68,6 +68,8 @@
 #define CONNECT_TIMEOUT_MS 35000
 #define RETRY_BACKOFF_MS 300
 #define PROBE_DELAY_MS 200
+#define REMOVE_BOND_POLL_MS 100
+#define REMOVE_BOND_MAX_ATTEMPTS 10
 #define EWMA_ALPHA_NUM 3
 #define EWMA_ALPHA_DEN 10
 #define MAX_BONDED_DEVICES 8
@@ -107,11 +109,18 @@ static esp_timer_handle_t g_lock_tick = NULL;
 static esp_timer_handle_t g_conn_timeout = NULL;
 static esp_timer_handle_t g_rescan_backoff = NULL;
 static esp_timer_handle_t g_probe_after_fail = NULL;
+static esp_timer_handle_t g_remove_bond_poll = NULL;
 
 /* Pad may have cleared its key while we still have the NVS bond (long-
  * press re-pair). The probe target stored by OPEN FAIL, taken when the
  * one-shot timer fires (after the current HID event fully drains). */
 static esp_bd_addr_t g_probe_after_fail_bda = {0};
+/* Async remove_bond state — esp_bt_gap_remove_bond_device is fire-and-
+ * forget (BTC message); the BTC task flushes the cache+NVS erase on its
+ * own schedule. We poll bond count via this timer instead of blocking
+ * the OPEN FAIL callback (which would stall other HID events). */
+static esp_bd_addr_t g_remove_bond_target_bda = {0};
+static int g_remove_bond_attempt = 0;
 
 /* Rate limit for the stuck-pad rescue probe (see SLOW_PROBE_MS). */
 static int64_t g_last_probe_ms = 0;
@@ -137,7 +146,7 @@ static void hidh_event_handler(
 );
 static bool is_known_bonded_bda(const uint8_t *bda);
 static void init_hidh_host(void);
-static void start_connect(const uint8_t *bda, const char *src);
+static void start_connect(const uint8_t *bda, const char *src, bool wipe_bond);
 
 static void lock(void) {
     xSemaphoreTake(g_app_mutex, portMAX_DELAY);
@@ -324,14 +333,28 @@ static void init_hidh_host(void) {
 /* Issue a BR/EDR HID connect. Caller must hold g_app_mutex. src is a log
  * tag. NULL return from dev_open = stale wrapper TAILQ entry (no event
  * will ever come); treat as synchronous failure instead of burning a
- * full conn_timeout window. */
-static void start_connect(const uint8_t *bda, const char *src) {
+ * full conn_timeout window.
+ *
+ * wipe_bond (v1 fix 241277d, ported): a peer sighted in inquiry has
+ * forgotten our key (pairing mode). Drop the bond HERE, while no ACL is
+ * up — bta_dm_remove_device defers the delete while the ACL is live, so
+ * the FAIL-path remove lands too late: the next page then authenticates
+ * with the stale key, gets 0x05 rejected, and wedges the pad UI on
+ * "connecting" permanently (pad stops scanning after rejecting). The
+ * BTC/BTA message queues are FIFO, so this remove executes before
+ * dev_open's link-layer auth; auth then runs keyless and the pad drives
+ * fresh SSP. */
+static void start_connect(const uint8_t *bda, const char *src, bool wipe_bond) {
     if (g_state == ST_CONNECTING) {
         printf("[hid] start_connect: already connecting, ignore\n");
         return;
     }
     esp_bd_addr_t peer;
     memcpy(peer, bda, sizeof(peer));
+    if (wipe_bond && is_known_bonded_bda(peer)) {
+        esp_bt_gap_remove_bond_device(peer);
+        printf("[hid] drop stale bond before open src=%s\n", src);
+    }
     halt_scanning_side_effects();
     ESP_ERROR_CHECK(esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000));
     g_state = ST_CONNECTING;
@@ -347,7 +370,7 @@ static void start_connect(const uint8_t *bda, const char *src) {
 }
 
 static void open_candidate(void) {
-    start_connect(g_candidate.bda, "candidate");
+    start_connect(g_candidate.bda, "candidate", true);
 }
 
 static void begin_scan_round(void) {
@@ -410,7 +433,7 @@ static void lock_tick_cb(void *arg) {
         if (first_bonded_bda(bonded)) {
             g_last_probe_ms = t;
             printf("[hid] probe bonded pad\n");
-            start_connect(bonded, "probe");
+            start_connect(bonded, "probe", false);
         }
     }
     unlock();
@@ -438,6 +461,40 @@ static void rescan_backoff_cb(void *arg) {
     unlock();
 }
 
+/* Async remove_bond state machine — esp_bt_gap_remove_bond_device is
+ * fire-and-forget (BTC message); the BTC task flushes its cache + NVS on
+ * its own schedule. After multiple re-pair cycles BTC's cache gets sticky
+ * and remove_bond returns ESP_OK without actually clearing. We poll bond
+ * count here instead of blocking the OPEN FAIL callback. Each step is a
+ * 100 ms timer tick; total budget REMOVE_BOND_MAX_ATTEMPTS * 100 ms. */
+static void remove_bond_poll_cb(void *arg) {
+    lock();
+    if (g_state != ST_SCANNING) {
+        printf("[hid] remove_bond poll: state=%d, abort\n", (int)g_state);
+        g_remove_bond_attempt = 0;
+        unlock();
+        return;
+    }
+    int nb = esp_bt_gap_get_bond_device_num();
+    if (nb == 0 || g_remove_bond_attempt >= REMOVE_BOND_MAX_ATTEMPTS) {
+        printf(
+            "[hid] remove_bond done: attempts=%d bonds=%d%s\n",
+            g_remove_bond_attempt,
+            nb,
+            nb ? " (GIVEUP)" : ""
+        );
+        g_remove_bond_attempt = 0;
+        ESP_ERROR_CHECK(esp_timer_start_once(g_probe_after_fail, (uint64_t)PROBE_DELAY_MS * 1000));
+        unlock();
+        return;
+    }
+    esp_err_t err = esp_bt_gap_remove_bond_device(g_remove_bond_target_bda);
+    printf("[hid] remove_bond[%d] err=0x%x\n", g_remove_bond_attempt, (unsigned)err);
+    g_remove_bond_attempt++;
+    ESP_ERROR_CHECK(esp_timer_start_once(g_remove_bond_poll, (uint64_t)REMOVE_BOND_POLL_MS * 1000));
+    unlock();
+}
+
 /* Post-OPEN-FAIL rescue: immediately page the bonded pad (it is typically
  * stuck 'connecting' with its page budget spent, only an inbound page from
  * us restarts the handshake). Runs PROBE_DELAY_MS after the failure so the
@@ -453,7 +510,7 @@ static void probe_after_fail_cb(void *arg) {
     if (t - g_last_probe_ms >= SLOW_PROBE_MS) {
         g_last_probe_ms = t;
         printf("[hid] post-fail probe\n");
-        start_connect(g_probe_after_fail_bda, "probe");
+        start_connect(g_probe_after_fail_bda, "probe", true);
         unlock();
         return;
     }
@@ -646,39 +703,23 @@ static void hidh_event_handler(
                 esp_hidh_dev_free(param->open.dev);
             }
             /* Pad may have cleared its key while we still have the NVS
-             * bond (scenario 3 re-pair with long-press). Re-pair only
-             * succeeds once we drop our half; otherwise the next outbound
-             * dev_open would hit the same authentication failure. Retry
-             * up to 3x: on a stale BTC/BTM state a single remove can be
-             * ignored, but multiple give BTM time to process. */
-            if (bda != NULL) {
-                esp_bd_addr_t mutable_bda;
-                memcpy(mutable_bda, bda, sizeof(mutable_bda));
-                for (int attempt = 0; attempt < 3; attempt++) {
-                    esp_err_t reb_err = esp_bt_gap_remove_bond_device(mutable_bda);
-                    printf("[hid] remove_bond[%d] err=0x%x\n", attempt, (unsigned)reb_err);
-                    if (reb_err == ESP_OK) {
-                        int nb = esp_bt_gap_get_bond_device_num();
-                        printf("[hid] post-remove bonds=%d\n", nb);
-                        if (nb == 0) {
-                            break;
-                        }
-                    }
-                }
-                /* Pad may have cleared its key while we keep ours. BTM/NVS
-                 * sometimes ignores the remove — keep the log so hardware
-                 * debugging can see when we don't actually drop our half. */
-                if (is_known_bonded_bda(bda)) {
-                    printf("[hid] bond persists after retries\n");
-                }
-            }
+             * bond (scenario 3 re-pair with long-press). Hand off to the
+             * async remove_bond_poll timer; we must NOT block this HID
+             * callback — blocking stalls CLOSE_EVT processing and any
+             * other queued HID events. */
             lock();
             reset_scan_state();
             if (bda != NULL) {
                 memcpy(g_probe_after_fail_bda, bda, sizeof(g_probe_after_fail_bda));
-                ESP_ERROR_CHECK(
-                    esp_timer_start_once(g_probe_after_fail, (uint64_t)PROBE_DELAY_MS * 1000)
-                );
+                memcpy(g_remove_bond_target_bda, bda, sizeof(g_remove_bond_target_bda));
+                g_remove_bond_attempt = 0;
+                esp_err_t start_err =
+                    esp_timer_start_once(g_remove_bond_poll, (uint64_t)REMOVE_BOND_POLL_MS * 1000);
+                if (start_err == ESP_ERR_INVALID_STATE) {
+                    printf("[hid] remove_bond_poll already armed (benign)\n");
+                } else if (start_err != ESP_OK) {
+                    printf("[hid] remove_bond_poll start FAIL err=0x%x\n", (unsigned)start_err);
+                }
             } else {
                 arm_rescan(RETRY_BACKOFF_MS);
             }
@@ -733,10 +774,15 @@ void app_main(void) {
         .callback = probe_after_fail_cb,
         .name = "probe_after_fail",
     };
+    const esp_timer_create_args_t rbpol_args = {
+        .callback = remove_bond_poll_cb,
+        .name = "remove_bond_poll",
+    };
     ESP_ERROR_CHECK(esp_timer_create(&tick_args, &g_lock_tick));
     ESP_ERROR_CHECK(esp_timer_create(&ct_args, &g_conn_timeout));
     ESP_ERROR_CHECK(esp_timer_create(&rb_args, &g_rescan_backoff));
     ESP_ERROR_CHECK(esp_timer_create(&pf_args, &g_probe_after_fail));
+    ESP_ERROR_CHECK(esp_timer_create(&rbpol_args, &g_remove_bond_poll));
 
     init_hidh_host();
     ESP_ERROR_CHECK(esp_bt_gap_register_callback(bt_gap_cb));
