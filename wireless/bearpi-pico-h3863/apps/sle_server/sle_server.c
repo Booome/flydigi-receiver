@@ -73,8 +73,9 @@ static void ssaps_start_service_cbk(uint8_t server_id, uint16_t handle, errcode_
     );
 }
 
-static void
-ssaps_add_service_cbk(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status) {
+static void ssaps_add_service_cbk(
+    uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status
+) {
     osal_printk(
         "%s add_service server_id:%x, handle:%x, status:%x\r\n",
         SLE_SERVER_LOG,

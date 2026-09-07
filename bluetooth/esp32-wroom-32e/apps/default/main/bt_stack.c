@@ -15,6 +15,7 @@
 #include "esp_bt_main.h"
 #include "esp_bt_device.h"
 #include "esp_gap_bt_api.h"
+#include "esp_hidh_gattc.h"
 #include "bt_stack.h"
 
 static const char *TAG = "bt_stack";
@@ -45,6 +46,16 @@ esp_err_t bt_stack_start(void) {
         ESP_LOGE(TAG, "bluedroid enable failed: %d", ret);
         return ret;
     }
+
+    /* esp_hidh always initializes its BLE host path (esp_ble_hidh_init) which
+     * blocks until a GATTC app-register event is routed; that event needs this
+     * callback even though we use BR/EDR only. Plumbing, not a BLE data flow. */
+#if CONFIG_BT_BLE_ENABLED
+    if ((ret = esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)) != ESP_OK) {
+        ESP_LOGE(TAG, "gattc callback register failed: %d", ret);
+        return ret;
+    }
+#endif
 
     /* Headless host: advertise NoInputNoOutput so SSP uses Just Works and a
      * reconnect never waits on a passkey/display the user cannot provide. */

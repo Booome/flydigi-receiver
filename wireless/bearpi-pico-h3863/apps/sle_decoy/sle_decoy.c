@@ -104,8 +104,9 @@ static void ssaps_start_service_cb(uint8_t server_id, uint16_t handle, errcode_t
     osal_printk("[SSAP] start_service handle=%x status=%x\r\n", handle, status);
 }
 
-static void
-ssaps_add_service_cb(uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status) {
+static void ssaps_add_service_cb(
+    uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status
+) {
     osal_printk("[SSAP] add_service handle=%x status=%x\r\n", handle, status);
 }
 
