@@ -24,12 +24,8 @@
 extern "C" {
 #endif
 
-/* Print the raw HID Report Descriptor bytes (16 per line) and the parsed report
- * map metadata for the connected device. Called from the OPEN OK path. */
 void hid_report_dump_map(esp_hidh_dev_t *dev);
 
-/* Print a single INPUT report as raw hex bytes + a stable counter. Called
- * from the INPUT event path. */
 void hid_report_on_input(const uint8_t *data, uint16_t len, uint8_t report_id);
 
 #ifdef __cplusplus

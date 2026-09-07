@@ -50,7 +50,6 @@
 
 #define TAG "default"
 
-/* Tunables (3-layer candidate algorithm). */
 #define HYSTERESIS_DB 3
 #define LOCK_WAIT_MS 3000
 #define MAX_WAIT_MS 8000
@@ -201,13 +200,17 @@ static void candidate_update(const uint8_t *bda, float smoothed, int64_t t) {
 
 static void halt_scanning_side_effects(void) {
     esp_err_t err = esp_bt_gap_cancel_discovery();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    if (err == ESP_ERR_INVALID_STATE) {
+        printf("[hid] cancel_discovery not running (benign)\n");
+    } else if (err != ESP_OK) {
         printf("[hid] cancel_discovery err=0x%x\n", (unsigned)err);
     }
     /* Lock_tick should be armed here (we came from begin_scan_round), but if
      * it's not (e.g. failed-start path), INVALID_STATE is benign. */
     err = esp_timer_stop(g_lock_tick);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    if (err == ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop not armed (benign)\n");
+    } else if (err != ESP_OK) {
         printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
     }
 }
@@ -241,7 +244,9 @@ static void begin_scan_round(void) {
      * auto-restart after INQ_LENGTH). INVALID_STATE here means "not armed",
      * which is benign. ESP_ERROR_CHECK would crash on that benign case. */
     esp_err_t err = esp_timer_stop(g_lock_tick);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+    if (err == ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop not armed (benign)\n");
+    } else if (err != ESP_OK) {
         printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
     }
     err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
@@ -264,6 +269,7 @@ static void begin_scan_round(void) {
 static void arm_rescan(int64_t delay_ms) {
     esp_err_t err = esp_timer_start_once(g_rescan_backoff, (uint64_t)delay_ms * 1000);
     if (err == ESP_ERR_INVALID_STATE) {
+        printf("[hid] rescan_backoff already armed (benign)\n");
         return;
     }
     if (err != ESP_OK) {
@@ -271,8 +277,6 @@ static void arm_rescan(int64_t delay_ms) {
         begin_scan_round();
     }
 }
-
-/* esp_timer callbacks run in the esp_timer task. */
 
 static void lock_tick_cb(void *arg) {
     lock();
@@ -312,8 +316,6 @@ static void rescan_backoff_cb(void *arg) {
     begin_scan_round();
     unlock();
 }
-
-/* GAP callback (BT task). */
 
 static void handle_disc_result(esp_bt_gap_cb_param_t *p) {
     const uint8_t *bda = p->disc_res.bda;
@@ -431,8 +433,6 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
     }
 }
 
-/* HID callback (esp_hidh event task). */
-
 static void hidh_event_handler(
     void *arg, esp_event_base_t base, int32_t event_id, void *event_data
 ) {
@@ -446,7 +446,9 @@ static void hidh_event_handler(
          * issue_connect on that path); INVALID_STATE is benign. */
         {
             esp_err_t stop_err = esp_timer_stop(g_conn_timeout);
-            if (stop_err != ESP_OK && stop_err != ESP_ERR_INVALID_STATE) {
+            if (stop_err == ESP_ERR_INVALID_STATE) {
+                printf("[hid] conn_timeout stop not armed (benign)\n");
+            } else if (stop_err != ESP_OK) {
                 printf("[hid] conn_timeout stop FAIL err=0x%x\n", (unsigned)stop_err);
             }
         }
