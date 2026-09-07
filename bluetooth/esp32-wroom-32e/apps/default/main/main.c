@@ -3,22 +3,25 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  *
- * default: BT HID host, scenario 1 — fresh pair only.
+ * default: BT HID host, scenarios 1 + 2.
  *
  * Scope of this milestone:
  *   - Bring up BT (bt_stack.c) + esp_hidh host.
- *   - Run continuous inquiry; on gamepad-name match, evaluate the 3-layer
- *     candidate (EWMA + hysteresis + stable/total window) and open the first
- *     matching HID device.
+ *   - Scenario 1: continuous inquiry; on gamepad-name match, evaluate the
+ *     3-layer candidate (EWMA + hysteresis + stable/total window) and open
+ *     the first matching HID device.
+ *   - Scenario 2 (bonded pad power-cycle): purely passive — the stack
+ *     handles device-initiated reconnection end to end (page -> SDP ->
+ *     OPEN_EVENT is_orig=false); we only log the inbound ACL and never
+ *     dev_open over it (app-initiated open races the stack's SDP:
+ *     esp-idf#10504). One slow outbound probe every SLOW_PROBE_MS rescues
+ *     a pad that exhausted its page budget.
  *   - On OPEN, dump descriptor + print raw INPUT reports; on FAIL/CLOSE, reset
  *     state and resume inquiry.
  *
  * Out of scope (deferred):
- *   - Bonded reconnect (handles inbound ACL_CONN from a bonded pad). Scenario 2.
- *   - HID report field decoding. Deferred until raw bytes have been mapped to
- *     button/stick/trigger semantics on hardware.
- *   - Deadlock recovery, asymmetric-bond handling, g_probe, outbound page, etc.
- *     These were symptoms of older designs and are not carried into v2.
+ *   - Asymmetric-bond recovery (pad cleared its key while NVS still has one,
+ *     or NVS-only stale bond). HID report field decoding. Both follow-ups.
  *
  * State machine (event-driven, no while(1) loop):
  *   ST_SCANNING   — inquiry running; lock_tick evaluates candidate lock condition
@@ -53,10 +56,20 @@
 #define HYSTERESIS_DB 3
 #define LOCK_WAIT_MS 3000
 #define MAX_WAIT_MS 8000
-#define CONNECT_TIMEOUT_MS 4000
+/* Bluedroid's device-initiated reconnect answers SDP late (5-35 s is
+ * normal; see esp-idf#10504 and the RAPOO keyboard log on esp32.com), so
+ * give an in-flight CONNECTING attempt this long before declaring it dead. */
+#define CONNECT_TIMEOUT_MS 35000
 #define RETRY_BACKOFF_MS 300
+#define PROBE_DELAY_MS 200
 #define EWMA_ALPHA_NUM 3
 #define EWMA_ALPHA_DEN 10
+#define MAX_BONDED_DEVICES 8
+/* Rescue probe for a pad stuck in "connecting" with its page budget
+ * exhausted (won't page again by itself). Deliberately slow: must not
+ * interrupt the passive auto-reconnect path (a probe while an attempt is
+ * in flight just gets a sync-NULL and is skipped anyway). */
+#define SLOW_PROBE_MS 8000
 #define EWMA_MAX 16
 #define LOCK_TICK_MS 250
 
@@ -87,6 +100,26 @@ static SemaphoreHandle_t g_app_mutex = NULL;
 static esp_timer_handle_t g_lock_tick = NULL;
 static esp_timer_handle_t g_conn_timeout = NULL;
 static esp_timer_handle_t g_rescan_backoff = NULL;
+static esp_timer_handle_t g_probe_after_fail = NULL;
+
+/* Pad may have cleared its key while we still have the NVS bond (long-
+ * press re-pair). The probe target stored by OPEN FAIL, taken when the
+ * one-shot timer fires (after the current HID event fully drains). */
+static esp_bd_addr_t g_probe_after_fail_bda = {0};
+
+/* Rate limit for the stuck-pad rescue probe (see SLOW_PROBE_MS). */
+static int64_t g_last_probe_ms = 0;
+/* A fresh-pair/re-pair candidate (bda NOT in the NVS bond list) should
+ * open immediately — pads that are actively in inquiry-scan mode are
+ * expected to disappear fast if the host stalls. Bonded reconnection
+ * (bda IS in the bond list) is handled by the auto path on ACL_CONN
+ * and skips this flag entirely. */
+static bool g_candidate_fresh = false;
+/* Set after OPEN FAIL with bonded bda even if the NVS clear returned
+ * non-OK (some pad clears its key while we keep ours and the removal
+ * didn't take effect on the BTC side); the next candidate_update will
+ * treat any hit on that bda as fresh and open immediately. */
+static bool g_force_fresh_next = false;
 
 /* Known Apex5 BR/EDR advertised names. Extend as new names appear. */
 static const char *const g_gamepad_names[] = {
@@ -97,6 +130,13 @@ static const char *const g_gamepad_names[] = {
 /* Forward decls for mutually recursive helpers (begin_scan_round <-> arm_rescan). */
 static void begin_scan_round(void);
 static void arm_rescan(int64_t delay_ms);
+/* Forward decls for inbound-ACL handling (scenario 2). */
+static void hidh_event_handler(
+    void *arg, esp_event_base_t base, int32_t event_id, void *event_data
+);
+static bool is_known_bonded_bda(const uint8_t *bda);
+static void init_hidh_host(void);
+static void start_connect(const uint8_t *bda, const char *src);
 
 static void lock(void) {
     xSemaphoreTake(g_app_mutex, portMAX_DELAY);
@@ -111,6 +151,10 @@ static int64_t now_ms(void) {
 }
 
 static void print_bda(const uint8_t *bda) {
+    if (!bda) {
+        printf("unknown");
+        return;
+    }
     printf("%02x:%02x:%02x:%02x:%02x:%02x", bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]);
 }
 
@@ -128,6 +172,40 @@ static bool is_gamepad(const char *name) {
         }
     }
     return false;
+}
+
+/* NVS bond list into dev_list; returns count, 0 if none or query fails. */
+static int bonded_list(esp_bd_addr_t *dev_list) {
+    if (esp_bt_gap_get_bond_device_num() <= 0) {
+        return 0;
+    }
+    int dev_num = MAX_BONDED_DEVICES;
+    if (esp_bt_gap_get_bond_device_list(&dev_num, dev_list) != ESP_OK) {
+        return 0;
+    }
+    return dev_num;
+}
+
+/* True if bda is in the NVS bond list (filter accidental pages). */
+static bool is_known_bonded_bda(const uint8_t *bda) {
+    esp_bd_addr_t dev_list[MAX_BONDED_DEVICES];
+    int n = bonded_list(dev_list);
+    for (int i = 0; i < n; i++) {
+        if (bda_eq(dev_list[i], bda)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* First NVS-bonded peer, for the outbound probe. False if none. */
+static bool first_bonded_bda(esp_bd_addr_t out) {
+    esp_bd_addr_t dev_list[MAX_BONDED_DEVICES];
+    if (bonded_list(dev_list) == 0) {
+        return false;
+    }
+    memcpy(out, dev_list[0], sizeof(esp_bd_addr_t));
+    return true;
 }
 
 static void ewma_clear(void) {
@@ -175,27 +253,36 @@ static float ewma_update(const uint8_t *bda, int8_t rssi) {
     return e->smoothed;
 }
 
+static void set_candidate(const uint8_t *bda, float smoothed, int64_t t, const char *action) {
+    g_candidate.active = true;
+    memcpy(g_candidate.bda, bda, 6);
+    g_candidate.smoothed = smoothed;
+    g_candidate.set_at_ms = t;
+    g_candidate_fresh = g_force_fresh_next || !is_known_bonded_bda(bda);
+    g_force_fresh_next = false;
+    printf("[hid] candidate%s: addr=", action);
+    print_bda(bda);
+    printf(" smoothed=%.1f%s\n", smoothed, g_candidate_fresh ? " fresh" : " bonded");
+}
+
 static void candidate_update(const uint8_t *bda, float smoothed, int64_t t) {
     if (!g_candidate.active) {
-        g_candidate.active = true;
-        memcpy(g_candidate.bda, bda, 6);
-        g_candidate.smoothed = smoothed;
-        g_candidate.set_at_ms = t;
-        printf("[hid] candidate: addr=");
-        print_bda(bda);
-        printf(" smoothed=%.1f\n", smoothed);
+        set_candidate(bda, smoothed, t, "");
     } else if (bda_eq(bda, g_candidate.bda)) {
         /* same candidate; lock clock keeps running */
     } else if (smoothed >= g_candidate.smoothed + HYSTERESIS_DB) {
-        g_candidate.active = true;
-        memcpy(g_candidate.bda, bda, 6);
-        g_candidate.smoothed = smoothed;
-        g_candidate.set_at_ms = t;
-        printf("[hid] candidate replace: addr=");
-        print_bda(bda);
-        printf(" smoothed=%.1f\n", smoothed);
+        set_candidate(bda, smoothed, t, " replace");
     }
-    /* else: near-tie, keep existing candidate + clock */
+}
+
+/* lock_tick may already be stopped/not armed; INVALID_STATE is benign. */
+static void stop_lock_tick(void) {
+    esp_err_t err = esp_timer_stop(g_lock_tick);
+    if (err == ESP_ERR_INVALID_STATE) {
+        printf("[hid] lock_tick stop not armed (benign)\n");
+    } else if (err != ESP_OK) {
+        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
+    }
 }
 
 static void halt_scanning_side_effects(void) {
@@ -205,14 +292,7 @@ static void halt_scanning_side_effects(void) {
     } else if (err != ESP_OK) {
         printf("[hid] cancel_discovery err=0x%x\n", (unsigned)err);
     }
-    /* Lock_tick should be armed here (we came from begin_scan_round), but if
-     * it's not (e.g. failed-start path), INVALID_STATE is benign. */
-    err = esp_timer_stop(g_lock_tick);
-    if (err == ESP_ERR_INVALID_STATE) {
-        printf("[hid] lock_tick stop not armed (benign)\n");
-    } else if (err != ESP_OK) {
-        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
-    }
+    stop_lock_tick();
 }
 
 static void reset_scan_state(void) {
@@ -222,34 +302,52 @@ static void reset_scan_state(void) {
     g_state = ST_SCANNING;
 }
 
-static void issue_connect(const uint8_t *bda) {
+/* GAP callback is registered separately and survives hidh deinit/init. */
+static void init_hidh_host(void) {
+    esp_hidh_config_t hidh_cfg = {
+        .callback = hidh_event_handler,
+        .event_stack_size = 4096,
+        .callback_arg = NULL,
+    };
+    esp_err_t err = esp_hidh_init(&hidh_cfg);
+    if (err != ESP_OK) {
+        printf("[hid] esp_hidh_init FAIL err=0x%x\n", (unsigned)err);
+    }
+}
+
+/* Issue a BR/EDR HID connect. Caller must hold g_app_mutex. src is a log
+ * tag. NULL return from dev_open = stale wrapper TAILQ entry (no event
+ * will ever come); treat as synchronous failure instead of burning a
+ * full conn_timeout window. */
+static void start_connect(const uint8_t *bda, const char *src) {
+    if (g_state == ST_CONNECTING) {
+        printf("[hid] start_connect: already connecting, ignore\n");
+        return;
+    }
     esp_bd_addr_t peer;
     memcpy(peer, bda, sizeof(peer));
     halt_scanning_side_effects();
     ESP_ERROR_CHECK(esp_timer_start_once(g_conn_timeout, (uint64_t)CONNECT_TIMEOUT_MS * 1000));
     g_state = ST_CONNECTING;
-    esp_hidh_dev_open(peer, ESP_HID_TRANSPORT_BT, 0);
+    printf("[hid] connecting: addr=");
+    print_bda(peer);
+    printf(" transport=BR_EDR src=%s\n", src);
+    if (esp_hidh_dev_open(peer, ESP_HID_TRANSPORT_BT, 0) == NULL) {
+        printf("[hid] dev_open NULL (stale TAILQ), drop to scan\n");
+        ESP_ERROR_CHECK(esp_timer_stop(g_conn_timeout));
+        reset_scan_state();
+        arm_rescan(RETRY_BACKOFF_MS);
+    }
 }
 
 static void open_candidate(void) {
-    printf("[hid] connecting: addr=");
-    print_bda(g_candidate.bda);
-    printf(" transport=BR_EDR\n");
-    issue_connect(g_candidate.bda);
+    start_connect(g_candidate.bda, "candidate");
 }
 
 static void begin_scan_round(void) {
     reset_scan_state();
-    /* Idempotent stop: lock_tick may already be armed (e.g. on DISC_STATE
-     * auto-restart after INQ_LENGTH). INVALID_STATE here means "not armed",
-     * which is benign. ESP_ERROR_CHECK would crash on that benign case. */
-    esp_err_t err = esp_timer_stop(g_lock_tick);
-    if (err == ESP_ERR_INVALID_STATE) {
-        printf("[hid] lock_tick stop not armed (benign)\n");
-    } else if (err != ESP_OK) {
-        printf("[hid] lock_tick stop FAIL err=0x%x\n", (unsigned)err);
-    }
-    err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
+    stop_lock_tick();
+    esp_err_t err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, INQ_LENGTH, 0);
     if (err != ESP_OK) {
         printf("[hid] start_discovery FAIL err=0x%x, arm rescan\n", (unsigned)err);
         arm_rescan(RETRY_BACKOFF_MS);
@@ -286,10 +384,27 @@ static void lock_tick_cb(void *arg) {
     }
     int64_t t = now_ms();
     if (g_candidate.active) {
-        int64_t stable = t - g_candidate.set_at_ms;
-        int64_t total = t - g_scan_start_ms;
-        if (stable >= LOCK_WAIT_MS || total >= MAX_WAIT_MS) {
+        /* Fresh pair / re-pair: pad is in inquiry-scan, it disappears
+         * if the host stalls. Open immediately on first valid hit. */
+        if (g_candidate_fresh) {
+            g_candidate_fresh = false;
+            printf("[hid] candidate fresh: open immediately\n");
             open_candidate();
+        } else {
+            int64_t stable = t - g_candidate.set_at_ms;
+            int64_t total = t - g_scan_start_ms;
+            if (stable >= LOCK_WAIT_MS || total >= MAX_WAIT_MS) {
+                open_candidate();
+            }
+        }
+    } else if (t - g_scan_start_ms >= SLOW_PROBE_MS && t - g_last_probe_ms >= SLOW_PROBE_MS) {
+        /* Long idle with a bond on file: pad likely exhausted its page
+         * budget and sits stuck 'connecting'; poke it outbound. */
+        esp_bd_addr_t bonded;
+        if (first_bonded_bda(bonded)) {
+            g_last_probe_ms = t;
+            printf("[hid] probe bonded pad\n");
+            start_connect(bonded, "probe");
         }
     }
     unlock();
@@ -315,6 +430,29 @@ static void rescan_backoff_cb(void *arg) {
     }
     begin_scan_round();
     unlock();
+}
+
+/* Post-OPEN-FAIL rescue: immediately page the bonded pad (it is typically
+ * stuck 'connecting' with its page budget spent, only an inbound page from
+ * us restarts the handshake). Runs PROBE_DELAY_MS after the failure so the
+ * HID event that triggered it fully drains first. Throttled to
+ * SLOW_PROBE_MS so re-pair still gets inquiry windows. */
+static void probe_after_fail_cb(void *arg) {
+    lock();
+    if (g_state != ST_SCANNING) {
+        unlock();
+        return;
+    }
+    int64_t t = now_ms();
+    if (t - g_last_probe_ms >= SLOW_PROBE_MS) {
+        g_last_probe_ms = t;
+        printf("[hid] post-fail probe\n");
+        start_connect(g_probe_after_fail_bda, "probe");
+        unlock();
+        return;
+    }
+    unlock();
+    arm_rescan(RETRY_BACKOFF_MS);
 }
 
 static void handle_disc_result(esp_bt_gap_cb_param_t *p) {
@@ -419,15 +557,46 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
             (int)param->auth_cmpl.lk_type
         );
         break;
-    case ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT:
-        /* Scenario 1 does not handle inbound bonded reconnects. Defer to scenario 2. */
-        {
-            const uint8_t *ib = param->acl_conn_cmpl_stat.bda;
-            printf("[gap] ACL_CONN inbound addr=");
-            print_bda(ib);
-            printf(" (scenario 1: not handled; defer to scenario 2)\n");
+    case ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT: {
+        const uint8_t *ib = param->acl_conn_cmpl_stat.bda;
+        /* Reconnect is handled entirely by the stack: the pad pages us,
+         * Bluedroid accepts the ACL, does its own SDP, and raises
+         * OPEN_EVENT (is_orig=false). LGC (esp-idf#10504) proves the app
+         * must stay out of this — an app-level dev_open here races the
+         * stack's SDP and breaks the attempt. Log and do nothing. */
+        printf("[gap] ACL_CONN inbound addr=");
+        print_bda(ib);
+        printf(
+            is_known_bonded_bda(ib) ? " (bonded, letting stack handle)\n"
+                                    : " (unknown bond, ignoring)\n"
+        );
+        break;
+    }
+    case ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT: {
+        /* Clean L2CAP close: hidh CLOSE_EVT already reset state (this is
+         * a no-op). Supervision-timeout close (pad power-cut): no CLOSE_EVT
+         * ever fires, so reset here or g_state sticks CONNECTED and every
+         * later inbound page is ignored as 'busy'. */
+        const uint8_t *ib = param->acl_disconn_cmpl_stat.bda;
+        printf("[gap] ACL_DISCONN addr=");
+        print_bda(ib);
+        printf(
+            " reason=0x%x handle=0x%x\n",
+            (unsigned)param->acl_disconn_cmpl_stat.reason,
+            (unsigned)param->acl_disconn_cmpl_stat.handle
+        );
+        lock();
+        bool was_connected = (g_state == ST_CONNECTED);
+        if (was_connected) {
+            printf("[gap] ACL_DISCONN: reset ST_CONNECTED -> ST_SCANNING\n");
+            g_state = ST_SCANNING;
+        }
+        unlock();
+        if (was_connected) {
+            arm_rescan(RETRY_BACKOFF_MS);
         }
         break;
+    }
     default:
         break;
     }
@@ -441,9 +610,10 @@ static void hidh_event_handler(
 
     switch (event_id) {
     case ESP_HIDH_OPEN_EVENT:
-        bda = esp_hidh_dev_bda_get(param->open.dev);
+        /* dev can be NULL on failure paths (esp-idf#10504). */
+        bda = param->open.dev ? esp_hidh_dev_bda_get(param->open.dev) : NULL;
         /* conn_timeout may not be armed if OPEN came from inbound page (no
-         * issue_connect on that path); INVALID_STATE is benign. */
+         * start_connect on that path); INVALID_STATE is benign. */
         {
             esp_err_t stop_err = esp_timer_stop(g_conn_timeout);
             if (stop_err == ESP_ERR_INVALID_STATE) {
@@ -469,9 +639,46 @@ static void hidh_event_handler(
             if (param->open.dev) {
                 esp_hidh_dev_free(param->open.dev);
             }
+            /* Pad may have cleared its key while we still have the NVS
+             * bond (scenario 3 re-pair with long-press). Re-pair only
+             * succeeds once we drop our half; otherwise the next outbound
+             * dev_open would hit the same authentication failure. Retry
+             * up to 3x: on a stale BTC/BTM state a single remove can be
+             * ignored, but multiple give BTM time to process. */
+            if (bda != NULL) {
+                esp_bd_addr_t mutable_bda;
+                memcpy(mutable_bda, bda, sizeof(mutable_bda));
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    esp_err_t reb_err = esp_bt_gap_remove_bond_device(mutable_bda);
+                    printf("[hid] remove_bond[%d] err=0x%x\n", attempt, (unsigned)reb_err);
+                    if (reb_err == ESP_OK) {
+                        int nb = esp_bt_gap_get_bond_device_num();
+                        printf("[hid] post-remove bonds=%d\n", nb);
+                        if (nb == 0) {
+                            break;
+                        }
+                    }
+                }
+                /* If our half is still showing in NVS, force the next
+                 * candidate hit to bypass the bonded check. The probe will
+                 * then attempt an outbound page that BTA will run SDP for;
+                 * BTA will run SDP for the in-progress ACL; if SDP still
+                 * fails we reset again. The probe *is* the recovery. */
+                if (is_known_bonded_bda(bda)) {
+                    printf("[hid] bond persists after retries, set force_fresh\n");
+                    g_force_fresh_next = true;
+                }
+            }
             lock();
             reset_scan_state();
-            arm_rescan(RETRY_BACKOFF_MS);
+            if (bda != NULL) {
+                memcpy(g_probe_after_fail_bda, bda, sizeof(g_probe_after_fail_bda));
+                ESP_ERROR_CHECK(
+                    esp_timer_start_once(g_probe_after_fail, (uint64_t)PROBE_DELAY_MS * 1000)
+                );
+            } else {
+                arm_rescan(RETRY_BACKOFF_MS);
+            }
             unlock();
         }
         break;
@@ -519,16 +726,16 @@ void app_main(void) {
         .callback = rescan_backoff_cb,
         .name = "rescan_backoff",
     };
+    const esp_timer_create_args_t pf_args = {
+        .callback = probe_after_fail_cb,
+        .name = "probe_after_fail",
+    };
     ESP_ERROR_CHECK(esp_timer_create(&tick_args, &g_lock_tick));
     ESP_ERROR_CHECK(esp_timer_create(&ct_args, &g_conn_timeout));
     ESP_ERROR_CHECK(esp_timer_create(&rb_args, &g_rescan_backoff));
+    ESP_ERROR_CHECK(esp_timer_create(&pf_args, &g_probe_after_fail));
 
-    esp_hidh_config_t hidh_cfg = {
-        .callback = hidh_event_handler,
-        .event_stack_size = 4096,
-        .callback_arg = NULL,
-    };
-    ESP_ERROR_CHECK(esp_hidh_init(&hidh_cfg));
+    init_hidh_host();
     ESP_ERROR_CHECK(esp_bt_gap_register_callback(bt_gap_cb));
 
     printf("[hid] boot bonds=%d\n", esp_bt_gap_get_bond_device_num());
