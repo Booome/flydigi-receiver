@@ -296,17 +296,22 @@ find . \( -name '*.c' -o -name '*.h' \) -not -path './.git/*' -not -path '*/buil
 
 ### 注释极简规则（防止过度注释）
 
-注释**只保留"why"**，**删掉"what"**。函数名 + 参数名已经表达清楚的，**禁止**再加注释复述。
+注释**只保留"why"**，**删掉"what"**，并且 **"why" 只留一句话**。函数名 + 参数名已经表达清楚的，**禁止**再加注释复述。
 允许/禁止一览：
 
-- ✅ **保留**：解释**非显而易见的**设计决策——魔数（如 `INQ_LENGTH=8` 为什么是 8）、fallback 分支的合法性理由（`ESP_ERR_INVALID_STATE` 为何 benign）、明确的 out-of-scope 占位（"scenario 1 不处理 inbound，defer 到 scenario 2"）、BT 协议栈 quirk 的 workaround 说明
+- ✅ **保留（≤2 行）**：魔数单位（`INQ_LENGTH=8` = 8×1.28s）、fallback 分支合法性（`ESP_ERR_INVALID_STATE` 为何 benign）、quirk 一句话结论（"inbound 重连归栈管，app 别 dev_open——esp-idf#10504"）
 - ✅ **保留**：SPDX / 版权 / License 头（**法律要求**，不可删）
-- ✅ **保留**：模块顶部的**作用域声明**（"scenario 1: 只 raw dump，decode 留后续"）——告诉读者**有意不做**什么
-- ❌ **删除**：装饰性章节分隔（如 `/* esp_timer callbacks run in the esp_timer task. */`、`/* GAP callback (BT task). */`、`/* HID callback. */`——函数名 + 命名已自明）
-- ❌ **删除**：行尾 `/* same candidate */`、`/* else: ... */` 类"复述分支"的注释——代码结构已经表达
-- ❌ **删除**：解释**做了什么**的注释（"Call esp_xxx to do yyy"）——直接读代码
-- ❌ **删除**：函数 docstring 中"Print the raw bytes"——函数名 `print_raw_bytes` 已经说明
+- ✅ **保留（≤8 行）**：模块顶部**最小作用域声明**——干什么 + **spec 文件路径**
+- ❌ **删除**：装饰性章节分隔（"GAP callback (BT task)" 类）
+- ❌ **删除**：复述分支/行为的注释（`/* same candidate */`、`/* else: ... */`、"Call esp_xxx to do yyy"）
+- ❌ **删除（关键新条款）**：**设计论证、事故复盘、机制推演**——哪怕它解释得再好，也不许写进代码；
+  这类内容**必须**落在 `docs/superpowers/specs/`，代码里只留一句结论 + spec 章节号/路径。
+  本条是 2026-09-08 复盘出的规则漏洞：旧版"保留非显而易见的设计决策"无长度上限，
+  导致 start_connect 出现 14 行论文式注释；**"why 很长"不是注释的理由，"spec 里已有"才是删除的理由。**
 
-**铁律**：自问一下——"删掉这条注释，代码是否仍然清晰？" 若**是**，必须删。
+**硬上限**：单个注释块 ≤ **2 行**（SPDX 与模块头除外；模块头 ≤ 8 行）。超过 2 行的"why" = 该进 spec。
+**量化闸门**：全文件注释行占比 ≤ **8%**（`grep -c '/\*\|\*' 对比 wc -l`，超标即精简）。
 
-PR review / format 闸门阶段会扫注释——堆"what"-comment 的提交会被打回。
+**铁律**：自问一下——"删掉这条注释，代码是否仍然清晰？" 若**是**，必须删。若答案是"不清晰，因为背后有一串推理"——那串推理属于 spec，代码只配得上一句指针。
+
+PR review / format 闸门阶段会扫注释——堆"what"-comment 或论文式"why"-comment 的提交会被打回。
