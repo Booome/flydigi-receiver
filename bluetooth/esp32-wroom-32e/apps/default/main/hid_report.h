@@ -3,14 +3,7 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  *
- * hid_report: HID Report tool module (scenario 1 — raw dump only).
- *
- * Scenario 1 scope: when an INPUT report arrives, print the raw bytes to UART
- * (no decoding). Decoding is deferred until we have measured button/stick/trigger
- * semantics on hardware.
- *
- * The descriptor dump on OPEN prints the raw HID Report Descriptor bytes for
- * offline analysis.
+ * Raw dump only by design; decoding awaits on-hardware field mapping.
  */
 
 #ifndef BT_APP_HID_REPORT_H

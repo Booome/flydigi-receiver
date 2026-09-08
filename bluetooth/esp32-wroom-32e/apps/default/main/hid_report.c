@@ -2,9 +2,6 @@
  * SPDX-FileCopyrightText: 2026 flydigi-receiver
  *
  * SPDX-License-Identifier: CC0-1.0
- *
- * hid_report: HID Report raw dump implementation (scenario 1).
- * No decoding — see header.
  */
 
 #include <stdio.h>

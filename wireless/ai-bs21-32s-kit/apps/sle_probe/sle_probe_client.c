@@ -11,17 +11,9 @@
 #include "soc_osal.h"
 #include "systick.h"
 
-/* *****************************************************************************
- * Macros
- * *****************************************************************************/
-
 #define PROBE_LOG "[probe]"
 #define PROBE_SCAN_MS 5000
 #define PROBE_MTU_SIZE_DEFAULT 300
-
-/* *****************************************************************************
- * Global state
- * *****************************************************************************/
 
 static ssapc_callbacks_t g_ssapc_cbk = {0};
 static sle_dev_manager_callbacks_t g_dev_cbk = {0};
@@ -75,10 +67,8 @@ static void start_next_read(void);
  * find_structure_cb to decide whether to record service entries). */
 static uint8_t g_cur_find_type = 0xFF;
 
-/* Raw UUIDs parsed from the discovery PDU (indexed by start_hdl). The SDK's
- * ssapc_find_structure_cb mis-reads the UUID offset for PRIMARY_SERVICE
- * (returns 37BE = descriptor UUID instead of the real service UUID), so we
- * parse the correct UUID from the raw PDU and look it up by handle. */
+/* SDK ssapc_find_structure_cb mis-reads the PRIMARY_SERVICE uuid offset
+ * (gets descriptor 37BE); parse the real uuid from the raw PDU by handle. */
 #define RAW_UUID_MAX 16
 static struct {
     uint16_t start_hdl;
@@ -115,10 +105,6 @@ static const uint8_t *raw_uuid_lookup(uint16_t start_hdl, uint16_t *out_len) {
         }                                                                                          \
     } while (0)
 
-/* *****************************************************************************
- * Forward declarations
- * *****************************************************************************/
-
 static void probe_start_scan(void);
 static void probe_connect_best(void);
 static void probe_sle_enable_cb(uint8_t status);
@@ -127,10 +113,6 @@ static void ssapc_exchange_info_cb(
     uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status
 );
 static void start_next_find(void);
-
-/* *****************************************************************************
- * Helpers
- * *****************************************************************************/
 
 static void probe_print_hex(const uint8_t *buf, uint32_t len) {
     for (uint32_t i = 0; i < len; i++) {
@@ -174,10 +156,6 @@ void probe_dump_discovery_cfm(void *ctx, uint8_t *pdu, uint32_t len) {
     }
     ssapc_discovery_services_cfm(ctx, pdu, len);
 }
-
-/* *****************************************************************************
- * Scan / discovery callbacks — drive the chain forward
- * *****************************************************************************/
 
 static void probe_power_on_cb(uint8_t status) {
     osal_printk("%s power on: %d\r\n", PROBE_LOG, status);
@@ -269,10 +247,6 @@ static void probe_seek_disable_cb(errcode_t status) {
     probe_connect_best();
 }
 
-/* *****************************************************************************
- * Connection callbacks — drive the chain forward
- * *****************************************************************************/
-
 static void probe_connect_state_changed_cb(
     uint16_t conn_id,
     const sle_addr_t *addr,
@@ -340,10 +314,6 @@ static void probe_pair_complete_cb(uint16_t conn_id, const sle_addr_t *addr, err
         ssapc_exchange_info_cb(g_client_id, g_conn_id, NULL, ret);
     }
 }
-
-/* *****************************************************************************
- * SSAP discovery callbacks — drive the chain forward
- * *****************************************************************************/
 
 static void ssapc_exchange_info_cb(
     uint8_t client_id, uint16_t conn_id, ssap_exchange_info_t *param, errcode_t status
@@ -496,10 +466,6 @@ static void ssapc_find_structure_cmp_cb(
     start_next_find();
 }
 
-/* *****************************************************************************
- * SSAP data callbacks — log only
- * *****************************************************************************/
-
 static void ssapc_write_cfm_cb(
     uint8_t client_id, uint16_t conn_id, ssapc_write_result_t *write_result, errcode_t status
 ) {
@@ -561,20 +527,12 @@ static void ssapc_indication_cb(
     probe_log_frame("indication", data);
 }
 
-/* *****************************************************************************
- * Low-latency RX callback
- * *****************************************************************************/
-
 static void low_latency_rx_cb(uint16_t len, uint8_t *value) {
     if (value == NULL || len == 0)
         return;
     osal_printk("%s low_latency_rx: len=%u ", PROBE_LOG, len);
     probe_print_hex(value, len);
 }
-
-/* *****************************************************************************
- * Chain drivers — each step initiates the next
- * *****************************************************************************/
 
 static void probe_start_scan(void) {
     g_scan_start_ms = uapi_systick_get_ms();
@@ -664,10 +622,6 @@ static void start_next_read(void) {
         return;
     }
 }
-
-/* *****************************************************************************
- * Init
- * *****************************************************************************/
 
 void probe_init(void) {
     g_dev_cbk.sle_power_on_cb = probe_power_on_cb;

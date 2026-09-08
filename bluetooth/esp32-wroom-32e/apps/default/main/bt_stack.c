@@ -2,11 +2,6 @@
  * SPDX-FileCopyrightText: 2026 flydigi-receiver
  *
  * SPDX-License-Identifier: CC0-1.0
- *
- * Minimal BR/EDR (Bluedroid BTDM) bring-up, distilled from the ESP-IDF esp_hid
- * example glue: controller + Bluedroid enable, SSP NoInputNoOutput (headless
- * Just Works), legacy pin, connectable+non-discoverable scan mode. The GAP
- * callback and discovery are the caller's (main.c) responsibility.
  */
 
 #include "esp_err.h"
@@ -46,9 +41,8 @@ esp_err_t bt_stack_start(void) {
         return ret;
     }
 
-    /* esp_hidh always initializes its BLE host path (esp_ble_hidh_init) which
-     * blocks until a GATTC app-register event is routed; that event needs this
-     * callback even though we use BR/EDR only. Plumbing, not a BLE data flow. */
+    /* esp_hidh's BLE init blocks on a GATTC register event even for BR/EDR-only
+     * builds — required plumbing, do not delete. */
 #if CONFIG_BT_BLE_ENABLED
     if ((ret = esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler)) != ESP_OK) {
         ESP_LOGE(TAG, "gattc callback register failed: %d", ret);
@@ -56,8 +50,7 @@ esp_err_t bt_stack_start(void) {
     }
 #endif
 
-    /* Headless host: advertise NoInputNoOutput so SSP uses Just Works and a
-     * reconnect never waits on a passkey/display the user cannot provide. */
+    /* IO_CAP_NONE keeps SSP at Just Works; headless has no passkey UI. */
     esp_bt_sp_param_t param_type = ESP_BT_SP_IOCAP_MODE;
     esp_bt_io_cap_t iocap = ESP_BT_IO_CAP_NONE;
     esp_bt_gap_set_security_param(param_type, &iocap, sizeof(iocap));

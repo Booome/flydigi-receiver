@@ -31,13 +31,11 @@
 #define EWMA_ALPHA_NUM 3
 #define EWMA_ALPHA_DEN 10
 #define MAX_BONDED_DEVICES 8
-/* Outbound poke for a pad that exhausted its page budget; deliberately slow
- * so it never crowds out the passive reconnect / inquiry paths. */
+/* Deliberately slow: faster would crowd out the passive reconnect path. */
 #define SLOW_PROBE_MS 8000
 #define EWMA_MAX 16
 #define LOCK_TICK_MS 250
 
-/* Inquiry window in units of 1.28 s; 8 ~= 10 s per cycle. */
 #define INQ_LENGTH 3
 
 typedef struct {
@@ -65,13 +63,11 @@ static esp_timer_handle_t g_conn_timeout = NULL;
 static esp_timer_handle_t g_rescan_backoff = NULL;
 static esp_timer_handle_t g_probe_after_fail = NULL;
 
-/* Probe target stored by OPEN FAIL and consumed by the one-shot timer, so
- * the page runs after the failing HID event drains. */
+/* Deferred so the page runs after the failing HID event drains. */
 static esp_bd_addr_t g_probe_after_fail_bda = {0};
 
 static int64_t g_last_probe_ms = 0;
 
-/* Pad advertises a different name per connection mode (see docs/controller-modes.md). */
 static const char *const g_gamepad_names[] = {
     "Xbox Wireless Controller", /* PC>BT / Android / iOS (X-input) */
     "Pro Controller",           /* Nintendo Switch mode */

@@ -10,9 +10,8 @@
 #define SLE_DECOY_LOG "[sle decoy]"
 #define SLE_MTU_SIZE 520
 
-/* Real controller service table captured by probe on H3863. UUID short values
- * are embedded in the last two bytes of a full 16-byte uuid (little-endian).
- * A len=2 uuid would make the find-rsp xx field 0000 — the wrong value. */
+/* Service table air-captured by probe on H3863; short uuids live in
+ * uuid[14..15] (a 2B len would send xx=0000). */
 #define UUID_SVC0 0x0B06
 #define UUID_SVC1 0x0906
 #define UUID_P11 0x3C10
@@ -26,9 +25,8 @@
 #define HID_MAP_LEN 69
 #define MAX_ATTRS 8
 
-/* Real controller service table captured by probe on H3863. UUID short values
- * are embedded in the last two bytes of a full 16-byte uuid (little-endian).
- * A len=2 uuid would make the find-rsp xx field 0000 — the wrong value. */
+/* Service table air-captured by probe on H3863; short uuids live in
+ * uuid[14..15] (a 2B len would send xx=0000). */
 #define UUID_SVC0 0x0B06
 #define UUID_SVC1 0x0906
 #define UUID_P11 0x3C10

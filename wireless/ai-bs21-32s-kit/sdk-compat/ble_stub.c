@@ -1,6 +1,5 @@
-/* Temporary stubs for BLE sapi symbols left referenced by the rcu (SLE-only)
- * libbth_sdk.a but removed from libbt_host.a. These are never called in
- * SLE-only builds; they only exist to satisfy the linker. */
+/* Linker-only stubs: SLE-only rcu libbth_sdk.a still references BLE sapi
+ * symbols removed from libbt_host.a. Never called. */
 #include <stdint.h>
 
 typedef uint32_t errcode_t;

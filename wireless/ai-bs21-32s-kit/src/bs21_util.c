@@ -8,19 +8,8 @@
 #include "soc_osal.h"
 #include "string.h"
 
-/*
- * Initialize the reset button (S_MGPIO21).
- *
- * Source: SDK demo (application/demo/demo.c), function bs21_rst().
- * The function configures S_MGPIO21 as a pull-up input and performs two
- * vendor-specific register writes (0x5702C51C) that are not exposed by the
- * SDK headers. These writes come directly from the SDK demo.
- *
- * Necessity: verified on hardware. Removing this call causes the reset
- * button (S_MGPIO21) to stop working, confirming that the pin must be
- * configured as a pull-up input with the two vendor register bits set.
- * Do not remove.
- */
+/* Register bits copied from SDK demo bs21_rst(); hw-verified that the reset
+ * button stops working without them. Do not remove. */
 void bs21_rst(void) {
     uapi_pin_set_mode(S_MGPIO21, (pin_mode_t)HAL_PIO_FUNC_GPIO);
     uapi_gpio_set_dir(S_MGPIO21, GPIO_DIRECTION_INPUT);

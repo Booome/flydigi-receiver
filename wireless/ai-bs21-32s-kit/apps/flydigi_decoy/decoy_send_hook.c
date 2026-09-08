@@ -8,9 +8,8 @@
 
 #define DECL_REAL(fn) extern void __real_##fn(void *a0, void *a1, void *a2, void *a3);
 
-/* Find-response marker: opcode 05, fmt 0b, then 2-byte sub-type 0x8x.
-   Real controller uses fmt 03 and omits the 2 sub-type bytes, so the
-   on-wire bytes are 05 0b 00 8x (decoy) vs 05 03 (real). */
+/* find-rsp marker, decoy on-wire 05 0b 00 8x vs real 05 03 (fmt 03, no
+   sub-type bytes). */
 static const uint8_t pat[3] = {0x05, 0x0b, 0x00};
 
 DECL_REAL(cs_pdu_tl_send);

@@ -7,14 +7,9 @@
 #include "sle_ssap_stru.h"
 #include "soc_osal.h"
 
-/* *****************************************************************************
- * Macros
- * *****************************************************************************/
-
 #define DECOY_LOG "[decoy]"
-/* SSAP exchange-info version reported to clients. The real controller reports
- * a different version than our SDK's default (0), which changes the find-
- * response framing the server emits. Test candidate values here. */
+/* Real controller reports a non-zero SSAP version; it changes find-rsp
+ * framing. Tune candidates here. */
 #define DECOY_SSAP_VERSION 0
 #define VAL11_LEN 4
 #define VAL12_LEN 8
@@ -22,14 +17,9 @@
 #define VAL14_LEN 2
 #define MAX_ATTRS 8
 
-/* Handle padding (A/B experiment): occupies 0x02-0x0F so the mirrored table
- * lands on the real controller's handles — needed IF the dongle hardcodes
- * handles. Cost: 14 extra handle+type pairs not on the real controller. */
+/* Pad handles 0x02-0x0F so the mirror lands on real handles (if the dongle
+ * hardcodes them); costs 14 bogus pairs. */
 #define DECOY_ENABLE_PAD 0
-
-/* *****************************************************************************
- * Attribute storage — mirrors the real controller layout (experiment N)
- * *****************************************************************************/
 
 /* Default values captured from the real controller (experiment N). */
 static uint8_t g_val_11[VAL11_LEN];
@@ -66,10 +56,6 @@ static uint8_t g_attr_cnt = 0;
 static uint8_t g_server_id = 0;
 static uint16_t g_notify_hdl = 0;
 
-/* *****************************************************************************
- * Helpers
- * *****************************************************************************/
-
 static void decoy_print_hex(const char *tag, const uint8_t *buf, uint16_t len) {
     osal_printk("%s %s ", DECOY_LOG, tag);
     for (uint16_t i = 0; i < len; i++) {
@@ -87,11 +73,8 @@ static attr_entry_t *decoy_find_attr(uint16_t handle) {
     return NULL;
 }
 
-/* Register a full 16-byte uuid with the 2-byte short value embedded in the
- * last two bytes (GATT convention: ...-xxxx). The SSAP encode emits exactly
- * these two bytes as the find-rsp xx field. A 2-byte uuid leaves them zero,
- * so xx would always be 0000 — hence we must use a full uuid.
- * uuid_val is little-endian (e.g. 0x3c10 -> uuid[14]=0x10, uuid[15]=0x3c). */
+/* 16B uuid carrying the short value in uuid[14..15] (LE): SSAP emits exactly
+ * those 2 bytes as find-rsp xx; a 2B uuid would always send 0000. */
 static errcode_t decoy_add_uuid16(sle_uuid_t *uuid, uint16_t uuid_val) {
     uuid->len = 16;
     static const uint8_t base[14] = {
@@ -114,9 +97,8 @@ static errcode_t decoy_add_uuid2(sle_uuid_t *uuid, uint8_t b0, uint8_t b1) {
     return ERRCODE_SUCC;
 }
 
-/* Register one property and record its handle in the lookup table.
- * uuid_val is the 2-byte short uuid (LE u16) that appears as the xx field
- * in the find response — must match the real controller per property. */
+/* uuid_val (LE u16) is the find-rsp xx; must match the real controller
+ * per property. */
 static errcode_t decoy_add_property(
     uint16_t svc_hdl,
     uint32_t oper,
@@ -162,10 +144,6 @@ static errcode_t decoy_add_property(
     }
     return ERRCODE_SUCC;
 }
-
-/* *****************************************************************************
- * SSAP callbacks — full behavior logging
- * *****************************************************************************/
 
 static void decoy_add_service_cb(
     uint8_t server_id, sle_uuid_t *uuid, uint16_t handle, errcode_t status
@@ -227,10 +205,6 @@ static void decoy_indicate_cfm_cb(
         status
     );
 }
-
-/* *****************************************************************************
- * SSAP callbacks — full behavior logging
- * *****************************************************************************/
 
 static void decoy_mtu_changed_cb(
     uint8_t server_id, uint16_t conn_id, ssap_exchange_info_t *info, errcode_t status
@@ -327,12 +301,6 @@ static void decoy_write_cb(
     }
 }
 
-/* *****************************************************************************
- * Low-latency server callbacks — the dongle switches the link into
- * low-latency EM mode right after pairing; without these handlers the
- * stack aborts the link (disc 0x7). Mirrors the official air-mouse flow.
- * *****************************************************************************/
-
 static uint8_t *decoy_hid_data_cb(
     uint8_t *length, uint16_t *ssap_handle, uint8_t *data_type, uint16_t co_handle
 ) {
@@ -362,10 +330,6 @@ void decoy_low_latency_init(void) {
     errcode_t ret = sle_low_latency_register_callbacks(&cbks);
     osal_printk("%s low_latency_register_callbacks: 0x%x\r\n", DECOY_LOG, ret);
 }
-
-/* *****************************************************************************
- * Service registration — mirrors the controller attribute table
- * *****************************************************************************/
 
 /* Register SSAP callbacks. Must run BEFORE enable_sle() (official flow). */
 void decoy_server_early_init(void) {
@@ -410,10 +374,7 @@ void decoy_services_add(void) {
         return;
     }
 
-    /* Handle padding (A/B experiment): occupies 0x02-0x0F so the mirrored
-     * table lands on the real controller's handles (0x10-0x18) — needed IF
-     * the dongle hardcodes handles. Cost: 14 extra handle+type pairs that
-     * do not exist on the real controller. Toggle to isolate. */
+    /* Pad handles 0x02-0x0F (see DECOY_ENABLE_PAD). */
 #if DECOY_ENABLE_PAD
     sle_uuid_t pad_uuid = {0};
     static uint8_t g_pad_vals[14];
@@ -456,9 +417,7 @@ void decoy_services_add(void) {
         return;
     }
     osal_printk("%s svc0 @0x%02x\r\n", DECOY_LOG, h_svc0);
-    /* 0x11: notify channel with CCC descriptor. Real controller oper =
-     * 0x30d (781); the stack's check_property_info cap at 0x100 is lifted
-     * by the byte patch in tools/patch_gle_decoy.py. */
+    /* Real oper 0x30d; the 0x100 cap is lifted by tools/patch_gle_decoy.py. */
     uint16_t h_11 = 0;
     ret = decoy_add_property(
         h_svc0,
@@ -540,9 +499,7 @@ void decoy_services_add(void) {
     ret = ssaps_start_service(g_server_id, h_svc0);
     osal_printk("%s start svc0: 0x%x\r\n", DECOY_LOG, ret);
 
-    /* Service 1: device information. Real controller primary-service uuids
-     * are 0x0b06 (svc0) and 0x0906 (svc1); register them as 16-byte so the
-     * find-rsp framer emits the correct 2-byte value from uuid[14]/[15]. */
+    /* Register svc uuids as 16B so the framer emits the real 2-byte value. */
     uint16_t h_svc1 = 0;
     ret = decoy_add_uuid16(&svc_uuid, 0x0906);
     if (ret != ERRCODE_SUCC) {
