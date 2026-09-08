@@ -3,43 +3,10 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  *
- * default: BT HID host, scenarios 1 + 2.
- *
- * Scope of this milestone:
- *   - Bring up BT (bt_stack.c) + esp_hidh host.
- *   - Scenario 1: continuous inquiry; every name-matched DISC_RES opens
- *     immediately as a fresh-pair attempt, dropping any stale local bond
- *     first. An inquiry-visible pad has cleared its key (pairing mode);
- *     presenting ours gets 0x05-rejected and wedges the pad UI on
- *     "connecting". EWMA + hysteresis still smooth multi-pad RSSI noise.
- *   - Scenario 2 (bonded pad power-cycle): purely passive — the stack
- *     handles device-initiated reconnection end to end (page -> SDP ->
- *     OPEN_EVENT is_orig=false); we only log the inbound ACL and never
- *     dev_open over it (app-initiated open races the stack's SDP:
- *     esp-idf#10504). One slow outbound probe every SLOW_PROBE_MS rescues
- *     a pad that exhausted its page budget.
- *   - On OPEN, dump descriptor + print raw INPUT reports; on FAIL/CLOSE, reset
- *     state and resume inquiry.
- *
- * Out of scope (deferred):
- *   - HID report field decoding.
- *   - Half-open inbound ACL (pad pages while we hold no bond): SDP then
- *     dead-airs, conn_timeout leaks the hidh wrapper, retries bounce on
- *     "stale TAILQ" until the stack's own ~60s SDP timeout frees it.
- *
- * State machine (event-driven, no while(1) loop):
- *   ST_SCANNING   — inquiry running; lock_tick handles the SLOW_PROBE rescue
- *                   path (no candidate lock window needed).
- *   ST_CONNECTING — dev_open issued; waiting for OPEN_EVENT or connect_timeout.
- *   ST_CONNECTED  — paired, receiving INPUT reports.
- *
- * Candidate evaluation:
- *   Layer 1 name allowlist: "Xbox Wireless Controller" / "Pro Controller".
- *   Layer 2 EWMA alpha=0.3 — smooth RSSI jitter for multi-pad stability.
- *   Open policy: every name-matched inquiry hit is treated as fresh intent —
- *     the pad is in pairing mode by definition (only then does it run
- *     inquiry scan), so any stale NVS key is dropped on the floor instead of
- *     being used for an outbound page.
+ * BT HID host for Flydigi Apex5: continuous inquiry pairs any name-matched
+ * pad in pairing mode (wipe stale bond, fresh SSP); bonded pads reconnect
+ * passively via the stack. Event-driven; design analysis in
+ * docs/superpowers/specs/2026-09-07-bt-hid-scenario2-bonded-reconnect-design.md
  */
 
 #include <stdio.h>
@@ -57,24 +24,20 @@
 #include "hid_report.h"
 
 #define HYSTERESIS_DB 3
-/* Bluedroid's device-initiated reconnect answers SDP late (5-35 s is
- * normal; see esp-idf#10504 and the RAPOO keyboard log on esp32.com), so
- * give an in-flight CONNECTING attempt this long before declaring it dead. */
+/* Device-initiated reconnect answers SDP late (5-35 s normal, esp-idf#10504). */
 #define CONNECT_TIMEOUT_MS 35000
 #define RETRY_BACKOFF_MS 300
 #define PROBE_DELAY_MS 200
 #define EWMA_ALPHA_NUM 3
 #define EWMA_ALPHA_DEN 10
 #define MAX_BONDED_DEVICES 8
-/* Rescue probe for a pad stuck in "connecting" with its page budget
- * exhausted (won't page again by itself). Deliberately slow: must not
- * interrupt the passive auto-reconnect path (a probe while an attempt is
- * in flight just gets a sync-NULL and is skipped anyway). */
+/* Outbound poke for a pad that exhausted its page budget; deliberately slow
+ * so it never crowds out the passive reconnect / inquiry paths. */
 #define SLOW_PROBE_MS 8000
 #define EWMA_MAX 16
 #define LOCK_TICK_MS 250
 
-/* Inquiry window (units of 1.28s); 8 ~= 10s per cycle. */
+/* Inquiry window in units of 1.28 s; 8 ~= 10 s per cycle. */
 #define INQ_LENGTH 8
 
 typedef struct {
@@ -102,22 +65,18 @@ static esp_timer_handle_t g_conn_timeout = NULL;
 static esp_timer_handle_t g_rescan_backoff = NULL;
 static esp_timer_handle_t g_probe_after_fail = NULL;
 
-/* Pad may have cleared its key while we still have the NVS bond (long-
- * press re-pair). The probe target stored by OPEN FAIL, taken when the
- * one-shot timer fires (after the current HID event fully drains). */
+/* Probe target stored by OPEN FAIL and consumed by the one-shot timer, so
+ * the page runs after the failing HID event drains. */
 static esp_bd_addr_t g_probe_after_fail_bda = {0};
 
-/* Rate limit for the stuck-pad rescue probe (see SLOW_PROBE_MS). */
 static int64_t g_last_probe_ms = 0;
 
-/* Known Apex5 BR/EDR advertised names. Extend as new names appear. */
+/* Pad advertises a different name per connection mode (see docs/controller-modes.md). */
 static const char *const g_gamepad_names[] = {
-    "Xbox Wireless Controller", /* PC>BT / Android / iOS = X-input */
-    "Pro Controller",           /* Nintendo Switch (NS) mode */
+    "Xbox Wireless Controller", /* PC>BT / Android / iOS (X-input) */
+    "Pro Controller",           /* Nintendo Switch mode */
 };
 
-/* Forward decls for mutually recursive helpers (begin_scan_round <-> arm_rescan)
- * and the hidh callback referenced by init_hidh_host. */
 static void begin_scan_round(void);
 static void arm_rescan(int64_t delay_ms);
 static void hidh_event_handler(
@@ -160,7 +119,6 @@ static bool is_gamepad(const char *name) {
     return false;
 }
 
-/* NVS bond list into dev_list; returns count, 0 if none or query fails. */
 static int bonded_list(esp_bd_addr_t *dev_list) {
     if (esp_bt_gap_get_bond_device_num() <= 0) {
         return 0;
@@ -172,7 +130,6 @@ static int bonded_list(esp_bd_addr_t *dev_list) {
     return dev_num;
 }
 
-/* True if bda is in the NVS bond list (filter accidental pages). */
 static bool is_known_bonded_bda(const uint8_t *bda) {
     esp_bd_addr_t dev_list[MAX_BONDED_DEVICES];
     int n = bonded_list(dev_list);
@@ -184,7 +141,6 @@ static bool is_known_bonded_bda(const uint8_t *bda) {
     return false;
 }
 
-/* First NVS-bonded peer, for the outbound probe. False if none. */
 static bool first_bonded_bda(esp_bd_addr_t out) {
     esp_bd_addr_t dev_list[MAX_BONDED_DEVICES];
     if (bonded_list(dev_list) == 0) {
@@ -252,14 +208,14 @@ static void candidate_update(const uint8_t *bda, float smoothed) {
     if (!g_candidate.active) {
         set_candidate(bda, smoothed, "");
     } else if (bda_eq(bda, g_candidate.bda)) {
-        /* incumbent's EWMA can drift past its own baseline; keep it */
+        /* keep incumbent: its own EWMA drift must not restart the baseline */
     } else if (smoothed >= g_candidate.smoothed + HYSTERESIS_DB) {
         set_candidate(bda, smoothed, " replace");
     }
 }
 
-/* lock_tick may already be stopped/not armed; INVALID_STATE is benign. */
 static void stop_lock_tick(void) {
+    /* INVALID_STATE = not armed, the normal case at rescan entry. */
     esp_err_t err = esp_timer_stop(g_lock_tick);
     if (err == ESP_ERR_INVALID_STATE) {
         printf("[hid] lock_tick stop not armed (benign)\n");
@@ -297,20 +253,8 @@ static void init_hidh_host(void) {
     }
 }
 
-/* Issue a BR/EDR HID connect. Caller must hold g_app_mutex. src is a log
- * tag. NULL return from dev_open = stale wrapper TAILQ entry (no event
- * will ever come); treat as synchronous failure instead of burning a
- * full conn_timeout window.
- *
- * wipe_bond (v1 fix 241277d, ported): a peer sighted in inquiry has
- * forgotten our key (pairing mode). Drop the bond HERE, while no ACL is
- * up — bta_dm_remove_device defers the delete while the ACL is live, so
- * the FAIL-path remove lands too late: the next page then authenticates
- * with the stale key, gets 0x05 rejected, and wedges the pad UI on
- * "connecting" permanently (pad stops scanning after rejecting). The
- * BTC/BTA message queues are FIFO, so this remove executes before
- * dev_open's link-layer auth; auth then runs keyless and the pad drives
- * fresh SSP. */
+/* Caller holds g_app_mutex. wipe_bond: inquiry-visible pad has cleared its
+ * key — drop ours first so dev_open authenticates keyless (spec 3.4). */
 static void start_connect(const uint8_t *bda, const char *src, bool wipe_bond) {
     esp_bd_addr_t peer;
     memcpy(peer, bda, sizeof(peer));
@@ -379,8 +323,6 @@ static void lock_tick_cb(void *arg) {
     if (g_candidate.active) {
         open_candidate();
     } else if (t - g_scan_start_ms >= SLOW_PROBE_MS && t - g_last_probe_ms >= SLOW_PROBE_MS) {
-        /* Long idle with a bond on file: pad likely exhausted its page
-         * budget and sits stuck 'connecting'; poke it outbound. */
         esp_bd_addr_t bonded;
         if (first_bonded_bda(bonded)) {
             g_last_probe_ms = t;
@@ -413,11 +355,8 @@ static void rescan_backoff_cb(void *arg) {
     unlock();
 }
 
-/* Post-OPEN-FAIL rescue: immediately page the bonded pad (it is typically
- * stuck 'connecting' with its page budget spent, only an inbound page from
- * us restarts the handshake). Runs PROBE_DELAY_MS after the failure so the
- * HID event that triggered it fully drains first. Throttled to
- * SLOW_PROBE_MS so re-pair still gets inquiry windows. */
+/* A pad that just failed auth is out of page budget; only our inbound page
+ * revives it. PROBE_DELAY_MS lets the failing HID event drain first. */
 static void probe_after_fail_cb(void *arg) {
     lock();
     if (g_state != ST_SCANNING) {
@@ -488,10 +427,8 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         handle_disc_result(param);
         break;
     case ESP_BT_GAP_DISC_STATE_CHANGED_EVT:
-        /* Continuous inquiry: Bluedroid stops inquiry after INQ_LENGTH; restart
-         * immediately. Only inquiry needs restarting — lock_tick is periodic
-         * and already armed from begin_scan_round(), so re-arming would fail
-         * with INVALID_STATE. Keep this path minimal. */
+        /* Bluedroid stops inquiry after INQ_LENGTH; only inquiry is re-armed
+         * here — re-arming the periodic lock_tick caused a start-fail loop. */
         printf("[gap] DISC_STATE state=%d\n", (int)param->disc_st_chg.state);
         if (param->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
             lock();
@@ -511,7 +448,7 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         esp_bt_gap_ssp_confirm_reply(param->cfm_req.bda, true);
         break;
     case ESP_BT_GAP_KEY_REQ_EVT:
-        /* Headless host: no keyboard. Accept with passkey 0 so SSP never stalls. */
+        /* Headless: accept passkey 0 so SSP never stalls. */
         esp_bt_gap_ssp_passkey_reply(param->key_req.bda, true, 0);
         break;
     case ESP_BT_GAP_KEY_NOTIF_EVT:
@@ -538,12 +475,9 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         );
         break;
     case ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT: {
+        /* Bonded reconnect is stack-owned (SDP -> OPEN_EVENT is_orig=false);
+         * an app dev_open here races that SDP — esp-idf#10504. Log only. */
         const uint8_t *ib = param->acl_conn_cmpl_stat.bda;
-        /* Reconnect is handled entirely by the stack: the pad pages us,
-         * Bluedroid accepts the ACL, does its own SDP, and raises
-         * OPEN_EVENT (is_orig=false). LGC (esp-idf#10504) proves the app
-         * must stay out of this — an app-level dev_open here races the
-         * stack's SDP and breaks the attempt. Log and do nothing. */
         printf("[gap] ACL_CONN inbound addr=");
         print_bda(ib);
         printf(
@@ -553,10 +487,8 @@ static void bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         break;
     }
     case ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT: {
-        /* Clean L2CAP close: hidh CLOSE_EVT already reset state (this is
-         * a no-op). Supervision-timeout close (pad power-cut): no CLOSE_EVT
-         * ever fires, so reset here or g_state sticks CONNECTED and every
-         * later inbound page is ignored as 'busy'. */
+        /* Supervision-timeout close fires no hidh CLOSE_EVT; without this
+         * reset g_state sticks CONNECTED and inbound pages look 'busy'. */
         const uint8_t *ib = param->acl_disconn_cmpl_stat.bda;
         printf("[gap] ACL_DISCONN addr=");
         print_bda(ib);
@@ -592,9 +524,8 @@ static void hidh_event_handler(
     case ESP_HIDH_OPEN_EVENT:
         /* dev can be NULL on failure paths (esp-idf#10504). */
         bda = param->open.dev ? esp_hidh_dev_bda_get(param->open.dev) : NULL;
-        /* conn_timeout may not be armed if OPEN came from inbound page (no
-         * start_connect on that path); INVALID_STATE is benign. */
         {
+            /* Inbound-driven OPEN never armed the timer; benign. */
             esp_err_t stop_err = esp_timer_stop(g_conn_timeout);
             if (stop_err == ESP_ERR_INVALID_STATE) {
                 printf("[hid] conn_timeout stop not armed (benign)\n");
@@ -616,15 +547,8 @@ static void hidh_event_handler(
             printf("[hid] open FAIL: addr=");
             print_bda(bda);
             printf(" transport=BR_EDR status=0x%x\n", (unsigned)param->open.status);
-            /* esp_hidh frees the dev internally on non-SDP failures (the public
-             * dev_free is a no-op in IDF 6.0.2). The SDP-fail dev intentionally
-             * stays: the next dev_open returns NULL for it, which the
-             * stale-TAILQ guard in start_connect already handles. */
-            /* Drop our bond half now: the delete defers to link-down while
-             * the failing ACL is up, and that matters here because the
-             * SLOW_PROBE path opens WITHOUT wiping — a leftover bond would
-             * walk straight back into the 0x05 rejection. start_connect's
-             * wipe_bond re-asserts on the candidate path anyway. */
+            /* Drop our key now (deferred to link-down): the slow probe opens
+             * without wiping, so a leftover bond would re-trigger 0x05. */
             lock();
             reset_scan_state();
             if (bda != NULL) {
@@ -698,5 +622,4 @@ void app_main(void) {
     printf("[hid] boot bonds=%d\n", esp_bt_gap_get_bond_device_num());
 
     begin_scan_round();
-    /* No loop; GAP/HID callbacks + esp_timer drive everything from here. */
 }
