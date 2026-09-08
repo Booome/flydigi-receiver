@@ -38,7 +38,7 @@
 #define LOCK_TICK_MS 250
 
 /* Inquiry window in units of 1.28 s; 8 ~= 10 s per cycle. */
-#define INQ_LENGTH 8
+#define INQ_LENGTH 3
 
 typedef struct {
     uint8_t bda[6];
