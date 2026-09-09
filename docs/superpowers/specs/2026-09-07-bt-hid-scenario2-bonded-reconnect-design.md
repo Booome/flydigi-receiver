@@ -40,25 +40,37 @@
 ### 3.1 状态与常量
 
 - 沿用 PR #1 三态机 `ST_SCANNING / ST_CONNECTING / ST_CONNECTED`。
-- `CONNECT_TIMEOUT_MS 35000`：容忍栈内 SDP 迟到（参考表 2）。
-- `SLOW_PROBE_MS 8000`：stuck-pad 出站探测节流（仍保留，但触发频次极少）。
-- `PROBE_DELAY_MS 200`：OPEN FAIL 后快速 probe 的让出延迟。
-- `g_last_probe_ms`、`g_probe_after_fail_bda`。
-  **移除**（后续清理）：`g_candidate_fresh`、`g_force_fresh_next`、3s/8s 锁定窗口常量——
-  inquiry 命中本身即 fresh 意图且必然立即 open，标志与窗口都成了死代码。
+- `CONNECT_TIMEOUT_MS 12000`：app 主动 `dev_open` 的兜底超时（无 `OPEN_EVENT` 即 FAIL）。
+  bonded inbound 不经 dev_open，不受此限——栈内 SDP 迟到按 spec 容忍。
+- `LOCK_TICK_MS 250`：`lock_tick_cb` 周期——mirror staleness 清 + candidate 重评。
+- `LINK_WATCH_MS 1000`：1 s 静默 watchdog 周期，`link_watch_cb` 跑 `LINK_SILENT_RESTART_MS` 判定。
+- `CAND_GRACE_MS 1500`：bonded candidate 延迟 open 的 grace（让手柄自发的 page 先到）。
+- `LINK_STALE_MS 15000`：mirror 没人 tear 这么久 → ghost，清掉。
+- `LINK_SILENT_RESTART_MS 8000`：`ST_CONNECTED` 持续无 input → `esp_restart()`。
+- `STUCK_RESET_WINDOW_MS 20000`：同 bda 两次 FAIL → `esp_restart()`。
+- `GHOST_CONFIRM_MS 3000`：CONNECTED 状态下有同名 candidate 持续这么久 → ghost。
+- `LINK_LST_SLOTS 6400`：LST = 4 s（0.625 ms slots）；每 ACL_CONN 单独写。
+- `EWMA_ALPHA 3/10` / `HYSTERESIS_DB 3`：候选打分参数，沿用 PR #1。
+- **删除项**（2026-09-08）：slow probe / `g_last_probe_ms` / `g_probe_after_fail_bda` /
+  `g_candidate_fresh` / `g_force_fresh_next` / 3s/8s 锁定窗口——inquiry 命中即 fresh 意图且
+  立即 open，标志与窗口都成死代码（详见 §3.6 + 紧邻 commit）。
 
 ### 3.2 各触发路径
 
 | 事件 | 行为 |
 |---|---|
 | inquiry 命中 candidate（**任意 bda**） | lock_tick **立即 open**（无锁定窗口），open 前 **wipe 该 bda 的 stale bond**（§3.4）→ SSP <1s 发起 |
-| inbound `ACL_CONN_CMPL` | **只 log，不 dev_open**（被动让栈跑完 incoming SDP → auto OPEN） |
+| inbound `ACL_CONN_CMPL` known bond | 设 mirror，写 4 s LST；**log only，不 dev_open**——让栈跑 incoming SDP → auto OPEN |
+| inbound `ACL_CONN_CMPL` unknown bond | 立即 HCI disconnect (reason 0x16)——stale-key peer 永远完不成 AUTH，poison 后继 open |
 | `ACL_DISCONN_CMPL` 且 `g_state==ST_CONNECTED` | 复位 `ST_SCANNING` + rescan（手柄突然掉电时 CLOSE_EVT 可能不来，靠这条兜底） |
 | `OPEN_EVENT` OK | `ST_CONNECTED` + dump descriptor |
-| `OPEN_EVENT` FAIL | 单次 `remove_bond_device`（此刻 ACL 刚断，deferred delete 随即落地）+ arm 200ms probe timer |
-| probe timer 到期 | `ST_SCANNING` 且距上次 probe ≥8s → `start_connect(bda,"probe",wipe)`；post-fail probe wipe=true，slow probe wipe=false；否则 `arm_rescan` 回 inquiry |
-| scan round 空闲 ≥8s 且有 bond | lock_tick 里 slow probe 兜底（同节流） |
-| `dev_open` 同步返回 NULL（TAILQ 残留） | 立即 stop conn_timeout + `reset_scan_state` + `arm_rescan`，不傻等 35s |
+| `OPEN_EVENT` FAIL 且 `AUTH_CMPL` 失败 | `remove_bond_device`（该 peer 的本地 key 失效）；否则仅重置 + rescan——SDP 死等不能误删 |
+| `dev_open` 同步返回 NULL（TAILQ 残留） | 立即 stop conn_timeout + `note_stuck` + `reset_scan_state` + `arm_rescan`，不傻等 12s |
+| lock_tick: mirror 15 s 没动 | 清 mirror + 清 ghost-confirm timer（控制层没拆链路 → 兜底） |
+| lock_tick: CONNECTED + 同 BDA candidate 持续 3 s | ghost link → `esp_restart()` |
+| conn_timeout 12 s 没回 OPEN | `note_stuck` + 若 mirror 仍在则 HCI disconnect + `arm_rescan` |
+| link_watch 8 s 无 INPUT（CONNECTED） | ghost link → `esp_restart()`（abrupt peer power loss） |
+| 同 bda 第二次 FAIL 在 20 s 内 | `esp_restart()`（栈不可恢复） |
 
 ### 3.3 inquiry-driven fresh 原理（关键）
 
@@ -92,18 +104,26 @@ inquiry-scan（普通 idle 仅 page-scan，对 inquiry 不响应）。所以 inq
 
 配套纠错：OPEN-FAIL 里旧的 `remove_bond ×3 同步重试 + bonds 复验` 是误解产物——重试只会看到
 stale count。现状为**单次 remove + 200ms probe**：deferred delete 在链路断开时自动落地，
-且 `start_connect(wipe_bond)` 在每次 open 前独立兜底，无需轮询复验。slow probe（`first_bonded_bda`
-路径，合法 bonded 探测）不 wipe，所以 FAIL 路径的 remove 仍需保留（防止 stale 键被 slow probe
-带回）。
+且 `start_connect(wipe_bond)` 在每次 open 前独立兜底，无需轮询复验。
 
 实测（90s capture，连 3 次长按复现流程）：三次均 inquiry 命中 → wipe → 1~2.5s `AUTH_CMPL OK`
 → open，无"连接中"卡死。
 
 ### 3.5 防风暴约束
 
-- probe 全部经 `g_last_probe_ms` 8s 节流；inquiry 在 probe 间隙照常运行（re-pair 需要它）。
-- `start_connect` 有 `ST_CONNECTING` guard，in-flight 期间任何重复 open 直接忽略。
+- `start_connect` 有 `ST_CONNECTING` guard + `g_open_inflight`，in-flight 期间任何重复 open
+  直接忽略。
 - `halt_scanning_side_effects` 中 cancel/stop 均为幂等 + `(benign)` log。
+- 同 bda 第二次 FAIL 在 20 s 内 → `esp_restart()`（§3.2）。
+
+### 3.6 reconnect 相撞修复（2026-09-08，删 slow probe）
+
+- **删 slow probe**：`lock_tick` 不再空闲主动 page。它想救的"手柄耗尽 page 预算干等"场景
+  跨 ~40 轮观测 0 次救活（那种手柄连 page 都不再响应），却成为 power-cycle 重连相撞的
+  系统性引爆点（§5.1）。bonded 重连本就由手柄发起，无需模块先拨号。
+- **替代防御**：`bt_stack.c` 始终 `CONNECTABLE`，但 `bt_gap_cb` 在 ACL_CONN 上对 **unknown
+  bond** 立即 HCI disconnect——stale-key peer 的 page 在 ACL 层就拒，避免半开链路形成。
+- 验收序列：pair 成功一次 → power-cycle 手柄 → 应 ≤5s 自动重连，重复 ×5。
 
 ## 四、实机验证记录（2026-09-07）
 
@@ -137,7 +157,7 @@ PAGE_TIMEOUT 拖延。
 
 ## 五、已知边界 / 后续
 
-### 5.1 half-open inbound ACL 黑洞（挂账，仅调试操作可达）
+### 5.1 half-open inbound ACL 黑洞（**部分**修复，见 §3.6）
 
 三个必要条件**同时**成立才触发（缺一即正常）：
 1. 非对称键：host 无该 bda 的 bond 且对端手柄持旧 key（唯一生产者 = `erase_flash` 时手柄还开着）；
@@ -148,19 +168,38 @@ PAGE_TIMEOUT 拖延。
    （公开 API 无法回收：`esp_hidh_dev_free` 是 no-op，`dev_close` 要求 connected），
    后续 open 全被 stale-TAILQ guard 弹回，直到栈自己 ~60s SDP 超时拆链，共 ~40-70s 黑洞。
 
-**常规操作不可达性论证**（2026-09-08，4 轮实验对照）：拔模块电/手柄断电重上电 → 键对称，走
-bonded 被动重连；手柄长按 pair → 手柄清**自己**的键（条件 1 方向反了，无键手柄不会 page 挂链），
-host 侧残留 bond 由 §3.4 wipe_bond 消灭——001916/002718/234337 共 18 轮 pair/重连全部
-0.5~2.6s 成功；FAIL 残留的非对称态也被"FAIL remove + open wipe"双向收敛（001916 +2.572
-inbound 旧键 page → 一次 FAIL → 1.5s 后干净 SSP）。
+**§3.6 修复了哪些**：
+- **删 slow probe**——杜绝 app 主动 page 与手柄 inbound 的双向相撞，是常规 power-cycle
+  重连绝大多数失败的根因（104730 capture，press→OPEN 实测 64s）；实测 ~40 轮 0 次救活"手柄
+  page 预算耗尽干等"场景。
+- **unknown-bond ACL_CONN 立即 HCI 拆链**——杜绝条件 1 触发后链路在 ACL 层挂住。
+
+**§3.6 没修复的**：
+- "无 bond 不应接"原本设计 `apply_scan_mode()` 按 bond 计数切 NON_CONNECTABLE——**从未
+  实现**。当前防御仅到 ACL 层（unknown bond 拆链）；空口层仍接受所有 page。
+- 彻底堵死需 btc 层补丁（§5.2 场景 4 同源）。
 
 **复现配方**（如需再取证）：保持手柄 connected 状态直接 `erase-flash` + 重烧 + 立即 capture
 （手柄断链后的 page 风暴会抢先落地），风暴存活期内长按 pair。
 
-**处置**：不修（public API 无强鉴权/拆链手段；候选方案"bonds 计数闸门关 page-scan"经论证对
-"NVS 有其它设备 bond"变体仍漏，且常规操作本就不触发）。AGENTS 测试规范新增：*erase-flash 前先关手柄*。
+**处置**：部分修（§3.6 上面两条）。残余：NVS 同时存在**其它设备** bond 时闸门失效
+（单手柄场景不存在）；彻底堵死需 btc 层补丁。AGENTS 测试规范：*erase-flash 前先关手柄* 保留。
 
 ### 5.2 其它
+
+- **场景 3：bta_hh SDP race（426219 capture 实测）** — 手柄 bonded 重连时**也**会死锁，
+  与 active open 路径无关：
+  - 链路：手柄 page → ACL_CONN（我们 hold，log only）→ pad 自启 CTL/INT (CID 0x40/0x41)
+    → 我们 accept → 我们的 bta_hh 内部又起 SDP (PSM 1, CID 0x42) → 期间 pad 再发一条 inbound
+    → `BT_HIDH: Rcvd CTL L2CAP conn ind, wrong state: 4` → 我们 `L2CA_ErtmConnectRsp Result:4`
+    拒掉 → pad 弃 HID session 但**不**拆 ACL → ACL 进入"up 但无 HID" 半死 → 我们反复
+    `BTM_StartInquiry` → Bluedroid 内存泄漏（每次 ~78 字节）→ heap 碎片到
+    `free=408 largest_block=32` → `host_recv_pkt_cb` 拿不到 buffer → `assert failed:
+    host_recv_pkt_cb hci_hal_h4.c:655` → 复位。
+  - 根因：Bluedroid `bta_hh` 自动 HID setup 跟 pad 的 CTL+INT inbound race。**应用层无解**。
+  - 处置：候选路线见 §五-决策树；当前 SPEC 不承诺 bonded-cold-boot 重连稳定。
+  - `BTM_SetDefaultLinkPolicy(0)` 在 426239 被 controller `0x0c37 Cmd Disallowed`
+    拒——sniff/role-switch disable **未生效**（这条命令在本 ROM 上不被接受），已从代码移除。
 
 - 场景 4（board 断电重启 + 手柄仍 bonded）的 audit §四 死锁不在本 PR 范围
   （需 btc 层 patch `btc_storage_load_bonded_hid_info`，直接 app 调用会崩栈）。
